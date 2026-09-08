@@ -58,6 +58,32 @@ def test_add_evidence_dedupes_same_content():
     assert first.content_hash == second.content_hash
 
 
+def test_add_evidence_returns_existing_evidence_when_content_hash_is_duplicate():
+    case = make_case("diag_a")
+    first_evidence = make_evidence("diag_a")
+    second_evidence = make_evidence("diag_a")
+
+    saved_first = case.add_evidence(first_evidence)
+    saved_second = case.add_evidence(second_evidence)
+
+    assert saved_first.content_hash == saved_second.content_hash
+    assert len(case.evidence) == 1
+    assert saved_second.evidence_id == saved_first.evidence_id
+    assert saved_second is case.evidence[0]
+    assert saved_second.evidence_id == case.evidence[0].evidence_id
+
+
+def test_duplicate_evidence_return_value_can_be_cited_by_conclusion():
+    case = make_case("diag_a")
+    saved_first = case.add_evidence(make_evidence("diag_a"))
+    saved_second = case.add_evidence(make_evidence("diag_a"))
+
+    case.set_conclusion(make_conclusion("diag_a", [saved_second.evidence_id]))
+
+    assert case.conclusion is not None
+    assert case.conclusion.cited_evidence_ids == [saved_first.evidence_id]
+
+
 def test_add_evidence_keeps_different_content():
     case = make_case("diag_a")
     case.add_evidence(make_evidence("diag_a", summary="设备在线但主码流异常"))

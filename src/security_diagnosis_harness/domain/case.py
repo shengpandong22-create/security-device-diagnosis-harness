@@ -108,13 +108,18 @@ class SecurityDiagnosisCase(BaseModel):
 
     # ------------------------------------------------------------------ 证据
     def add_evidence(self, evidence: DiagnosisEvidence) -> DiagnosisEvidence:
-        """挂接证据。同一诊断下内容重复的证据按 hash 去重。"""
+        """挂接证据。同一诊断下内容重复的证据按 hash 去重。
+
+        重复时返回 Case 中已存在的那条 Evidence，而不是新传入的对象，
+        保证调用方拿到的 evidence_id 一定能被 `set_conclusion` 接受。
+        """
         if not evidence.belongs_to(self.diagnosis_id):
             raise EvidenceDiagnosisMismatch(
                 f"evidence {evidence.evidence_id} 不属于诊断 {self.diagnosis_id}"
             )
-        if any(item.content_hash == evidence.content_hash for item in self.evidence):
-            return evidence
+        for item in self.evidence:
+            if item.content_hash == evidence.content_hash:
+                return item
         self.evidence.append(evidence)
         self._touch()
         return evidence
