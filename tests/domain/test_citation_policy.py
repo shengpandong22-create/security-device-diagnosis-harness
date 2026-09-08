@@ -140,11 +140,33 @@ def test_device_fact_evidence_types_exclude_knowledge():
     assert EvidenceType.KNOWLEDGE_SOP not in DEVICE_FACT_EVIDENCE_TYPES
 
 
-def test_policy_allows_possible_without_citation():
-    """按验收口径：非空时才校验归属，possible 允许零引用。"""
+def test_policy_rejects_possible_without_citation():
+    """可信诊断不允许零引用结论，任何候选结论都必须至少引用一条 Evidence。"""
     case = make_case(DIAG_A)
 
-    CitationPolicy().validate(_conclusion(DIAG_A, [], "possible"), case)
+    with pytest.raises(CitationPolicyViolation, match="至少引用一条 Evidence"):
+        CitationPolicy().validate(_conclusion(DIAG_A, [], "possible"), case)
+
+
+def test_policy_rejects_probable_without_citation():
+    case = make_case(DIAG_A)
+
+    with pytest.raises(CitationPolicyViolation, match="至少引用一条 Evidence"):
+        CitationPolicy().validate(_conclusion(DIAG_A, [], "probable"), case)
+
+
+def test_policy_accepts_possible_after_citation_added():
+    """同一条结论补上引用后即可通过校验。"""
+    case = make_case(DIAG_A)
+    evidence = _add(case, EvidenceType.KNOWLEDGE_SOP)
+    conclusion = _conclusion(DIAG_A, [], "possible")
+
+    with pytest.raises(CitationPolicyViolation):
+        CitationPolicy().validate(conclusion, case)
+
+    conclusion.cited_evidence_ids.append(evidence.evidence_id)
+
+    CitationPolicy().validate(conclusion, case)
 
 
 def test_policy_still_checks_reliability_of_evidence_source():

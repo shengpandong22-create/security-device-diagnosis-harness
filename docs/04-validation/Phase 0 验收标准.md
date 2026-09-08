@@ -82,9 +82,22 @@ Phase 0B（Harness 与只读工具基础）已完成，覆盖本文档第 3、4 
 | Tool Registry | `tools/registry.py` | 重复注册、未知工具、无权限、故障类型不支持、参数非法、工具异常全部转成受控失败 |
 | 只读工具 | `tools/device_status.py`、`device_alarm_events.py`、`device_config.py`、`knowledge_search.py` | `device__query_status`、`device__search_alarm_events`、`device__read_config_snapshot`、`knowledge__search` |
 | ToolLoopRunner | `agent/runner.py` | `max_rounds` / `max_tool_calls` 预算，不修改 Case 状态，不落 Evidence |
-| CitationPolicy | `domain/citation_policy.py` | probable 必须引用设备事实；只引用 SOP 最多 possible |
+| CitationPolicy | `domain/citation_policy.py` | 任何结论必须至少引用 1 条 Evidence；probable 必须引用设备事实；只引用 SOP 最多 possible |
+
+### Citation Policy 校验口径
+
+| 规则 | 结论 |
+|---|---|
+| `cited_evidence_ids` 为空 | 拒绝（`possible` 与 `probable` 一视同仁，不允许零引用结论） |
+| 只引用 `knowledge_sop` + `possible` | 通过 |
+| 只引用 `knowledge_sop` + `probable` | 拒绝 |
+| 引用 `device_status` / `device_alarm` / `device_config` + `probable` | 通过 |
+| 引用了不属于当前诊断的 Evidence ID | 拒绝 |
+| 结论 `diagnosis_id` 与 Case 不一致 | 拒绝 |
+| 结论可信度为 `confirmed` | 拒绝（模型不能产生 confirmed） |
 
 Phase 0B 未覆盖（属于 Phase 0C）：诊断/review/report API、demo 脚本、Evidence 持久化、评测回归。
+Runner 只返回模型草稿，不执行 CitationPolicy，校验在 Phase 0C 应用服务落地时执行。
 
 ## 9. Phase 0A 完成状态
 
