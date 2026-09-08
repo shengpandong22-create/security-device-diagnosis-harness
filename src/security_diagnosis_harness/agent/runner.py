@@ -120,6 +120,7 @@ class ToolLoopRunner:
                     available_tools=allowed,
                     metadata={
                         "diagnosis_id": case.diagnosis_id,
+                        "device_id": case.device_id,
                         "round": round_index,
                         "fault_type": case.fault_type.value,
                     },
