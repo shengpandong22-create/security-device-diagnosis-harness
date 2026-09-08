@@ -21,3 +21,7 @@ class UnknownEvidenceReference(DomainError):
 
 class ReviewNotAllowed(DomainError):
     """当前状态下不允许该人工审核动作。"""
+
+
+class CitationPolicyViolation(DomainError):
+    """结论引用不满足 Citation Policy。"""
