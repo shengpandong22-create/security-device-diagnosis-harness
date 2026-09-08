@@ -1,0 +1,28 @@
+digraph SecurityDeviceDiagnosisHarness {
+  graph [rankdir=LR,bgcolor="#FFFFFF",pad="0.35",nodesep="0.45",ranksep="0.75",splines=ortho,fontname="Microsoft YaHei",fontsize=18,fontcolor="#0F172A",label="Security Device Diagnosis Harness · 总体架构",labelloc=t,labeljust=l,compound=true,newrank=true];
+  node [shape=box,style="rounded,filled",fontname="Microsoft YaHei",fontsize=12,color="#2F80C9",fillcolor="#E8F3FF",fontcolor="#0F172A",margin="0.12,0.08"];
+  edge [fontname="Microsoft YaHei",fontsize=10,color="#475569",fontcolor="#475569",arrowsize=0.8];
+  user [label="用户/运维人员\n摄像头黑屏等现象"];
+  api [label="API Layer\n创建/查询/反馈/报告"];
+  app [label="SecurityDiagnosisService\n状态推进 + 用例编排"];
+  subgraph cluster_harness { label="Agent Harness"; color="#7C3AED"; fillcolor="#F1EDFF"; style="rounded,filled"; runner [label="ToolLoopRunner\n受控 Agent Loop",fillcolor="#F1EDFF",color="#7C3AED"]; llm [label="LLM Client Port\nFake / DeepSeek",fillcolor="#FFF0EB",color="#C05621"]; registry [label="Tool Registry\n权限/风险/参数/预算",fillcolor="#E2F6EF",color="#0F766E"]; citation [label="Citation Policy\n引用校验/可信度",fillcolor="#E2F6EF",color="#0F766E"]; }
+  device_port [label="DeviceGateway Port\n状态/告警/配置",fillcolor="#F1EDFF",color="#7C3AED",style="rounded,dashed,filled"];
+  adapter [label="StaticDeviceGateway\nJSON 样例数据",fillcolor="#DCFAFA",color="#0E9F9A"];
+  evidence [label="Evidence Store\n设备事实证据",fillcolor="#E2F6EF",color="#0F766E"];
+  review [label="Human Review\nconfirm/reject/continue",fillcolor="#FFF3DF",color="#D97706"];
+  knowledge [label="Knowledge Candidate\nconfirmed 后沉淀",fillcolor="#E2F6EF",color="#0F766E"];
+  eval [label="Eval Harness\n固定案例 + Rubric",fillcolor="#E8F3FF",color="#2F80C9"];
+  user -> api [color="#D97706",penwidth=2,label="故障请求"];
+  api -> app [color="#D97706",penwidth=2];
+  app -> runner [color="#D97706",penwidth=2];
+  runner -> llm [label="有限推理"];
+  llm -> registry [label="工具选择"];
+  registry -> device_port [label="只读工具"];
+  device_port -> adapter;
+  adapter -> evidence [color="#D97706",penwidth=2,label="事实转 Evidence"];
+  evidence -> citation [color="#D97706",penwidth=2];
+  citation -> review [color="#D97706",penwidth=2,label="候选结论"];
+  review -> knowledge [style=dashed,label="人工确认后"];
+  knowledge -> eval [style=dashed,label="回归样例"];
+  eval -> app [style=dashed,label="质量反馈"];
+}
