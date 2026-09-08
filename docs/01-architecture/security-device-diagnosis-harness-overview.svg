@@ -93,5 +93,6 @@
   <path d="M248 518 H194" class="dash"/>
   <path d="M119 474 V405 H572 V240" class="dash"/>
 
-  <text x="780" y="660" class="small">关键边界：设备不在线、告警存在、配置异常都只是证据；confirmed 必须人工确认，不能由模型直接产生。</text>
+  <text x="780" y="660" class="small">关键边界①：设备不在线、告警存在、配置异常都只是证据。</text>
+  <text x="780" y="680" class="small">关键边界②：confirmed 必须人工确认，不能由模型直接产生。</text>
 </svg>
