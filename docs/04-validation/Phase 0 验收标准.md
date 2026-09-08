@@ -4,19 +4,19 @@
 
 ## 1. 工程验收
 
-- [ ] 项目可通过 `uv sync` 安装依赖；
-- [ ] `uv run pytest` 全绿；
-- [ ] `uv run ruff check .` 无错误；
-- [ ] `.env`、API Key、Token、设备凭证不会进入 Git；
-- [ ] README 能说明项目定位、运行方式和安全边界。
+- [x] 项目可通过 `uv sync` 安装依赖；
+- [x] `uv run pytest` 全绿；
+- [x] `uv run ruff check .` 无错误；
+- [x] `.env`、API Key、Token、设备凭证不会进入 Git；
+- [x] README 能说明项目定位、运行方式和安全边界。
 
 ## 2. 领域验收
 
-- [ ] `SecurityDiagnosisCase` 能表达一次设备诊断；
-- [ ] 状态机禁止非法跳转；
-- [ ] `confirmed` 只能由人工确认动作产生；
-- [ ] `SecurityFaultType` 至少包含 `camera_black_screen`；
-- [ ] 领域层不依赖 FastAPI、SQLAlchemy、HTTP 客户端或具体 LLM SDK。
+- [x] `SecurityDiagnosisCase` 能表达一次设备诊断；
+- [x] 状态机禁止非法跳转；
+- [x] `confirmed` 只能由人工确认动作产生；
+- [x] `SecurityFaultType` 至少包含 `camera_black_screen`；
+- [x] 领域层不依赖 FastAPI、SQLAlchemy、HTTP 客户端或具体 LLM SDK。
 
 ## 3. 工具验收
 
@@ -68,7 +68,22 @@
 6. 旧应用诊断项目和新安防项目是什么关系？
 7. 企业落地还需要补哪些系统？
 
-## 8. Definition of Done
+## 8. Phase 0A 完成状态
+
+Phase 0A（项目骨架与领域模型）已完成，覆盖本文档第 1、2 节全部验收项：
+
+| 验收项 | 结果 |
+|---|---|
+| `uv sync` / `uv run pytest` / `uv run ruff check .` | 通过（30 个测试） |
+| `GET /health` | 返回 200，统一信封 `{"code": "ok", "data": {...}}` |
+| 领域模型 | `SecurityDiagnosisCase`、`SecurityFaultType`、`SecurityDiagnosisStatus`、`Device`、`DeviceSnapshot`、`DeviceAlarmEvent`、`DeviceConfigSnapshot`、`DiagnosisEvidence`、`DiagnosisConclusion`、`HumanReview` |
+| 状态机 | `ALLOWED_STATUS_TRANSITIONS` 中没有任何状态可以跳到 `confirmed` |
+| confirmed 来源 | 仅 `apply_human_review(HumanReviewAction.CONFIRM)`，且要求状态为 `waiting_for_confirmation` 且已有候选结论 |
+| Evidence | `diagnosis_id` 必填，跨诊断挂接抛 `EvidenceDiagnosisMismatch`，同内容按 hash 去重 |
+
+Phase 0A 未覆盖（属于 Phase 0B/0C）：工具验收、Evidence 转换与 Citation Policy、Demo 验收。
+
+## 9. Definition of Done
 
 Phase 0 完成时，至少满足：
 
