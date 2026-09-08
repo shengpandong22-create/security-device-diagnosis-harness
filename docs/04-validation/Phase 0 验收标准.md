@@ -20,23 +20,23 @@
 
 ## 3. 工具验收
 
-- [ ] 所有工具必须通过 Tool Registry 注册；
-- [ ] 未注册工具必须拒绝；
-- [ ] 无权限工具必须拒绝；
-- [ ] 非法参数必须拒绝；
-- [ ] 工具必须声明风险等级；
-- [ ] Phase 0 所有设备工具均为 READ_ONLY；
-- [ ] 工具失败不能伪造成 Evidence。
+- [x] 所有工具必须通过 Tool Registry 注册；
+- [x] 未注册工具必须拒绝；
+- [x] 无权限工具必须拒绝；
+- [x] 非法参数必须拒绝；
+- [x] 工具必须声明风险等级；
+- [x] Phase 0 所有设备工具均为 READ_ONLY；
+- [x] 工具失败不能伪造成 Evidence。
 
 ## 4. Evidence 验收
 
-- [ ] 设备状态、告警事件、配置快照可以转换为 Evidence；
-- [ ] Evidence 必须属于某个 Diagnosis；
-- [ ] Evidence 有类型、来源、hash、可信度、脱敏状态；
-- [ ] 相同诊断下同内容按 hash 去重；
-- [ ] 结论引用的 Evidence ID 必须属于当前诊断；
-- [ ] 只引用知识库 SOP 时，结论最多为 possible；
-- [ ] probable 至少引用一个设备事实 Evidence。
+- [x] 设备状态、告警事件、配置快照可以转换为 Evidence；
+- [x] Evidence 必须属于某个 Diagnosis；
+- [x] Evidence 有类型、来源、hash、可信度、脱敏状态；
+- [x] 相同诊断下同内容按 hash 去重；
+- [x] 结论引用的 Evidence ID 必须属于当前诊断；
+- [x] 只引用知识库 SOP 时，结论最多为 possible；
+- [x] probable 至少引用一个设备事实 Evidence。
 
 ## 5. 安全验收
 
@@ -68,7 +68,25 @@
 6. 旧应用诊断项目和新安防项目是什么关系？
 7. 企业落地还需要补哪些系统？
 
-## 8. Phase 0A 完成状态
+## 8. Phase 0B 完成状态
+
+Phase 0B（Harness 与只读工具基础）已完成，覆盖本文档第 3、4 节验收项：
+
+| 组件 | 落点 | 说明 |
+|---|---|---|
+| LLMClient Port | `ports/llm.py` | `ChatMessage` / `ToolCall` / `LLMRequest` / `LLMResponse` / `LLMClient`，不含任何 API Key |
+| FakeLLM | `adapters/llm/fake.py` | 回放预设响应并记录请求，不访问网络 |
+| DeviceGateway Port | `ports/device_gateway.py` | `query_status` / `search_alarm_events` / `read_config_snapshot` |
+| StaticDeviceGateway | `adapters/device_gateway/static.py` | 只读本地 JSON，文件缺失/JSON 错误/设备不存在均抛明确异常 |
+| Tool Contract | `tools/contracts.py` | `ToolRiskLevel` / `ToolPermission` / `ToolExecutionContext` / `ToolExecutionResult` / `ToolEvidenceDraft` |
+| Tool Registry | `tools/registry.py` | 重复注册、未知工具、无权限、故障类型不支持、参数非法、工具异常全部转成受控失败 |
+| 只读工具 | `tools/device_status.py`、`device_alarm_events.py`、`device_config.py`、`knowledge_search.py` | `device__query_status`、`device__search_alarm_events`、`device__read_config_snapshot`、`knowledge__search` |
+| ToolLoopRunner | `agent/runner.py` | `max_rounds` / `max_tool_calls` 预算，不修改 Case 状态，不落 Evidence |
+| CitationPolicy | `domain/citation_policy.py` | probable 必须引用设备事实；只引用 SOP 最多 possible |
+
+Phase 0B 未覆盖（属于 Phase 0C）：诊断/review/report API、demo 脚本、Evidence 持久化、评测回归。
+
+## 9. Phase 0A 完成状态
 
 Phase 0A（项目骨架与领域模型）已完成，覆盖本文档第 1、2 节全部验收项：
 
@@ -83,7 +101,7 @@ Phase 0A（项目骨架与领域模型）已完成，覆盖本文档第 1、2 �
 
 Phase 0A 未覆盖（属于 Phase 0B/0C）：工具验收、Evidence 转换与 Citation Policy、Demo 验收。
 
-## 9. Definition of Done
+## 10. Definition of Done
 
 Phase 0 完成时，至少满足：
 
