@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
+from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.conclusion import (
     ConclusionConfidence,
@@ -30,6 +34,12 @@ from security_diagnosis_harness.domain.evidence import (
     Reliability,
 )
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
+from security_diagnosis_harness.tools.contracts import ToolExecutionContext, ToolPermission
+from security_diagnosis_harness.tools.device_alarm_events import DeviceAlarmEventsTool
+from security_diagnosis_harness.tools.device_config import DeviceConfigSnapshotTool
+from security_diagnosis_harness.tools.device_status import DeviceStatusTool
+from security_diagnosis_harness.tools.knowledge_search import KnowledgeSearchTool
+from security_diagnosis_harness.tools.registry import ToolRegistry, default_permissions
 
 DEVICE_ID = "camera-3f-001"
 
@@ -138,3 +148,92 @@ def make_case_waiting_for_confirmation(diagnosis_id: str = "diag_phase0a") -> Se
     case.set_conclusion(make_conclusion(diagnosis_id, [evidence.evidence_id]))
     case.transition_to(SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION)
     return case
+
+
+# ------------------------------------------------------------------ Phase 0B
+
+DEVICE_DATASET: dict[str, object] = {
+    "version": 1,
+    "devices": [
+        {
+            "device_id": DEVICE_ID,
+            "snapshot": {
+                "online": True,
+                "channel_online": True,
+                "stream_status": "abnormal",
+                "recording_status": "recording",
+            },
+            "alarms": [
+                {
+                    "event_type": "STREAM_PUBLISH_FAILED",
+                    "severity": "critical",
+                    "message": "主码流发布失败",
+                },
+                {
+                    "event_type": "ENCODER_TIMEOUT",
+                    "severity": "critical",
+                    "message": "编码器响应超时",
+                },
+                {
+                    "event_type": "DEVICE_ONLINE",
+                    "severity": "info",
+                    "message": "设备上线",
+                },
+            ],
+            "config": {
+                "enabled": True,
+                "encoding": "H.265",
+                "resolution": "2560x1440",
+                "frame_rate": 25,
+                "bitrate_kbps": 8192,
+                "config": {
+                    "bitrate_mode": "CBR",
+                    "admin_password": "sample-placeholder-not-a-real-credential",
+                },
+            },
+        }
+    ],
+}
+
+
+def write_device_dataset(path: Path, dataset: dict[str, object] | None = None) -> Path:
+    """把静态设备数据写入临时文件。"""
+    path.write_text(json.dumps(dataset or DEVICE_DATASET, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def device_data_file(tmp_path: Path) -> Path:
+    return write_device_dataset(tmp_path / "devices.json")
+
+
+@pytest.fixture
+def static_gateway(device_data_file: Path) -> StaticDeviceGateway:
+    return StaticDeviceGateway(device_data_file)
+
+
+def make_tool_context(
+    diagnosis_id: str,
+    *,
+    gateway: StaticDeviceGateway | None = None,
+    fault_type: SecurityFaultType = SecurityFaultType.CAMERA_BLACK_SCREEN,
+    permissions: frozenset[ToolPermission] | None = None,
+) -> ToolExecutionContext:
+    """构造工具执行上下文，默认授予 Phase 0 只读权限。"""
+    return ToolExecutionContext(
+        diagnosis_id=diagnosis_id,
+        fault_type=fault_type,
+        permissions=permissions if permissions is not None else default_permissions(),
+        device_gateway=gateway,
+    )
+
+
+@pytest.fixture
+def tool_registry() -> ToolRegistry:
+    """注册 Phase 0 四个只读工具的 Registry。"""
+    registry = ToolRegistry()
+    registry.register(DeviceStatusTool())
+    registry.register(DeviceAlarmEventsTool())
+    registry.register(DeviceConfigSnapshotTool())
+    registry.register(KnowledgeSearchTool())
+    return registry
