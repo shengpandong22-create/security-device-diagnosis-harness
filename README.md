@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A、Phase 0B 已完成，Phase 0C 未开始。
+- 当前阶段：Phase 0A、Phase 0B、Phase 0C 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -17,7 +17,7 @@
 |---|---|---|
 | Phase 0A | 项目骨架与领域模型 | 已完成 |
 | Phase 0B | Harness 与只读工具 | 已完成 |
-| Phase 0C | API、报告与评测 | 未开始 |
+| Phase 0C | API、报告与 demo | 已完成 |
 
 Phase 0A 交付范围：
 
@@ -35,6 +35,13 @@ Phase 0B 交付范围：
 - `tools/`：工具契约、Tool Registry 与四个 READ_ONLY 工具；
 - `agent/runner.py`：最小受控 ToolLoopRunner（带轮次/工具调用预算）；
 - `domain/citation_policy.py`：最小 Citation Policy。
+
+Phase 0C 交付范围：
+
+- `application/`：内存仓储、`SecurityDiagnosisApplicationService`、Markdown 报告渲染；
+- `bootstrap/container.py`：装配 StaticDeviceGateway + FakeLLM + 四个只读工具 + Runner + 应用服务；
+- `api/routes/diagnoses.py`：诊断创建/查询/运行/证据/审核/报告六个端点；
+- `scripts/demo_phase0_camera_black_screen.py`：摄像头黑屏一键 demo。
 
 ## 快速开始
 
@@ -55,16 +62,40 @@ uv run python scripts/run_api.py
 
 ```text
 src/security_diagnosis_harness/
-  api/            FastAPI 应用与统一响应
+  api/            FastAPI 应用、路由与统一响应
   domain/         领域模型与 Citation Policy（不依赖 FastAPI / SQLAlchemy / LLM SDK）
   ports/          LLMClient / DeviceGateway 抽象契约
   adapters/       FakeLLM、StaticDeviceGateway
   tools/          工具契约、Tool Registry、只读设备工具与知识检索
   agent/          最小受控 ToolLoopRunner
-tests/            领域 / 工具 / 适配器 / Agent / API 测试
-scripts/          本地启动脚本
+  application/    内存仓储、应用服务、Markdown 报告
+  bootstrap/      Container 装配
+tests/            领域 / 工具 / 适配器 / Agent / 应用 / API / demo 测试
+scripts/          本地启动脚本与摄像头黑屏 demo
 samples/          StaticDeviceGateway 使用的本地样例设备数据
 ```
+
+## 最小闭环
+
+```text
+POST /api/v1/diagnoses                 创建诊断（created）
+POST /api/v1/diagnoses/{id}/runs       运行 Harness，落成 Evidence 与候选结论
+                                       -> Citation Policy 校验
+                                       -> waiting_for_confirmation
+GET  /api/v1/diagnoses/{id}/evidence   查看 Evidence
+POST /api/v1/diagnoses/{id}/review     confirm / reject / request_more_info
+GET  /api/v1/diagnoses/{id}/report.md  Markdown 报告
+```
+
+一键 demo：
+
+```bash
+uv run python scripts/demo_phase0_camera_black_screen.py
+```
+
+输出 JSON 包含 `diagnosis_id`、`status`、`evidence_count`、`conclusion_confidence`、
+`cited_evidence_ids`、`human_action`、`external_model_called: false` 和报告路径，
+报告写入 `demo-output/phase0-camera-black-screen-report.md`（已被 .gitignore 忽略）。
 
 ## Harness 约束边界
 
@@ -76,6 +107,19 @@ samples/          StaticDeviceGateway 使用的本地样例设备数据
 - Runner 不修改 `SecurityDiagnosisCase` 状态，也不把 EvidenceDraft 落成 `DiagnosisEvidence`；
 - Citation Policy：`probable` 必须引用设备事实 Evidence，只引用 SOP 时最多 `possible`；
 - 自动测试只使用 FakeLLM 与本地静态样例，不调用真实模型、不访问真实设备。
+
+## 应用服务与 API 边界
+
+- API 层不直接写领域状态，全部委托 `SecurityDiagnosisApplicationService`；
+- 应用服务是唯一负责把 `ToolEvidenceDraft` 落成 `DiagnosisEvidence` 的地方；
+- 模型结论的 `cited_evidence_ids` 会被最小修正为本次真实落地的 Evidence ID，
+  修正后仍然必须过 `CitationPolicy`，不允许绕过；
+- 没有设备事实时 `probable` 会被降级为 `possible`，不允许无依据的高可信结论；
+- Runner 失败时不伪造 Evidence，Case 进入 `waiting_for_input`，没有任何 Evidence 时进入 `inconclusive`；
+- `confirmed` 只能由 `POST /review` 的 `confirm` 动作经 `apply_human_review` 产生；
+- 异常经受控映射返回 4xx JSON（`code`/`message`），不向调用方抛原始堆栈；
+- 报告输出前对 payload 再脱敏一次，凭证字段统一显示为 `***REDACTED***`；
+- 不接数据库，使用内存仓储；不读 `.env`，不调用外部网络。
 
 ## 领域模型边界
 

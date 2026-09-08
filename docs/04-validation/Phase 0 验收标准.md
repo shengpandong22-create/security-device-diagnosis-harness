@@ -48,13 +48,13 @@
 
 ## 6. Demo 验收
 
-- [ ] 摄像头黑屏 demo 可一键运行；
-- [ ] demo 使用 Fake LLM 或固定模型响应；
-- [ ] demo 输出 diagnosis_id；
-- [ ] demo 输出 Evidence 数量；
-- [ ] demo 输出候选结论；
-- [ ] demo 输出 Markdown 报告路径；
-- [ ] demo 不依赖真实设备、不依赖真实外部模型。
+- [x] 摄像头黑屏 demo 可一键运行；
+- [x] demo 使用 Fake LLM 或固定模型响应；
+- [x] demo 输出 diagnosis_id；
+- [x] demo 输出 Evidence 数量；
+- [x] demo 输出候选结论；
+- [x] demo 输出 Markdown 报告路径；
+- [x] demo 不依赖真实设备、不依赖真实外部模型。
 
 ## 7. 面试验收
 
@@ -68,7 +68,37 @@
 6. 旧应用诊断项目和新安防项目是什么关系？
 7. 企业落地还需要补哪些系统？
 
-## 8. Phase 0B 完成状态
+## 8. Phase 0C 完成状态
+
+Phase 0C（API 闭环、EvidenceDraft 落地、人工 Review、Markdown 报告、摄像头黑屏 demo）已完成，
+覆盖本文档第 6 节 Demo 验收项：
+
+| 组件 | 落点 | 说明 |
+|---|---|---|
+| 内存仓储 | `application/repository.py` | 只用内存 dict，`save` / `get` / `list` / `update`，未找到抛 `DiagnosisNotFoundError` |
+| 应用服务 | `application/diagnoses.py` | `create_diagnosis` / `run_diagnosis` / `get_diagnosis` / `list_evidence` / `review_diagnosis` / `render_report` |
+| 报告渲染 | `application/reports.py` | Markdown 报告，输出前对 payload 再脱敏 |
+| 装配 | `bootstrap/container.py` | StaticDeviceGateway + FakeLLM + 四个只读工具 + Runner + 应用服务 |
+| 诊断 API | `api/routes/diagnoses.py` | `POST /diagnoses`、`GET /{id}`、`POST /{id}/runs`、`GET /{id}/evidence`、`POST /{id}/review`、`GET /{id}/report.md` |
+| Demo | `scripts/demo_phase0_camera_black_screen.py` | create -> run -> evidence -> confirm -> report，输出 JSON 摘要 |
+
+### 应用服务闭环口径
+
+| 环节 | 行为 |
+|---|---|
+| EvidenceDraft 落地 | 只有成功工具结果的草稿会落成 `DiagnosisEvidence`，失败不产生 Evidence |
+| 空引用修正 | `probable` 引用第一条设备事实 Evidence；`possible` 引用第一条 Evidence |
+| 无设备事实的 probable | 降级为 `possible`（不允许无依据的高可信结论） |
+| 没有任何 Evidence | Case 进入 `inconclusive`，不生成结论 |
+| Runner 失败 | Case 进入 `waiting_for_input`，不伪造 Evidence |
+| CitationPolicy | 修正后的结论仍必须过校验，拒绝则进入 `inconclusive` 且不落结论 |
+| 状态推进 | 应用服务是唯一推进 Case 状态的地方，成功运行后进入 `waiting_for_confirmation` |
+| confirmed | 只能由 `POST /{id}/review` 的 `confirm` 经 `apply_human_review` 产生 |
+| 错误响应 | 领域/应用异常映射为 404 / 409 / 422 的受控 JSON，不抛原始堆栈 |
+
+Phase 0C 仍然不接数据库、不接 Alembic、不接 SQLAlchemy、不调用真实模型、不访问真实设备。
+
+## 9. Phase 0B 完成状态
 
 Phase 0B（Harness 与只读工具基础）已完成，覆盖本文档第 3、4 节验收项：
 
@@ -99,7 +129,7 @@ Phase 0B（Harness 与只读工具基础）已完成，覆盖本文档第 3、4 
 Phase 0B 未覆盖（属于 Phase 0C）：诊断/review/report API、demo 脚本、Evidence 持久化、评测回归。
 Runner 只返回模型草稿，不执行 CitationPolicy，校验在 Phase 0C 应用服务落地时执行。
 
-## 9. Phase 0A 完成状态
+## 10. Phase 0A 完成状态
 
 Phase 0A（项目骨架与领域模型）已完成，覆盖本文档第 1、2 节全部验收项：
 
@@ -114,13 +144,13 @@ Phase 0A（项目骨架与领域模型）已完成，覆盖本文档第 1、2 �
 
 Phase 0A 未覆盖（属于 Phase 0B/0C）：工具验收、Evidence 转换与 Citation Policy、Demo 验收。
 
-## 10. Definition of Done
+## 11. Definition of Done
 
 Phase 0 完成时，至少满足：
 
-- [ ] 有一条摄像头黑屏端到端诊断链路；
-- [ ] 有至少 15 个单元/集成测试；
+- [x] 有一条摄像头黑屏端到端诊断链路；
+- [x] 有至少 15 个单元/集成测试（当前 155 个）；
 - [ ] 有一份验收记录；
 - [ ] 有一份面试讲解材料；
-- [ ] Git 工作区干净；
+- [x] Git 工作区干净；
 - [ ] 已推送到 GitHub。
