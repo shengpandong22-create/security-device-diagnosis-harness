@@ -3,6 +3,7 @@
   <desc id="desc">展示用户故障请求经过 API、应用服务、Agent Harness、设备网关、Evidence、人工确认和评测回归形成安防设备诊断闭环。</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#475569"/></marker>
+    <marker id="arrow-main" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L8,3 z" fill="#d97706"/></marker>
     <style>
       text{font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;fill:#0f172a}
       .title{font-size:26px;font-weight:700;fill:#0f3f73}
@@ -16,7 +17,7 @@
       .cyan{fill:#dcfafa;stroke:#0e9f9a;stroke-width:1.8}
       .orange{fill:#fff3df;stroke:#d97706;stroke-width:1.8}
       .line{stroke:#475569;stroke-width:2.2;fill:none;marker-end:url(#arrow)}
-      .main{stroke:#d97706;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .main{stroke:#d97706;stroke-width:3;fill:none;marker-end:url(#arrow-main)}
       .dash{stroke:#475569;stroke-width:2;fill:none;stroke-dasharray:7 6;marker-end:url(#arrow)}
     </style>
   </defs>
@@ -37,7 +38,7 @@
   <text x="572" y="196" text-anchor="middle" class="small">状态推进 · 用例编排</text>
   <text x="572" y="218" text-anchor="middle" class="small">调用 Agent Harness</text>
 
-  <rect x="742" y="104" width="355" height="272" rx="22" class="purple"/>
+  <rect x="742" y="104" width="355" height="292" rx="22" class="purple"/>
   <text x="766" y="138" class="node-title" fill="#4c1d95">Agent Harness</text>
   <rect x="782" y="166" width="130" height="88" rx="14" class="purple"/>
   <text x="847" y="198" text-anchor="middle" class="node-title">Runner</text>
@@ -45,12 +46,12 @@
   <rect x="942" y="166" width="124" height="88" rx="14" class="coral"/>
   <text x="1004" y="198" text-anchor="middle" class="node-title">LLM Port</text>
   <text x="1004" y="224" text-anchor="middle" class="small">Fake / DeepSeek</text>
-  <rect x="782" y="276" width="130" height="72" rx="14" class="green"/>
+  <rect x="782" y="286" width="130" height="72" rx="14" class="green"/>
   <text x="847" y="306" text-anchor="middle" class="node-title">Registry</text>
   <text x="847" y="329" text-anchor="middle" class="small">权限/风险/预算</text>
-  <rect x="942" y="276" width="124" height="72" rx="14" class="green"/>
-  <text x="1004" y="306" text-anchor="middle" class="node-title">Citation</text>
-  <text x="1004" y="329" text-anchor="middle" class="small">引用校验</text>
+  <rect x="942" y="286" width="124" height="72" rx="14" class="green"/>
+  <text x="1004" y="316" text-anchor="middle" class="node-title">Citation</text>
+  <text x="1004" y="339" text-anchor="middle" class="small">引用校验</text>
 
   <rect x="750" y="474" width="170" height="88" rx="18" class="purple" stroke-dasharray="8 6"/>
   <text x="835" y="508" text-anchor="middle" class="node-title">DeviceGateway Port</text>
@@ -81,15 +82,13 @@
   <path d="M408 186 H462" class="main"/>
   <path d="M682 186 H742" class="main"/>
   <path d="M912 210 H942" class="line"/>
-  <path d="M1004 254 V276" class="line"/>
-  <path d="M942 312 H912" class="line"/>
-  <path d="M847 348 V474" class="main"/>
+  <path d="M1004 254 V286" class="line"/>
+  <path d="M942 322 H912" class="line"/>
+  <path d="M847 358 V474" class="main"/>
   <path d="M920 518 H978" class="line"/>
   <path d="M1148 518 H1232 V240" class="main"/>
-  <path d="M1182 186 H1066 V312" class="main"/>
-  <path d="M942 312 H912" class="line"/>
-  <path d="M942 312 H912" class="line"/>
-  <path d="M942 312 H920 V430 H648 V518" class="main"/>
+  <path d="M1182 186 H1108 V322 H1066" class="main"/>
+  <path d="M942 322 H928 V404 H690 V518 H648" class="main"/>
   <path d="M462 518 H408" class="dash"/>
   <path d="M248 518 H194" class="dash"/>
   <path d="M119 474 V405 H572 V240" class="dash"/>
