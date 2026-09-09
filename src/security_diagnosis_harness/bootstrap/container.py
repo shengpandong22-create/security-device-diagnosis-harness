@@ -35,11 +35,15 @@ from security_diagnosis_harness.tools.device_status import DeviceStatusTool
 from security_diagnosis_harness.tools.device_stream import DeviceStreamTool
 from security_diagnosis_harness.tools.knowledge_search import KnowledgeSearchTool
 from security_diagnosis_harness.tools.platform_pull import PlatformPullStatusTool
+from security_diagnosis_harness.tools.recording_plan import RecordingPlanTool
+from security_diagnosis_harness.tools.recording_playback import RecordingPlaybackTool
 from security_diagnosis_harness.tools.registry import ToolRegistry
+from security_diagnosis_harness.tools.storage_status import StorageStatusTool
 
 SAMPLES_DIR = Path(__file__).resolve().parents[3] / "samples" / "devices"
 DEFAULT_DEVICE_DATA_PATH = SAMPLES_DIR / "static_devices.sample.json"
 CAMERA_CASES_DATA_PATH = SAMPLES_DIR / "camera_black_screen_cases.json"
+RECORDING_CASES_DATA_PATH = SAMPLES_DIR / "recording_missing_cases.json"
 
 PHASE0_TOOLS: tuple[str, ...] = (
     "device__query_status",
@@ -55,6 +59,14 @@ PHASE1_TOOLS: tuple[str, ...] = (
     "platform__query_pull_status",
     "device__search_alarm_events",
     "device__read_config_snapshot",
+    "knowledge__search",
+)
+
+# Phase 2C：录像缺失评测使用的只读工具（录像计划 / 存储状态 / 回放检查 / 知识库）。
+PHASE2_TOOLS: tuple[str, ...] = (
+    "recording__query_plan",
+    "storage__query_status",
+    "recording__check_playback",
     "knowledge__search",
 )
 
@@ -236,15 +248,132 @@ def build_phase1_container(
     )
 
 
+# ------------------------------------------------------------------ Phase 2C
+def build_recording_registry() -> ToolRegistry:
+    """注册基础只读工具，并补充录像类只读工具。"""
+    registry = build_registry()
+    for tool_cls in (RecordingPlanTool, StorageStatusTool, RecordingPlaybackTool):
+        tool = tool_cls()
+        if not registry.has(tool.name):
+            registry.register(tool)
+    return registry
+
+
+def build_recording_responder() -> Responder:
+    """构造录像缺失闭环脚本。
+
+    第一轮请求录像相关只读工具；拿到工具结果后给出候选结论。
+    结论的 `cited_evidence_ids` 故意留空，由应用服务按刚刚落地的
+    Evidence 做最小引用修正，从而验证 CitationPolicy 不被绕过。
+    """
+
+    def responder(request: LLMRequest) -> LLMResponse:
+        device_id = str(request.metadata.get("device_id", ""))
+        has_tool_results = any(message.role is ChatRole.TOOL for message in request.messages)
+
+        if not has_tool_results:
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        call_id="c1",
+                        tool_name="recording__query_plan",
+                        arguments={"device_id": device_id, "channel_id": "1"},
+                    ),
+                    ToolCall(
+                        call_id="c2",
+                        tool_name="storage__query_status",
+                        arguments={"device_id": device_id, "channel_id": "1"},
+                    ),
+                    ToolCall(
+                        call_id="c3",
+                        tool_name="recording__check_playback",
+                        arguments={
+                            "device_id": device_id,
+                            "channel_id": "1",
+                            "start_at": "2026-09-08T00:00:00+08:00",
+                            "end_at": "2026-09-09T00:00:00+08:00",
+                        },
+                    ),
+                    ToolCall(
+                        call_id="c4",
+                        tool_name="knowledge__search",
+                        arguments={"query": "录像缺失 录像计划 存储", "limit": 3},
+                    ),
+                ],
+                finish_reason=FinishReason.TOOL_CALLS,
+            )
+
+        return LLMResponse(
+            final_conclusion=ConclusionDraft(
+                fault_type=SecurityFaultType.RECORDING_MISSING,
+                summary="录像缺失需要结合录像计划、存储状态与回放检查事实定位根因",
+                root_cause=None,
+                confidence="probable",
+                cited_evidence_ids=[],
+                next_steps=[
+                    "按候选根因对应的排查顺序逐项验证",
+                    "确认设备侧与平台侧事实是否一致",
+                    "无法定位时补充现场信息后重新运行诊断",
+                ],
+            ),
+            finish_reason=FinishReason.STOP,
+        )
+
+    return responder
+
+
+def build_phase2_container(
+    device_data_path: str | Path | None = None,
+) -> Container:
+    """装配 Phase 2C 录像缺失评测环境。
+
+    使用录像缺失样例数据、录像类只读工具与固定 Responder，
+    不调用任何真实模型或真实设备。
+    """
+    data_path = Path(device_data_path) if device_data_path else RECORDING_CASES_DATA_PATH
+    gateway = StaticDeviceGateway(data_path)
+    registry = build_recording_registry()
+    llm = FakeLLM(responder=build_recording_responder())
+    runner = ToolLoopRunner(
+        llm,
+        registry,
+        budget=ToolLoopBudget(max_rounds=3, max_tool_calls=8),
+    )
+    repository = InMemoryDiagnosisRepository()
+    citation_policy = CitationPolicy()
+    service = SecurityDiagnosisApplicationService(
+        repository=repository,
+        runner=runner,
+        registry=registry,
+        gateway=gateway,
+        citation_policy=citation_policy,
+        tool_allowlist=list(PHASE2_TOOLS),
+    )
+    return Container(
+        service=service,
+        repository=repository,
+        runner=runner,
+        registry=registry,
+        gateway=gateway,
+        llm=llm,
+        citation_policy=citation_policy,
+    )
+
+
 __all__ = [
     "CAMERA_CASES_DATA_PATH",
     "Container",
     "DEFAULT_DEVICE_DATA_PATH",
     "PHASE0_TOOLS",
     "PHASE1_TOOLS",
+    "PHASE2_TOOLS",
+    "RECORDING_CASES_DATA_PATH",
     "build_camera_black_screen_responder",
     "build_container",
     "build_phase1_container",
+    "build_phase2_container",
+    "build_recording_registry",
+    "build_recording_responder",
     "build_registry",
     "build_service",
 ]
