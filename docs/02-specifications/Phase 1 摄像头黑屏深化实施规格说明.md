@@ -260,20 +260,20 @@ uv run python scripts/eval_phase1_camera_black_screen.py
 
 ## 9. Phase 1 Definition of Done
 
-- [ ] Ruff 全绿；
-- [ ] Pytest 全绿；
-- [ ] Phase 0 demo 仍可运行；
-- [ ] Phase 1 eval 脚本可运行；
-- [ ] 至少 4 个摄像头黑屏子案例；
-- [ ] 每个案例都有不同或可解释的 candidate_label；
-- [ ] probable 至少引用两类设备事实 Evidence；
-- [ ] possible 不允许零引用；
-- [ ] confirmed 仍只能人工产生；
-- [ ] 不调用真实模型；
-- [ ] 不访问真实设备；
-- [ ] 不新增数据库；
-- [ ] 不泄露真实凭证；
-- [ ] 生成 Phase 1 验收记录。
+- [x] Ruff 全绿；
+- [x] Pytest 全绿（253 个测试）；
+- [x] Phase 0 demo 仍可运行；
+- [x] Phase 1 eval 脚本可运行；
+- [x] 至少 4 个摄像头黑屏子案例（实际 5 个）；
+- [x] 每个案例都有不同或可解释的 candidate_label；
+- [x] probable 至少引用两类设备事实 Evidence；
+- [x] possible 不允许零引用；
+- [x] confirmed 仍只能人工产生；
+- [x] 不调用真实模型；
+- [x] 不访问真实设备；
+- [x] 不新增数据库；
+- [x] 不泄露真实凭证；
+- [x] 生成 Phase 1 验收记录（见 `docs/04-validation/Phase 1 验收标准.md`）。
 
 ## 10. 给其他模型的边界提示
 

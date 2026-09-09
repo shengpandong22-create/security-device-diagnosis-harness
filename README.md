@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A、Phase 0B、Phase 0C 已完成。
+- 当前阶段：Phase 0A/0B/0C 与 Phase 1（摄像头黑屏深化）已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -18,6 +18,7 @@
 | Phase 0A | 项目骨架与领域模型 | 已完成 |
 | Phase 0B | Harness 与只读工具 | 已完成 |
 | Phase 0C | API、报告与 demo | 已完成 |
+| Phase 1 | 摄像头黑屏深化（多子场景 + 评测） | 已完成 |
 
 Phase 0A 交付范围：
 
@@ -42,6 +43,39 @@ Phase 0C 交付范围：
 - `bootstrap/container.py`：装配 StaticDeviceGateway + FakeLLM + 四个只读工具 + Runner + 应用服务；
 - `api/routes/diagnoses.py`：诊断创建/查询/运行/证据/审核/报告六个端点；
 - `scripts/demo_phase0_camera_black_screen.py`：摄像头黑屏一键 demo。
+
+Phase 1 交付范围：
+
+- `domain/camera.py`：`ChannelSnapshot`、`StreamSnapshot`、`PlatformPullStatus`
+  与 `ChannelStatus` / `StreamKind` / `PullStatus` 枚举；
+- `samples/devices/camera_black_screen_cases.json`：5 个摄像头黑屏子案例；
+- DeviceGateway 与 StaticDeviceGateway 扩展：
+  `query_channel_snapshot` / `query_stream_snapshot` / `query_platform_pull_status`；
+- 新增三个 READ_ONLY 工具：`device__query_channel`、`device__query_stream`、
+  `platform__query_pull_status`；
+- `application/camera_diagnosis_rules.py`：候选根因规则（只输出候选，不产生 confirmed）；
+- 报告增加候选根因标签、证据链解释、排查顺序与排除项；
+- `scripts/eval_phase1_camera_black_screen.py`：固定案例集评测。
+
+### 摄像头黑屏子场景
+
+| case_id | device_id | 事实组合 | candidate_label |
+|---|---|---|---|
+| `camera_offline` | `cam-offline-01` | 设备离线 | `device_offline_or_network_unreachable` |
+| `channel_offline` | `cam-channel-offline-01` | 设备在线、通道离线 | `channel_binding_or_platform_access_issue` |
+| `stream_publish_failed` | `cam-stream-failed-01` | 通道在线、码流发布失败 | `stream_publish_or_encoder_issue` |
+| `high_bitrate_encoder_timeout` | `cam-high-bitrate-01` | 高码率/高分辨率 + 编码超时 | `overloaded_encoding_configuration` |
+| `platform_pull_failed` | `cam-platform-pull-01` | 设备侧正常、平台拉流失败 | `platform_pull_or_access_path_issue` |
+
+Phase 1 评测：
+
+```bash
+uv run python scripts/eval_phase1_camera_black_screen.py
+```
+
+输出 `demo-output/phase1-camera-black-screen-eval.json` 与 `.md`，
+当前 5 个案例 label 命中率 100%、引用合规率 100%、敏感信息泄露 0、
+`external_model_called=false`。
 
 ## 快速开始
 
@@ -105,7 +139,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - 工具失败不携带任何 EvidenceDraft，失败不能被包装成证据；
 - Runner 有 `max_rounds` / `max_tool_calls` 预算，超预算返回受控失败；
 - Runner 不修改 `SecurityDiagnosisCase` 状态，也不把 EvidenceDraft 落成 `DiagnosisEvidence`；
-- Citation Policy：`probable` 必须引用设备事实 Evidence，只引用 SOP 时最多 `possible`；
+- Citation Policy：`probable` 必须引用至少两类设备事实 Evidence，只引用 SOP 时最多 `possible`；
 - 自动测试只使用 FakeLLM 与本地静态样例，不调用真实模型、不访问真实设备。
 
 ## 应用服务与 API 边界
@@ -115,6 +149,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - 模型结论的 `cited_evidence_ids` 会被最小修正为本次真实落地的 Evidence ID，
   修正后仍然必须过 `CitationPolicy`，不允许绕过；
 - 没有设备事实时 `probable` 会被降级为 `possible`，不允许无依据的高可信结论；
+- Phase 1 起 `probable` 至少引用两类设备事实 Evidence，不足两类时同样降级为 `possible`；
 - Runner 失败时不伪造 Evidence，Case 进入 `waiting_for_input`，没有任何 Evidence 时进入 `inconclusive`；
 - `confirmed` 只能由 `POST /review` 的 `confirm` 动作经 `apply_human_review` 产生；
 - 异常经受控映射返回 4xx JSON（`code`/`message`），不向调用方抛原始堆栈；
