@@ -19,6 +19,7 @@ coverage.xml
 data/
 logs/
 demo-output/
+.agent-collab/runs/
 *.db
 *.sqlite
 *.sqlite3
