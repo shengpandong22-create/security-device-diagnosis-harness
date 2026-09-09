@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B 已完成（录像缺失深化进行中，Phase 2C 未开始）。
+- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -21,7 +21,7 @@
 | Phase 1 | 摄像头黑屏深化（多子场景 + 评测） | 已完成 |
 | Phase 2A | 录像缺失 / 录像异常领域模型 | 已完成 |
 | Phase 2B | 录像只读工具与样例案例 | 已完成 |
-| Phase 2C | 录像规则、报告与评测 | 未开始 |
+| Phase 2C | 录像规则推断、报告增强与评测 | 已完成 |
 
 Phase 0A 交付范围：
 
@@ -92,7 +92,33 @@ Phase 2 交付范围（录像缺失 / 录像异常深化）：
   `recording__check_playback`（均要求 `device:read`）；
 - 2B `samples/devices/recording_missing_cases.json`：5 个固定案例
   （计划未启用 / 计划时间空隙 / 存储满 / 存储离线 / 回放索引缺失）；
-- 2C 规则推断、报告增强与评测脚本未开始。
+- 2C `domain/citation_policy.py`：将 `recording_plan` / `storage_status` /
+  `playback_check` 纳入设备事实类型，使录像事实也能支撑 `probable`；
+- 2C `application/recording_diagnosis_rules.py`：候选根因规则（只输出候选，不产生 confirmed）；
+- 2C 应用服务运行诊断后可输出录像类 `candidate_label`（`RunDiagnosisResult`
+  的 `candidate_label` 兼容摄像头与录像两类标签）；
+- 2C 报告增加录像候选根因、证据链、排查顺序、排除项，以及录像计划 / 存储 / 回放摘要；
+- 2C `scripts/eval_phase2_recording_missing.py`：固定案例集评测。
+
+### 录像缺失子场景
+
+| case_id | device_id | 事实组合 | candidate_label |
+|---|---|---|---|
+| `recording_plan_disabled` | `front-door-cam-1` | 录像计划禁用、回放缺失 | `recording_plan_disabled` |
+| `recording_schedule_gap` | `lobby-cam-1` | 计划启用但查询时段不在计划内、回放缺失 | `recording_schedule_gap` |
+| `storage_full` | `corridor-cam-1` | 计划正常、存储满、回放缺失 | `storage_capacity_or_pool_issue` |
+| `storage_offline` | `corridor-cam-1` | 计划正常、存储离线、回放缺失 | `storage_capacity_or_pool_issue` |
+| `playback_index_missing` | `corridor-cam-1` | 计划与存储正常、回放索引缺失 | `playback_index_or_file_issue` |
+
+录像缺失评测：
+
+```bash
+uv run python scripts/eval_phase2_recording_missing.py
+```
+
+输出 `demo-output/phase2-recording-missing-eval.json` 与 `.md`，
+当前 5 个案例 label 命中率 100%、引用合规率 100%、敏感信息泄露 0、
+`external_model_called=false`。
 
 ## 快速开始
 

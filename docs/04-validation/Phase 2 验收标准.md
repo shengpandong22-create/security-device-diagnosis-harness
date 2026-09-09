@@ -125,19 +125,73 @@
 - [x] 样例无真实 IP / 账号 / 密码 / Token / 邮箱授权码；
 - [x] `admin_password` 为占位串且被 `DeviceConfigSnapshot` 脱敏（有测试断言）。
 
-## 3. Phase 2C：规则、报告与评测（未开始）
+## 3. Phase 2C：规则、报告与评测（已完成）
 
-- [ ] `application/recording_diagnosis_rules.py`
-- [ ] `scripts/eval_phase2_recording_missing.py`
-- [ ] 报告展示候选根因、证据链、排查顺序、排除项
+### 3.1 CitationPolicy 验收
+
+- [x] `DEVICE_FACT_EVIDENCE_TYPES` 纳入 `recording_plan` / `storage_status` / `playback_check`；
+- [x] 所有结论至少引用 1 条 Evidence；
+- [x] `probable` 至少引用 2 类设备事实 Evidence（现含录像类）；
+- [x] 只引用 `knowledge_sop` 最多 `possible`；
+- [x] `confirmed` 仍然只能由 `HumanReview` 产生，规则不产出 confirmed。
+
+### 3.2 录像缺失候选根因规则验收
+
+- [x] `application/recording_diagnosis_rules.py` 新增
+      `RecordingDiagnosisLabel` / `RecordingFacts` / `RecordingDiagnosisRuleResult` /
+      `extract_recording_facts(case)` / `infer_recording_missing_label(case)`；
+- [x] 候选标签：`recording_plan_disabled` / `recording_schedule_gap` /
+      `storage_capacity_or_pool_issue` / `playback_index_or_file_issue` /
+      `insufficient_recording_evidence`；
+- [x] 规则只输出 candidate，不产出 confirmed；
+- [x] 规则基于 `SecurityDiagnosisCase.evidence` payload，不直接读取样例 JSON；
+- [x] 输出包含 `label` / `explanation` / `evidence_chain` / `troubleshooting_order` / `excluded_candidates`；
+- [x] `recording_plan_disabled`：计划 disabled 且回放缺失；
+- [x] `recording_schedule_gap`：计划启用但查询时段不在计划覆盖范围内且回放缺失；
+- [x] `storage_capacity_or_pool_issue`：存储 full / offline / degraded 或容量不足且回放缺失；
+- [x] `playback_index_or_file_issue`：计划与存储正常，回放索引缺失 / 文件损坏；
+- [x] `insufficient_recording_evidence`：缺少录像计划或回放检查等关键事实，不得给 probable。
+
+### 3.3 应用服务与报告验收
+
+- [x] `SecurityDiagnosisApplicationService.run_diagnosis` 运行后可输出录像类 `candidate_label`；
+- [x] `RunDiagnosisResult.candidate_label` 兼容摄像头与录像两类标签（联合类型）；
+- [x] 不影响 Phase 1 摄像头黑屏规则，不改变 confirmed 边界，不绕过 CitationPolicy；
+- [x] 报告新增"录像诊断（候选）"小节：候选根因、证据链、排查顺序、排除项；
+- [x] 报告新增录像计划摘要、存储状态摘要、回放检查摘要；
+- [x] 报告继续对 payload 脱敏，不泄露密码 / Token / secret；
+- [x] Evidence ID 可追踪，HumanReview 信息保留；
+- [x] Phase 0 / 1 报告不回退。
+
+### 3.4 固定评测验收
+
+- [x] `scripts/eval_phase2_recording_missing.py` 评测 5 个固定案例；
+- [x] 输出 `demo-output/phase2-recording-missing-eval.json` 与 `.md`；
+- [x] `total = 5`；
+- [x] `passed = 5`；
+- [x] `label_accuracy = 1.0`；
+- [x] `citation_compliance = 1.0`；
+- [x] `external_model_called = false`；
+- [x] `sensitive_leak_count = 0`；
+- [x] `redaction_marker = ***REDACTED***`。
+
+### 3.5 固定样例案例对照
+
+| case_id | device_id | 录像计划 | 存储 | 回放 | candidate_label |
+|---|---|---|---|---|---|
+| `recording_plan_disabled` | `front-door-cam-1` | disabled / manual | normal | missing | `recording_plan_disabled` |
+| `recording_schedule_gap` | `lobby-cam-1` | enabled / event_triggered（仅工作日 09:00-18:00） | normal | missing | `recording_schedule_gap` |
+| `storage_full` | `corridor-cam-1` | enabled / continuous（全天） | full | missing | `storage_capacity_or_pool_issue` |
+| `storage_offline` | `corridor-cam-1` | enabled / continuous（全天） | offline | missing | `storage_capacity_or_pool_issue` |
+| `playback_index_missing` | `corridor-cam-1` | enabled / continuous（全天） | normal | index_missing（file_count=12） | `playback_index_or_file_issue` |
 
 ## 4. Phase 2 Definition of Done
 
 - [x] Phase 2A 领域模型与测试完成；
 - [x] Phase 2B 只读工具与样例案例完成；
-- [ ] Phase 2C 规则、报告与固定评测完成；
-- [ ] label_accuracy >= 0.75；
-- [ ] citation_compliance == 1.0；
-- [ ] sensitive_leak_count == 0；
-- [ ] external_model_called == false；
-- [ ] Git 工作区干净并推送。
+- [x] Phase 2C 规则、报告与固定评测完成；
+- [x] label_accuracy == 1.0（>= 0.75）；
+- [x] citation_compliance == 1.0；
+- [x] sensitive_leak_count == 0；
+- [x] external_model_called == false；
+- [x] Git 工作区无遗留临时文件（推送由人工确认）。
