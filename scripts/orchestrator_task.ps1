@@ -1,0 +1,378 @@
+<#
+.SYNOPSIS
+Run a bounded Codex -> CodeBuddy -> Codex task handoff.
+
+.DESCRIPTION
+This script is the practical version of orchestrator_probe.ps1.
+
+It accepts a requirement file, creates an isolated git worktree, optionally asks
+Codex CLI to produce a plan, lets CodeBuddy implement the task, optionally asks
+Codex CLI to review the diff, and stops for human inspection. It never merges
+or pushes automatically.
+
+Recommended first run:
+
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\orchestrator_task.ps1 `
+  -ReqFile .agent-collab\inbox\phase3a-1-access-domain.md `
+  -UseReqAsPlanOnCodexFailure `
+  -AllowDirty
+#>
+
+param(
+    [Parameter(Mandatory = $true)][string]$ReqFile,
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [string]$TaskName = "",
+    [string]$CodeBuddyModel = "fast-model",
+    [string]$CodexModel = "gpt-5.6-luna",
+    [int]$CodeBuddyMaxTurns = 20,
+    [int]$MaxFixRounds = 1,
+    [int]$CodexTimeoutSeconds = 300,
+    [int]$CodeBuddyTimeoutSeconds = 1800,
+    [switch]$UseReqAsPlanOnCodexFailure,
+    [switch]$SkipCodexPlan,
+    [switch]$SkipCodexReview,
+    [switch]$AllowDirty
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+function Resolve-CommandPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [string]$Fallback
+    )
+
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        return $command.Source
+    }
+    if ($Fallback -and (Test-Path $Fallback)) {
+        return $Fallback
+    }
+    throw "Command not found: $Name"
+}
+
+function Invoke-ExternalWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$CommandArguments,
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds
+    )
+
+    $job = Start-Job -ScriptBlock {
+        param($FilePath, $CommandArguments, $WorkingDirectory)
+        Set-Location -LiteralPath $WorkingDirectory
+        $output = & $FilePath @CommandArguments 2>&1 | Out-String
+        [pscustomobject]@{
+            Output = $output
+            ExitCode = $LASTEXITCODE
+        }
+    } -ArgumentList $FilePath, $CommandArguments, $WorkingDirectory
+
+    $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
+    if ($null -eq $completed) {
+        Stop-Job -Job $job -ErrorAction SilentlyContinue
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        return [pscustomobject]@{
+            Output = "TIMEOUT after $TimeoutSeconds seconds"
+            ExitCode = 124
+            TimedOut = $true
+        }
+    }
+
+    $result = Receive-Job -Job $job
+    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    return [pscustomobject]@{
+        Output = [string]$result.Output
+        ExitCode = [int]$result.ExitCode
+        TimedOut = $false
+    }
+}
+
+function Test-FalseSuccessOutput {
+    param([string]$Text)
+
+    $patterns = @(
+        "Authentication required",
+        "Please use /login",
+        "429",
+        "rate limit",
+        "Do you want to proceed",
+        "permission prompts are not available",
+        "not recognized",
+        "command not found",
+        "Unknown command"
+    )
+
+    foreach ($pattern in $patterns) {
+        if ($Text -match [regex]::Escape($pattern)) {
+            return $pattern
+        }
+    }
+    return $null
+}
+
+function Test-ExternalResultOk {
+    param([Parameter(Mandatory = $true)]$Result)
+
+    $falseSuccess = Test-FalseSuccessOutput $Result.Output
+    return (-not $Result.TimedOut -and $Result.ExitCode -eq 0 -and $null -eq $falseSuccess)
+}
+
+function Convert-ToSafeSlug {
+    param([string]$Text)
+
+    $slug = $Text.ToLowerInvariant() -replace "[^a-z0-9._-]+", "-"
+    $slug = $slug.Trim("-")
+    if ([string]::IsNullOrWhiteSpace($slug)) {
+        return "task"
+    }
+    return $slug
+}
+
+function Write-TextFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Text
+    )
+
+    $parent = Split-Path $Path -Parent
+    if ($parent) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    $Text | Set-Content -Path $Path -Encoding UTF8
+}
+
+$ProjectRoot = (Resolve-Path $ProjectRoot).Path
+$ReqFile = (Resolve-Path $ReqFile).Path
+$reqName = [System.IO.Path]::GetFileNameWithoutExtension($ReqFile)
+if ([string]::IsNullOrWhiteSpace($TaskName)) {
+    $TaskName = $reqName
+}
+$taskSlug = Convert-ToSafeSlug $TaskName
+
+$status = git -C $ProjectRoot status --short
+if ($status -and -not $AllowDirty) {
+    throw "Project worktree is not clean. Commit/stash changes first, or pass -AllowDirty. Current status:`n$status"
+}
+
+$codebuddy = Resolve-CommandPath `
+    -Name "codebuddy" `
+    -Fallback (Join-Path $env:LOCALAPPDATA "codebuddy\bin\codebuddy.exe")
+$codex = $null
+if (-not ($SkipCodexPlan -and $SkipCodexReview)) {
+    $codex = Resolve-CommandPath -Name "codex"
+}
+
+$runId = Get-Date -Format "yyyyMMdd-HHmmss"
+$runDir = Join-Path $ProjectRoot ".agent-collab\runs\$taskSlug-$runId"
+$worktreeRoot = Join-Path (Split-Path $ProjectRoot -Parent) "security-device-diagnosis-harness-$taskSlug-$runId"
+$branchName = "codex/$taskSlug-$runId"
+New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+
+$planPath = Join-Path $runDir "PLAN.md"
+$planLogPath = Join-Path $runDir "CODEX_PLAN.log.txt"
+$codebuddyLogPath = Join-Path $runDir "CODEBUDDY_IMPL.log.txt"
+$reviewPath = Join-Path $runDir "REVIEW.md"
+$reviewLogPath = Join-Path $runDir "CODEX_REVIEW.log.txt"
+$summaryPath = Join-Path $runDir "SUMMARY.md"
+
+$reqText = Get-Content $ReqFile -Raw -Encoding UTF8
+
+if ($SkipCodexPlan) {
+    Write-TextFile -Path $planPath -Text $reqText
+}
+else {
+    $codexPlanPrompt = @(
+        "You are Codex acting as designer and quality supervisor.",
+        "Read the requirement and produce a bounded implementation plan for CodeBuddy.",
+        "",
+        "Rules:",
+        "- Do not modify files.",
+        "- Keep the task scope minimal.",
+        "- Include acceptance criteria, forbidden changes, and validation commands.",
+        "- Output Markdown only.",
+        "",
+        "Requirement file: $ReqFile"
+    ) -join [Environment]::NewLine
+
+    $codexPlanArgs = @(
+        "exec",
+        "--model", $CodexModel,
+        "--sandbox", "read-only",
+        "--color", "never",
+        "--cd", $ProjectRoot,
+        $codexPlanPrompt
+    )
+    $planResult = Invoke-ExternalWithTimeout `
+        -FilePath $codex `
+        -CommandArguments $codexPlanArgs `
+        -WorkingDirectory $ProjectRoot `
+        -TimeoutSeconds $CodexTimeoutSeconds
+    Write-TextFile -Path $planLogPath -Text $planResult.Output
+
+    if (Test-ExternalResultOk $planResult) {
+        Write-TextFile -Path $planPath -Text $planResult.Output
+    }
+    elseif ($UseReqAsPlanOnCodexFailure) {
+        $fallbackPlan = @(
+            "# Fallback Plan",
+            "",
+            "Codex CLI did not produce a plan within the configured timeout.",
+            "The requirement file is used as the authoritative plan for this bounded run.",
+            "",
+            "## Original Requirement",
+            "",
+            $reqText
+        ) -join [Environment]::NewLine
+        Write-TextFile -Path $planPath -Text $fallbackPlan
+    }
+    else {
+        throw "Codex plan failed. See $planLogPath"
+    }
+}
+
+git -C $ProjectRoot worktree add -b $branchName $worktreeRoot HEAD | Out-Null
+
+$codebuddyPrompt = @(
+    "You are CodeBuddy acting as implementation engineer.",
+    "",
+    "Implement the task in this isolated git worktree:",
+    $worktreeRoot,
+    "",
+    "Authoritative requirement file:",
+    $ReqFile,
+    "",
+    "Implementation plan file:",
+    $planPath,
+    "",
+    "Hard rules:",
+    "- Follow the requirement scope exactly.",
+    "- Do not implement future phases.",
+    "- Do not read or write .env files.",
+    "- Do not use real API keys, tokens, credentials, real devices, or biometric data.",
+    "- Do not push, merge, or create pull requests.",
+    "- Run the validation commands required by the plan.",
+    "- Commit your changes locally using small English conventional commits.",
+    "",
+    "Final report:",
+    "- Print changed files.",
+    "- Print validation commands and results.",
+    "- Print git log --oneline -8.",
+    "- Print git status --short.",
+    "- Explain any deviation from the requirement."
+) -join [Environment]::NewLine
+
+$codebuddyArgs = @(
+    "-p",
+    "-y",
+    "--model", $CodeBuddyModel,
+    "--allowedTools", "Read,Write,Edit,Bash,Grep,Glob",
+    "--max-turns", "$CodeBuddyMaxTurns",
+    "--output-format", "text",
+    $codebuddyPrompt
+)
+$implementationResult = Invoke-ExternalWithTimeout `
+    -FilePath $codebuddy `
+    -CommandArguments $codebuddyArgs `
+    -WorkingDirectory $worktreeRoot `
+    -TimeoutSeconds $CodeBuddyTimeoutSeconds
+Write-TextFile -Path $codebuddyLogPath -Text $implementationResult.Output
+
+$implOk = Test-ExternalResultOk $implementationResult
+
+$reviewOk = $false
+if ($implOk -and -not $SkipCodexReview) {
+    $reviewPrompt = @(
+        "You are Codex acting as a strict read-only reviewer.",
+        "Review the current branch relative to HEAD~1 or main if available.",
+        "",
+        "Rules:",
+        "- Do not modify files.",
+        "- Check scope, safety boundaries, tests, docs, and git status.",
+        "- Output Markdown only.",
+        "- Include sections: conclusion, critical issues, important issues, suggestions, validation verdict.",
+        "- If there are critical issues, say REVIEW_FAILED.",
+        "- If there are no critical issues, say REVIEW_PASSED.",
+        "",
+        "Requirement file: $ReqFile",
+        "Plan file: $planPath"
+    ) -join [Environment]::NewLine
+
+    $reviewArgs = @(
+        "exec",
+        "--model", $CodexModel,
+        "--sandbox", "read-only",
+        "--color", "never",
+        "--cd", $worktreeRoot,
+        $reviewPrompt
+    )
+    $reviewResult = Invoke-ExternalWithTimeout `
+        -FilePath $codex `
+        -CommandArguments $reviewArgs `
+        -WorkingDirectory $worktreeRoot `
+        -TimeoutSeconds $CodexTimeoutSeconds
+    Write-TextFile -Path $reviewLogPath -Text $reviewResult.Output
+    Write-TextFile -Path $reviewPath -Text $reviewResult.Output
+    $reviewOk = Test-ExternalResultOk $reviewResult
+}
+elseif ($implOk -and $SkipCodexReview) {
+    Write-TextFile -Path $reviewPath -Text "# Review skipped`n`nSkipCodexReview was set for this run."
+    $reviewOk = $true
+}
+
+$changedFiles = git -C $worktreeRoot status --short
+$headLog = git -C $worktreeRoot log --oneline -8
+$passed = ($implOk -and ($SkipCodexReview -or $reviewOk))
+
+$summary = @(
+    "# Orchestrator Task Summary",
+    "",
+    "- passed: $($passed.ToString().ToLowerInvariant())",
+    "- task: $TaskName",
+    "- run_id: $runId",
+    "- branch: $branchName",
+    "- worktree: $worktreeRoot",
+    "- run_dir: $runDir",
+    "- codebuddy_model: $CodeBuddyModel",
+    "- codex_model: $CodexModel",
+    "- implementation_ok: $($implOk.ToString().ToLowerInvariant())",
+    "- review_ok: $($reviewOk.ToString().ToLowerInvariant())",
+    "",
+    "## Files",
+    "",
+    "- REQ: $ReqFile",
+    "- PLAN: $planPath",
+    "- CODEBUDDY_LOG: $codebuddyLogPath",
+    "- REVIEW: $reviewPath",
+    "",
+    "## Worktree git status",
+    "",
+    '````text',
+    ($changedFiles | Out-String),
+    '````',
+    "",
+    "## Worktree git log",
+    "",
+    '````text',
+    ($headLog | Out-String),
+    '````',
+    "",
+    "## Cleanup",
+    "",
+    '````powershell',
+    "git -C `"$ProjectRoot`" worktree remove `"$worktreeRoot`"",
+    "git -C `"$ProjectRoot`" branch -D `"$branchName`"",
+    '````'
+) -join [Environment]::NewLine
+
+Write-TextFile -Path $summaryPath -Text $summary
+Write-Host $summary
+
+if (-not $passed) {
+    exit 1
+}
+
+exit 0

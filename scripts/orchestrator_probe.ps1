@@ -175,8 +175,8 @@ $codexPlanPrompt = @(
 $codexPlanArgs = @(
     "exec",
     "--sandbox", "read-only",
-    "--ask-for-approval", "never",
-    "-C", $ProjectRoot,
+    "--color", "never",
+    "--cd", $ProjectRoot,
     $codexPlanPrompt
 )
 $planResult = Invoke-ExternalWithTimeout `
@@ -184,8 +184,8 @@ $planResult = Invoke-ExternalWithTimeout `
     -CommandArguments $codexPlanArgs `
     -WorkingDirectory $ProjectRoot `
     -TimeoutSeconds $CodexTimeoutSeconds
-Assert-ExternalResult -Result $planResult -StepName "Codex plan"
 $planResult.Output | Set-Content -Path $planPath -Encoding UTF8
+Assert-ExternalResult -Result $planResult -StepName "Codex plan"
 
 git -C $ProjectRoot worktree add -b $branchName $worktreeRoot HEAD | Out-Null
 
@@ -252,8 +252,8 @@ $codexReviewPrompt = @(
 $codexReviewArgs = @(
     "exec",
     "--sandbox", "read-only",
-    "--ask-for-approval", "never",
-    "-C", $worktreeRoot,
+    "--color", "never",
+    "--cd", $worktreeRoot,
     $codexReviewPrompt
 )
 $reviewResult = Invoke-ExternalWithTimeout `
@@ -261,8 +261,8 @@ $reviewResult = Invoke-ExternalWithTimeout `
     -CommandArguments $codexReviewArgs `
     -WorkingDirectory $worktreeRoot `
     -TimeoutSeconds $CodexTimeoutSeconds
-Assert-ExternalResult -Result $reviewResult -StepName "Codex review"
 $reviewResult.Output | Set-Content -Path $reviewPath -Encoding UTF8
+Assert-ExternalResult -Result $reviewResult -StepName "Codex review"
 
 $summary = @(
     "# Orchestrator Probe Summary",
