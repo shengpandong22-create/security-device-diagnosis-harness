@@ -47,21 +47,50 @@ def _conclusion(diagnosis_id: str, evidence_ids: list[str], confidence: str) -> 
     )
 
 
-def test_policy_accepts_probable_citing_device_fact():
+def test_policy_accepts_probable_citing_two_device_fact_types():
+    """Phase 1：probable 至少引用两类设备事实 Evidence。"""
     case = make_case(DIAG_A)
-    evidence = _add(case, EvidenceType.DEVICE_STATUS)
+    status = _add(case, EvidenceType.DEVICE_STATUS)
+    alarm = _add(case, EvidenceType.DEVICE_ALARM)
     policy = CitationPolicy()
 
-    policy.validate(_conclusion(DIAG_A, [evidence.evidence_id], "probable"), case)
+    policy.validate(
+        _conclusion(DIAG_A, [status.evidence_id, alarm.evidence_id], "probable"), case
+    )
 
 
-def test_policy_accepts_probable_citing_alarm_or_config():
-    for evidence_type in (EvidenceType.DEVICE_ALARM, EvidenceType.DEVICE_CONFIG):
-        case = make_case(DIAG_A)
-        evidence = _add(case, evidence_type)
+def test_policy_rejects_probable_citing_single_device_fact_type():
+    """Phase 1：只有一类设备事实时，probable 不被接受。"""
+    case = make_case(DIAG_A)
+    status = _add(case, EvidenceType.DEVICE_STATUS)
+    another_status = _add(case, EvidenceType.DEVICE_STATUS)
+
+    with pytest.raises(CitationPolicyViolation, match="probable"):
         CitationPolicy().validate(
-            _conclusion(DIAG_A, [evidence.evidence_id], "probable"), case
+            _conclusion(DIAG_A, [status.evidence_id, another_status.evidence_id], "probable"),
+            case,
         )
+
+
+@pytest.mark.parametrize(
+    "evidence_type",
+    [
+        EvidenceType.DEVICE_ALARM,
+        EvidenceType.DEVICE_CONFIG,
+        EvidenceType.DEVICE_CHANNEL,
+        EvidenceType.DEVICE_STREAM,
+        EvidenceType.PLATFORM_PULL,
+    ],
+)
+def test_policy_accepts_probable_with_each_new_device_fact_type(evidence_type):
+    """新增的摄像头事实类型与设备状态组合时可以支撑 probable。"""
+    case = make_case(DIAG_A)
+    status = _add(case, EvidenceType.DEVICE_STATUS)
+    other = _add(case, evidence_type)
+
+    CitationPolicy().validate(
+        _conclusion(DIAG_A, [status.evidence_id, other.evidence_id], "probable"), case
+    )
 
 
 def test_policy_rejects_probable_citing_only_knowledge():
@@ -133,11 +162,25 @@ def test_device_fact_evidence_types_exclude_knowledge():
             EvidenceType.DEVICE_STATUS,
             EvidenceType.DEVICE_ALARM,
             EvidenceType.DEVICE_CONFIG,
+            EvidenceType.DEVICE_CHANNEL,
+            EvidenceType.DEVICE_STREAM,
+            EvidenceType.PLATFORM_PULL,
         }
     )
 
     assert expected == DEVICE_FACT_EVIDENCE_TYPES
     assert EvidenceType.KNOWLEDGE_SOP not in DEVICE_FACT_EVIDENCE_TYPES
+    assert EvidenceType.HUMAN_FEEDBACK not in DEVICE_FACT_EVIDENCE_TYPES
+
+
+def test_new_camera_evidence_types_are_device_facts():
+    """Phase 1 新增的三个 EvidenceType 必须纳入设备事实集合。"""
+    for evidence_type in (
+        EvidenceType.DEVICE_CHANNEL,
+        EvidenceType.DEVICE_STREAM,
+        EvidenceType.PLATFORM_PULL,
+    ):
+        assert evidence_type in DEVICE_FACT_EVIDENCE_TYPES
 
 
 def test_policy_rejects_possible_without_citation():
@@ -178,7 +221,10 @@ def test_policy_still_checks_reliability_of_evidence_source():
             evidence_type=EvidenceType.DEVICE_STATUS,
         )
     )
+    alarm = _add(case, EvidenceType.DEVICE_ALARM)
 
     assert evidence.source is EvidenceSource.DEVICE_GATEWAY
     assert evidence.reliability is Reliability.HIGH
-    CitationPolicy().validate(_conclusion(DIAG_A, [evidence.evidence_id], "probable"), case)
+    CitationPolicy().validate(
+        _conclusion(DIAG_A, [evidence.evidence_id, alarm.evidence_id], "probable"), case
+    )

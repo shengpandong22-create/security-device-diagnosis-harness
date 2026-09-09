@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
+from security_diagnosis_harness.bootstrap.container import build_registry
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.conclusion import (
     ConclusionConfidence,
@@ -35,11 +36,7 @@ from security_diagnosis_harness.domain.evidence import (
 )
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 from security_diagnosis_harness.tools.contracts import ToolExecutionContext, ToolPermission
-from security_diagnosis_harness.tools.device_alarm_events import DeviceAlarmEventsTool
-from security_diagnosis_harness.tools.device_config import DeviceConfigSnapshotTool
-from security_diagnosis_harness.tools.device_status import DeviceStatusTool
-from security_diagnosis_harness.tools.knowledge_search import KnowledgeSearchTool
-from security_diagnosis_harness.tools.registry import ToolRegistry, default_permissions
+from security_diagnosis_harness.tools.registry import default_permissions
 
 DEVICE_ID = "camera-3f-001"
 
@@ -229,11 +226,6 @@ def make_tool_context(
 
 
 @pytest.fixture
-def tool_registry() -> ToolRegistry:
-    """注册 Phase 0 四个只读工具的 Registry。"""
-    registry = ToolRegistry()
-    registry.register(DeviceStatusTool())
-    registry.register(DeviceAlarmEventsTool())
-    registry.register(DeviceConfigSnapshotTool())
-    registry.register(KnowledgeSearchTool())
-    return registry
+def tool_registry() -> object:
+    """注册全部只读工具的 Registry（Phase 0 四个 + Phase 1 三个）。"""
+    return build_registry()
