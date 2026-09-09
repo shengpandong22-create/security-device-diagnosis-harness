@@ -22,6 +22,11 @@ from security_diagnosis_harness.application.camera_diagnosis_rules import (
     CameraDiagnosisRuleResult,
     infer_camera_black_screen_label,
 )
+from security_diagnosis_harness.application.recording_diagnosis_rules import (
+    RecordingDiagnosisLabel,
+    RecordingDiagnosisRuleResult,
+    infer_recording_missing_label,
+)
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.citation_policy import (
@@ -71,8 +76,9 @@ class RunDiagnosisResult(BaseModel):
     rounds: int = 0
     tool_calls: int = 0
     error: str | None = None
-    # Phase 1：摄像头黑屏候选根因（只作为候选解释，不产生 confirmed）。
-    candidate_label: CameraDiagnosisLabel | None = None
+    # Phase 1/2C：候选根因标签（只作为候选解释，不产生 confirmed）。
+    # 摄像头场景为 CameraDiagnosisLabel，录像场景为 RecordingDiagnosisLabel。
+    candidate_label: CameraDiagnosisLabel | RecordingDiagnosisLabel | None = None
     candidate_explanation: str = ""
     evidence_chain: list[str] = Field(default_factory=list)
     excluded_candidates: list[str] = Field(default_factory=list)
@@ -374,19 +380,24 @@ class SecurityDiagnosisApplicationService:
             troubleshooting_order=insight.troubleshooting_order,
         )
 
-    # ------------------------------------------------------- 候选根因（Phase 1）
-    def infer_candidate_label(self, case: SecurityDiagnosisCase) -> CameraDiagnosisRuleResult:
+    # ------------------------------------------------------- 候选根因（Phase 1/2C）
+    def infer_candidate_label(
+        self, case: SecurityDiagnosisCase
+    ) -> CameraDiagnosisRuleResult | RecordingDiagnosisRuleResult:
         """根据已落地 Evidence 推断候选根因标签。
 
-        只对摄像头黑屏场景生效；其他故障类型返回"事实不足"占位，
+        按故障类型分派到对应规则；摄像头黑屏走摄像头规则，
+        录像缺失走录像规则；其他故障类型返回"事实不足"占位。
         不改变任何状态，也不产生 confirmed。
         """
-        if case.fault_type is not SecurityFaultType.CAMERA_BLACK_SCREEN:
-            return CameraDiagnosisRuleResult(
-                label=CameraDiagnosisLabel.INSUFFICIENT_CAMERA_FACTS,
-                explanation="当前故障类型不使用摄像头黑屏候选规则",
-            )
-        return infer_camera_black_screen_label(case.evidence)
+        if case.fault_type is SecurityFaultType.CAMERA_BLACK_SCREEN:
+            return infer_camera_black_screen_label(case.evidence)
+        if case.fault_type is SecurityFaultType.RECORDING_MISSING:
+            return infer_recording_missing_label(case)
+        return CameraDiagnosisRuleResult(
+            label=CameraDiagnosisLabel.INSUFFICIENT_CAMERA_FACTS,
+            explanation="当前故障类型不使用摄像头黑屏候选规则",
+        )
 
     # ------------------------------------------------------------------ 审核
     def review_diagnosis(
