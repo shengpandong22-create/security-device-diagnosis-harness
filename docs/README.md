@@ -14,6 +14,7 @@
 ## 02-specifications
 
 - [Phase 0 实现规格说明](./02-specifications/Phase%200%20实现规格说明.md)
+- [Phase 1 摄像头黑屏深化实施规格说明](./02-specifications/Phase%201%20摄像头黑屏深化实施规格说明.md)
 
 ## 03-progress
 
@@ -22,3 +23,4 @@
 ## 04-validation
 
 - [Phase 0 验收标准](./04-validation/Phase%200%20验收标准.md)
+- [Phase 1 验收标准](./04-validation/Phase%201%20验收标准.md)
