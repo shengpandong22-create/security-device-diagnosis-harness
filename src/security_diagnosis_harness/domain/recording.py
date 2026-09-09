@@ -243,6 +243,27 @@ class PlaybackCheckResult(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_status_file_count(self) -> PlaybackCheckResult:
+        """校验 status 与 file_count 是否自洽。
+
+        - `available`：录像可用且可回放，因此必须有录像文件；
+        - `missing`：该时间段没有录像，因此不应有文件；
+        - `corrupted`：文件存在但损坏，允许 file_count > 0；
+        - `index_missing`：平台可见性不一致，file_count 不强制。
+        """
+        if self.status is PlaybackStatus.AVAILABLE and self.file_count <= 0:
+            raise ValueError(
+                f"status={PlaybackStatus.AVAILABLE.value} 时 file_count 必须大于 0，"
+                f"当前为 {self.file_count}"
+            )
+        if self.status is PlaybackStatus.MISSING and self.file_count != 0:
+            raise ValueError(
+                f"status={PlaybackStatus.MISSING.value} 时 file_count 必须为 0，"
+                f"当前为 {self.file_count}"
+            )
+        return self
+
     @property
     def has_files(self) -> bool:
         """该时间段是否检索到录像文件。"""

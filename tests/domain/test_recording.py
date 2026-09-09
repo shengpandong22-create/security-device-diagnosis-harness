@@ -353,6 +353,7 @@ def test_playback_rejects_non_positive_window():
             start_at=BASE_TIME,
             end_at=BASE_TIME,
             status=PlaybackStatus.AVAILABLE,
+            file_count=1,
             playable=True,
         )
 
@@ -403,6 +404,84 @@ def test_expected_playable_mapping_covers_all_statuses():
         PlaybackStatus.INDEX_MISSING,
     ):
         assert EXPECTED_PLAYABLE_BY_STATUS[status] is False
+
+
+def test_playback_available_requires_positive_file_count():
+    """available 表示录像可用且可回放，不允许 file_count=0。"""
+    with pytest.raises(pydantic.ValidationError, match="file_count 必须大于 0"):
+        PlaybackCheckResult(
+            device_id=DEVICE_ID,
+            channel_id=CHANNEL_ID,
+            start_at=BASE_TIME - timedelta(hours=1),
+            end_at=BASE_TIME,
+            status=PlaybackStatus.AVAILABLE,
+            playable=True,
+        )
+
+
+def test_playback_missing_requires_zero_file_count():
+    """missing 表示该时间段没有录像，不允许带文件计数。"""
+    with pytest.raises(pydantic.ValidationError, match="file_count 必须为 0"):
+        PlaybackCheckResult(
+            device_id=DEVICE_ID,
+            channel_id=CHANNEL_ID,
+            start_at=BASE_TIME - timedelta(hours=1),
+            end_at=BASE_TIME,
+            status=PlaybackStatus.MISSING,
+            file_count=3,
+            playable=False,
+        )
+
+
+def test_playback_corrupted_allows_existing_files():
+    """corrupted 允许存在文件但损坏，file_count > 0 合法。"""
+    result = PlaybackCheckResult(
+        device_id=DEVICE_ID,
+        channel_id=CHANNEL_ID,
+        start_at=BASE_TIME - timedelta(hours=1),
+        end_at=BASE_TIME,
+        status=PlaybackStatus.CORRUPTED,
+        file_count=2,
+        playable=False,
+        failure_reason="录像文件无法解码",
+    )
+
+    assert result.file_count == 2
+    assert result.has_files is True
+    assert result.playable is False
+
+
+@pytest.mark.parametrize("file_count", [0, 3])
+def test_playback_index_missing_does_not_force_file_count(file_count):
+    """index_missing 的平台可见性不一致，file_count 不强制。"""
+    result = PlaybackCheckResult(
+        device_id=DEVICE_ID,
+        channel_id=CHANNEL_ID,
+        start_at=BASE_TIME - timedelta(hours=1),
+        end_at=BASE_TIME,
+        status=PlaybackStatus.INDEX_MISSING,
+        file_count=file_count,
+        playable=False,
+    )
+
+    assert result.file_count == file_count
+    assert result.playable is False
+
+
+def test_playback_available_always_has_files():
+    """校验通过后，available 与 has_files / is_missing 语义保持一致。"""
+    result = PlaybackCheckResult(
+        device_id=DEVICE_ID,
+        channel_id=CHANNEL_ID,
+        start_at=BASE_TIME - timedelta(hours=1),
+        end_at=BASE_TIME,
+        status=PlaybackStatus.AVAILABLE,
+        file_count=1,
+        playable=True,
+    )
+
+    assert result.has_files is True
+    assert result.is_missing is False
 
 
 # --------------------------------------------------------------- 通用边界
