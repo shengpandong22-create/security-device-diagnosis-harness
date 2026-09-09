@@ -1,0 +1,283 @@
+{
+  "version": 1,
+  "devices": [
+    {
+      "device_id": "cam-offline-01",
+      "case_id": "camera_offline",
+      "expected_label": "device_offline_or_network_unreachable",
+      "snapshot": {
+        "online": false,
+        "channel_online": false,
+        "stream_status": "unknown",
+        "recording_status": "stopped"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "offline",
+        "bound": true,
+        "platform_registered": true
+      },
+      "streams": {
+        "main": {
+          "pull_status": "failed",
+          "encoding": "H.265",
+          "resolution": "1920x1080",
+          "frame_rate": 25,
+          "bitrate_kbps": 2048,
+          "error_code": "DEVICE_UNREACHABLE"
+        }
+      },
+      "platform_pull": {
+        "platform": "vms-platform-a",
+        "pull_status": "failed",
+        "error_code": "DEVICE_UNREACHABLE"
+      },
+      "alarms": [
+        {
+          "event_type": "DEVICE_OFFLINE",
+          "severity": "critical",
+          "message": "设备离线，最后心跳超时"
+        },
+        {
+          "event_type": "HEARTBEAT_TIMEOUT",
+          "severity": "critical",
+          "message": "设备心跳超时"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.265",
+        "resolution": "1920x1080",
+        "frame_rate": 25,
+        "bitrate_kbps": 2048,
+        "config": {
+          "bitrate_mode": "CBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "cam-channel-offline-01",
+      "case_id": "channel_offline",
+      "expected_label": "channel_binding_or_platform_access_issue",
+      "snapshot": {
+        "online": true,
+        "channel_online": false,
+        "stream_status": "unknown",
+        "recording_status": "recording"
+      },
+      "channel": {
+        "channel_id": "2",
+        "channel_status": "offline",
+        "bound": false,
+        "platform_registered": false
+      },
+      "streams": {
+        "main": {
+          "pull_status": "failed",
+          "encoding": "H.264",
+          "resolution": "1920x1080",
+          "frame_rate": 25,
+          "bitrate_kbps": 3072,
+          "error_code": "CHANNEL_NOT_FOUND"
+        }
+      },
+      "platform_pull": {
+        "platform": "vms-platform-a",
+        "pull_status": "failed",
+        "error_code": "CHANNEL_NOT_REGISTERED"
+      },
+      "alarms": [
+        {
+          "event_type": "CHANNEL_OFFLINE",
+          "severity": "warning",
+          "message": "通道离线，未绑定摄像头"
+        },
+        {
+          "event_type": "CHANNEL_UNBOUND",
+          "severity": "warning",
+          "message": "通道未绑定设备"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.264",
+        "resolution": "1920x1080",
+        "frame_rate": 25,
+        "bitrate_kbps": 3072,
+        "config": {
+          "bitrate_mode": "VBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "cam-stream-failed-01",
+      "case_id": "stream_publish_failed",
+      "expected_label": "stream_publish_or_encoder_issue",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "abnormal",
+        "recording_status": "recording"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "online",
+        "bound": true,
+        "platform_registered": true
+      },
+      "streams": {
+        "main": {
+          "pull_status": "failed",
+          "encoding": "H.265",
+          "resolution": "1920x1080",
+          "frame_rate": 25,
+          "bitrate_kbps": 2048,
+          "error_code": "STREAM_PUBLISH_FAILED"
+        },
+        "sub": {
+          "pull_status": "success",
+          "encoding": "H.264",
+          "resolution": "640x480",
+          "frame_rate": 15,
+          "bitrate_kbps": 512
+        }
+      },
+      "platform_pull": {
+        "platform": "vms-platform-a",
+        "pull_status": "failed",
+        "error_code": "STREAM_PUBLISH_FAILED"
+      },
+      "alarms": [
+        {
+          "event_type": "STREAM_PUBLISH_FAILED",
+          "severity": "critical",
+          "message": "主码流发布失败"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.265",
+        "resolution": "1920x1080",
+        "frame_rate": 25,
+        "bitrate_kbps": 2048,
+        "config": {
+          "bitrate_mode": "CBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "cam-high-bitrate-01",
+      "case_id": "high_bitrate_encoder_timeout",
+      "expected_label": "overloaded_encoding_configuration",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "abnormal",
+        "recording_status": "recording"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "online",
+        "bound": true,
+        "platform_registered": true
+      },
+      "streams": {
+        "main": {
+          "pull_status": "timeout",
+          "encoding": "H.265",
+          "resolution": "2560x1440",
+          "frame_rate": 30,
+          "bitrate_kbps": 8192,
+          "error_code": "ENCODER_TIMEOUT"
+        }
+      },
+      "platform_pull": {
+        "platform": "vms-platform-a",
+        "pull_status": "timeout",
+        "error_code": "ENCODER_TIMEOUT"
+      },
+      "alarms": [
+        {
+          "event_type": "ENCODER_TIMEOUT",
+          "severity": "critical",
+          "message": "编码器响应超时"
+        },
+        {
+          "event_type": "HIGH_CPU_USAGE",
+          "severity": "warning",
+          "message": "设备 CPU 占用过高"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.265",
+        "resolution": "2560x1440",
+        "frame_rate": 30,
+        "bitrate_kbps": 8192,
+        "config": {
+          "bitrate_mode": "CBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "cam-platform-pull-01",
+      "case_id": "platform_pull_failed",
+      "expected_label": "platform_pull_or_access_path_issue",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "recording"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "online",
+        "bound": true,
+        "platform_registered": true
+      },
+      "streams": {
+        "main": {
+          "pull_status": "success",
+          "encoding": "H.264",
+          "resolution": "1920x1080",
+          "frame_rate": 25,
+          "bitrate_kbps": 4096
+        },
+        "sub": {
+          "pull_status": "success",
+          "encoding": "H.264",
+          "resolution": "640x480",
+          "frame_rate": 15,
+          "bitrate_kbps": 512
+        }
+      },
+      "platform_pull": {
+        "platform": "vms-platform-a",
+        "pull_status": "failed",
+        "error_code": "PLATFORM_PULL_FAILED"
+      },
+      "alarms": [
+        {
+          "event_type": "PLATFORM_PULL_FAILED",
+          "severity": "warning",
+          "message": "平台侧拉流失败"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.264",
+        "resolution": "1920x1080",
+        "frame_rate": 25,
+        "bitrate_kbps": 4096,
+        "config": {
+          "bitrate_mode": "VBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    }
+  ]
+}

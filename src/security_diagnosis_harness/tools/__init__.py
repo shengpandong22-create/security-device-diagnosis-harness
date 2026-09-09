@@ -11,9 +11,12 @@ from security_diagnosis_harness.tools.contracts import (
     ToolRiskLevel,
 )
 from security_diagnosis_harness.tools.device_alarm_events import DeviceAlarmEventsTool
+from security_diagnosis_harness.tools.device_channel import DeviceChannelTool
 from security_diagnosis_harness.tools.device_config import DeviceConfigSnapshotTool
 from security_diagnosis_harness.tools.device_status import DeviceStatusTool
+from security_diagnosis_harness.tools.device_stream import DeviceStreamTool
 from security_diagnosis_harness.tools.knowledge_search import KnowledgeSearchTool
+from security_diagnosis_harness.tools.platform_pull import PlatformPullStatusTool
 from security_diagnosis_harness.tools.registry import (
     ToolAlreadyRegisteredError,
     ToolNotFoundError,
@@ -23,9 +26,12 @@ from security_diagnosis_harness.tools.registry import (
 __all__ = [
     "BaseTool",
     "DeviceAlarmEventsTool",
+    "DeviceChannelTool",
     "DeviceConfigSnapshotTool",
     "DeviceStatusTool",
+    "DeviceStreamTool",
     "KnowledgeSearchTool",
+    "PlatformPullStatusTool",
     "ToolAlreadyRegisteredError",
     "ToolArgumentError",
     "ToolBypassError",
