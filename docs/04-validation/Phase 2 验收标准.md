@@ -9,7 +9,7 @@
 ### 1.1 工程验收
 
 - [x] `uv run ruff check .` 通过；
-- [x] `uv run pytest` 通过（309 个测试）；
+- [x] `uv run pytest` 通过（315 个测试）；
 - [x] Phase 0 demo 仍可运行；
 - [x] Phase 1 eval 仍 5/5；
 - [x] 领域模型只依赖标准库与 pydantic；
@@ -50,6 +50,9 @@
 - [x] `PlaybackCheckResult` 的 `status` 与 `playable` 不允许自相矛盾：
       `available` 必须 `playable=true`，`missing` / `corrupted` / `index_missing`
       必须 `playable=false`；
+- [x] `PlaybackCheckResult` 的 `status` 与 `file_count` 不允许自相矛盾：
+      `available` 必须 `file_count > 0`，`missing` 必须 `file_count == 0`；
+      `corrupted` 和 `index_missing` 不强制 `file_count`，用于兼容不同平台的文件可见性；
 - [x] 模型不包含 `confidence` / `root_cause` / `conclusion` 等结论字段；
 - [x] 模块源码不含 `fastapi` / `sqlalchemy` / `alembic` / `openai` / `httpx` / `requests`。
 
