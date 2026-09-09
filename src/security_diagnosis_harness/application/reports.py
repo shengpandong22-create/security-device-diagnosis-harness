@@ -9,9 +9,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from security_diagnosis_harness.application.camera_diagnosis_rules import (
+    CameraDiagnosisRuleResult,
+    infer_camera_black_screen_label,
+)
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.device import REDACTED_VALUE, is_sensitive_key
-from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus
+from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus, SecurityFaultType
 
 REPORT_TITLE = "# 安防设备诊断报告"
 
@@ -44,8 +48,15 @@ def _dump(payload: Any) -> str:
     return json.dumps(redact_payload(payload), ensure_ascii=False, sort_keys=True, default=str)
 
 
-def render_markdown_report(case: SecurityDiagnosisCase) -> str:
-    """把一条诊断渲染成可读 Markdown。"""
+def render_markdown_report(
+    case: SecurityDiagnosisCase,
+    insight: CameraDiagnosisRuleResult | None = None,
+) -> str:
+    """把一条诊断渲染成可读 Markdown。
+
+    `insight` 为空且故障类型为摄像头黑屏时，会基于 Evidence 重新推导候选标签，
+    因为规则是纯函数，报告可以离线复算。
+    """
     lines: list[str] = [
         REPORT_TITLE,
         "",
@@ -87,8 +98,40 @@ def render_markdown_report(case: SecurityDiagnosisCase) -> str:
             lines += ["（无）"]
         lines += [""]
 
+    if insight is None and case.fault_type is SecurityFaultType.CAMERA_BLACK_SCREEN:
+        insight = infer_camera_black_screen_label(case.evidence)
+
+    if insight is not None:
+        lines += [
+            "## 3. 候选根因与证据链",
+            "",
+            f"- candidate_label: `{insight.label.value}`",
+            f"- 说明: {insight.explanation}",
+            f"- 命中规则: {insight.matched_rule or '（未匹配）'}",
+            f"- 设备事实类别数: {insight.device_fact_type_count}",
+            "",
+            "### 证据链解释",
+        ]
+        if insight.evidence_chain:
+            lines += [f"{index}. {item}" for index, item in enumerate(insight.evidence_chain, 1)]
+        else:
+            lines += ["（无可解释的事实链）"]
+        lines += ["", "### 建议排查顺序"]
+        if insight.troubleshooting_order:
+            lines += [
+                f"{index}. {step}" for index, step in enumerate(insight.troubleshooting_order, 1)
+            ]
+        else:
+            lines += ["（无）"]
+        lines += ["", "### 为什么不是其他候选原因"]
+        if insight.excluded_candidates:
+            lines += [f"- {item}" for item in insight.excluded_candidates]
+        else:
+            lines += ["（无）"]
+        lines += [""]
+
     lines += [
-        "## 3. 证据清单",
+        "## 4. 证据清单",
         "",
         f"共 {len(case.evidence)} 条 Evidence。",
         "",
@@ -120,7 +163,7 @@ def render_markdown_report(case: SecurityDiagnosisCase) -> str:
         lines += ["（无 Evidence）"]
     lines += [""]
 
-    lines += ["## 4. 人工审核记录", ""]
+    lines += ["## 5. 人工审核记录", ""]
     if case.reviews:
         lines += [
             "| # | action | reviewer | reviewed_at | comment |",
@@ -141,10 +184,11 @@ def render_markdown_report(case: SecurityDiagnosisCase) -> str:
     lines += [""]
 
     lines += [
-        "## 5. 说明",
+        "## 6. 说明",
         "",
         "- 本报告由确定性代码生成，结论为模型候选结论，需人工确认后生效。",
-        "- confirmed 只能由人工 confirm 产生，模型不能直接产生 confirmed。",
+        "- confirmed 只能由人工 confirm 产生，模型或规则都不能直接产生 confirmed。",
+        "- candidate_label 是基于设备事实的候选解释，不等同于已确认根因。",
         "- 报告中的配置内容已脱敏，凭证字段统一显示为 `***REDACTED***`。",
         "",
     ]

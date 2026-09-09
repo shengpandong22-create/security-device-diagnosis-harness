@@ -17,11 +17,18 @@ from security_diagnosis_harness.agent.runner import (
     ToolLoopResult,
     ToolLoopRunner,
 )
+from security_diagnosis_harness.application.camera_diagnosis_rules import (
+    CameraDiagnosisLabel,
+    CameraDiagnosisRuleResult,
+    infer_camera_black_screen_label,
+)
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.citation_policy import (
     DEVICE_FACT_EVIDENCE_TYPES,
+    MIN_DEVICE_FACT_TYPES_FOR_PROBABLE,
     CitationPolicy,
+    device_fact_type_count,
 )
 from security_diagnosis_harness.domain.conclusion import (
     ConclusionConfidence,
@@ -32,7 +39,7 @@ from security_diagnosis_harness.domain.errors import (
     CitationPolicyViolation,
     InvalidStatusTransition,
 )
-from security_diagnosis_harness.domain.evidence import DiagnosisEvidence
+from security_diagnosis_harness.domain.evidence import DiagnosisEvidence, EvidenceType
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 from security_diagnosis_harness.tools.contracts import ToolEvidenceDraft, ToolExecutionContext
@@ -65,6 +72,12 @@ class RunDiagnosisResult(BaseModel):
     rounds: int = 0
     tool_calls: int = 0
     error: str | None = None
+    # Phase 1：摄像头黑屏候选根因（只作为候选解释，不产生 confirmed）。
+    candidate_label: CameraDiagnosisLabel | None = None
+    candidate_explanation: str = ""
+    evidence_chain: list[str] = Field(default_factory=list)
+    excluded_candidates: list[str] = Field(default_factory=list)
+    troubleshooting_order: list[str] = Field(default_factory=list)
 
 
 class ReviewResult(BaseModel):
@@ -101,6 +114,25 @@ def to_diagnosis_evidence(diagnosis_id: str, draft: ToolEvidenceDraft) -> Diagno
     )
 
 
+def device_fact_evidence_ids(
+    case: SecurityDiagnosisCase,
+    max_types: int = MIN_DEVICE_FACT_TYPES_FOR_PROBABLE,
+) -> list[str]:
+    """挑选每类设备事实各一条 Evidence，最多 `max_types` 类。"""
+    picked: list[str] = []
+    seen_types: set[EvidenceType] = set()
+    for evidence in case.evidence:
+        if evidence.evidence_type not in DEVICE_FACT_EVIDENCE_TYPES:
+            continue
+        if evidence.evidence_type in seen_types:
+            continue
+        seen_types.add(evidence.evidence_type)
+        picked.append(evidence.evidence_id)
+        if len(picked) >= max_types:
+            break
+    return picked
+
+
 def repair_cited_evidence_ids(
     case: SecurityDiagnosisCase,
     cited_evidence_ids: list[str],
@@ -109,46 +141,56 @@ def repair_cited_evidence_ids(
     """做最小引用修正。
 
     - 丢弃不属于当前诊断的引用（模型可能幻觉出 ID）；
-    - 没有可用引用时：probable 取第一条设备事实 Evidence，possible 取第一条 Evidence；
-    - probable 但完全没有设备事实时，降级为 possible（不允许无依据的 probable）；
+    - `probable` 要求至少引用 `MIN_DEVICE_FACT_TYPES_FOR_PROBABLE` 类设备事实 Evidence，
+      不满足时优先补齐，补不齐则降级为 `possible`；
+    - `possible` 至少引用一条 Evidence；
     - 一条 Evidence 都没有时返回空列表，由调用方进入 inconclusive。
     """
     known = {evidence.evidence_id: evidence for evidence in case.evidence}
     kept = [evidence_id for evidence_id in cited_evidence_ids if evidence_id in known]
     repaired = kept != list(cited_evidence_ids)
+
+    if confidence is ConclusionConfidence.PROBABLE:
+        kept_types = device_fact_type_count(
+            [known[evidence_id].evidence_type for evidence_id in kept]
+        )
+        if kept_types >= MIN_DEVICE_FACT_TYPES_FOR_PROBABLE:
+            return CitationRepair(
+                evidence_ids=kept,
+                confidence=confidence,
+                repaired=repaired,
+                downgraded=False,
+            )
+
+        needed = device_fact_evidence_ids(case)
+        if len(needed) >= MIN_DEVICE_FACT_TYPES_FOR_PROBABLE:
+            merged = list(dict.fromkeys([*kept, *needed]))[
+                : max(len(needed), MIN_DEVICE_FACT_TYPES_FOR_PROBABLE)
+            ]
+            return CitationRepair(
+                evidence_ids=merged,
+                confidence=confidence,
+                repaired=True,
+                downgraded=False,
+            )
+
+        # 设备事实类别不足，probable 不成立，降级为 possible。
+        fallback = kept or needed or ([case.evidence[0].evidence_id] if case.evidence else [])
+        if not fallback:
+            return CitationRepair(evidence_ids=[], confidence=confidence, repaired=True)
+        return CitationRepair(
+            evidence_ids=fallback,
+            confidence=ConclusionConfidence.POSSIBLE,
+            repaired=True,
+            downgraded=True,
+        )
+
     if kept:
         return CitationRepair(
             evidence_ids=kept,
             confidence=confidence,
             repaired=repaired,
             downgraded=False,
-        )
-
-    if confidence is ConclusionConfidence.PROBABLE:
-        device_fact = next(
-            (
-                evidence
-                for evidence in case.evidence
-                if evidence.evidence_type in DEVICE_FACT_EVIDENCE_TYPES
-            ),
-            None,
-        )
-        if device_fact is not None:
-            return CitationRepair(
-                evidence_ids=[device_fact.evidence_id],
-                confidence=confidence,
-                repaired=True,
-                downgraded=False,
-            )
-        first = case.evidence[0] if case.evidence else None
-        if first is None:
-            return CitationRepair(evidence_ids=[], confidence=confidence, repaired=True)
-        # 没有设备事实，probable 不成立，降级为 possible。
-        return CitationRepair(
-            evidence_ids=[first.evidence_id],
-            confidence=ConclusionConfidence.POSSIBLE,
-            repaired=True,
-            downgraded=True,
         )
 
     first = case.evidence[0] if case.evidence else None
@@ -284,6 +326,8 @@ class SecurityDiagnosisApplicationService:
         case.transition_to(SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION)
         self._repository.update(case)
 
+        insight = self.infer_candidate_label(case)
+
         return RunDiagnosisResult(
             diagnosis_id=case.diagnosis_id,
             ok=True,
@@ -294,7 +338,26 @@ class SecurityDiagnosisApplicationService:
             confidence_downgraded=repair.downgraded,
             rounds=result.rounds,
             tool_calls=result.tool_calls,
+            candidate_label=insight.label,
+            candidate_explanation=insight.explanation,
+            evidence_chain=insight.evidence_chain,
+            excluded_candidates=insight.excluded_candidates,
+            troubleshooting_order=insight.troubleshooting_order,
         )
+
+    # ------------------------------------------------------- 候选根因（Phase 1）
+    def infer_candidate_label(self, case: SecurityDiagnosisCase) -> CameraDiagnosisRuleResult:
+        """根据已落地 Evidence 推断候选根因标签。
+
+        只对摄像头黑屏场景生效；其他故障类型返回"事实不足"占位，
+        不改变任何状态，也不产生 confirmed。
+        """
+        if case.fault_type is not SecurityFaultType.CAMERA_BLACK_SCREEN:
+            return CameraDiagnosisRuleResult(
+                label=CameraDiagnosisLabel.INSUFFICIENT_CAMERA_FACTS,
+                explanation="当前故障类型不使用摄像头黑屏候选规则",
+            )
+        return infer_camera_black_screen_label(case.evidence)
 
     # ------------------------------------------------------------------ 审核
     def review_diagnosis(
@@ -328,7 +391,8 @@ class SecurityDiagnosisApplicationService:
         """渲染 Markdown 报告。"""
         from security_diagnosis_harness.application.reports import render_markdown_report
 
-        return render_markdown_report(self._repository.get(diagnosis_id))
+        case = self._repository.get(diagnosis_id)
+        return render_markdown_report(case, self.infer_candidate_label(case))
 
     # ------------------------------------------------------------------ 内部
     def _finish_failure(
