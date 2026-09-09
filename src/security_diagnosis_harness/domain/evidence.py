@@ -15,11 +15,18 @@ from security_diagnosis_harness.domain.common import content_hash, new_id, utc_n
 
 
 class EvidenceType(StrEnum):
-    """证据类型。"""
+    """证据类型。
+
+    `DEVICE_CHANNEL` / `DEVICE_STREAM` / `PLATFORM_PULL` 为 Phase 1 摄像头黑屏深化新增，
+    它们同属于设备事实类证据。
+    """
 
     DEVICE_STATUS = "device_status"
     DEVICE_ALARM = "device_alarm"
     DEVICE_CONFIG = "device_config"
+    DEVICE_CHANNEL = "device_channel"
+    DEVICE_STREAM = "device_stream"
+    PLATFORM_PULL = "platform_pull"
     KNOWLEDGE_SOP = "knowledge_sop"
     HUMAN_FEEDBACK = "human_feedback"
 

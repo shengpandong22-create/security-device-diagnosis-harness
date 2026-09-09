@@ -7,6 +7,12 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from security_diagnosis_harness.domain.camera import (
+    ChannelSnapshot,
+    PlatformPullStatus,
+    StreamKind,
+    StreamSnapshot,
+)
 from security_diagnosis_harness.domain.device import (
     DeviceAlarmEvent,
     DeviceConfigSnapshot,
@@ -32,6 +38,22 @@ class DeviceGateway(Protocol):
 
     def query_status(self, device_id: str) -> DeviceSnapshot:
         """查询设备状态快照。"""
+        ...
+
+    def query_channel_snapshot(self, device_id: str) -> ChannelSnapshot:
+        """查询设备通道快照（通道在线、绑定、平台注册状态）。"""
+        ...
+
+    def query_stream_snapshot(
+        self,
+        device_id: str,
+        stream_kind: StreamKind = StreamKind.MAIN,
+    ) -> StreamSnapshot:
+        """查询指定类型码流的取流快照。"""
+        ...
+
+    def query_platform_pull_status(self, device_id: str) -> PlatformPullStatus:
+        """查询平台侧拉流状态。"""
         ...
 
     def search_alarm_events(

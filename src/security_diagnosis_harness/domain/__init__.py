@@ -4,6 +4,14 @@
 HTTP 客户端或具体 LLM SDK。
 """
 
+from security_diagnosis_harness.domain.camera import (
+    ChannelSnapshot,
+    ChannelStatus,
+    PlatformPullStatus,
+    PullStatus,
+    StreamKind,
+    StreamSnapshot,
+)
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.common import new_id, utc_now
 from security_diagnosis_harness.domain.conclusion import (
@@ -34,6 +42,8 @@ from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAct
 
 __all__ = [
     "AlarmSeverity",
+    "ChannelSnapshot",
+    "ChannelStatus",
     "ConclusionConfidence",
     "Device",
     "DeviceAlarmEvent",
@@ -46,11 +56,15 @@ __all__ = [
     "EvidenceType",
     "HumanReview",
     "HumanReviewAction",
+    "PlatformPullStatus",
+    "PullStatus",
     "RecordingStatus",
     "Reliability",
     "SecurityDiagnosisCase",
     "SecurityDiagnosisStatus",
     "SecurityFaultType",
+    "StreamKind",
+    "StreamSnapshot",
     "StreamStatus",
     "new_id",
     "utc_now",

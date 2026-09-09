@@ -1,12 +1,13 @@
 """最小 Citation Policy。
 
-校验模型候选结论的引用是否成立。Phase 0B 还没有 Evidence Store，
+校验模型候选结论的引用是否成立。没有 Evidence Store，
 因此直接用 `SecurityDiagnosisCase.evidence` 列表做校验。
 
 核心口径：
 
 - 任何候选结论都必须至少引用一条 Evidence，不允许零引用结论；
-- `probable` 必须至少引用一条设备事实 Evidence（状态 / 告警 / 配置）；
+- `probable` 必须至少引用 `MIN_DEVICE_FACT_TYPES_FOR_PROBABLE` 类设备事实 Evidence
+  （Phase 1 收紧：从"至少一条"提升为"至少两类"，避免单一事实支撑高可信结论）；
 - `possible` 可以只引用 knowledge_sop；
 - 每个被引用 ID 都必须属于当前诊断；
 - 模型不能产生 `confirmed`。
@@ -22,14 +23,25 @@ from security_diagnosis_harness.domain.conclusion import (
 from security_diagnosis_harness.domain.errors import CitationPolicyViolation
 from security_diagnosis_harness.domain.evidence import EvidenceType
 
-# 设备事实类证据：设备状态、告警事件、配置快照。
+# 设备事实类证据：设备状态、告警事件、配置快照、通道、码流、平台拉流。
 DEVICE_FACT_EVIDENCE_TYPES: frozenset[EvidenceType] = frozenset(
     {
         EvidenceType.DEVICE_STATUS,
         EvidenceType.DEVICE_ALARM,
         EvidenceType.DEVICE_CONFIG,
+        EvidenceType.DEVICE_CHANNEL,
+        EvidenceType.DEVICE_STREAM,
+        EvidenceType.PLATFORM_PULL,
     }
 )
+
+# Phase 1：probable 至少引用两类不同的设备事实 Evidence。
+MIN_DEVICE_FACT_TYPES_FOR_PROBABLE: int = 2
+
+
+def device_fact_type_count(evidence_types: list[EvidenceType]) -> int:
+    """统计引用中不同设备事实 Evidence 类型的数量。"""
+    return len({item for item in evidence_types if item in DEVICE_FACT_EVIDENCE_TYPES})
 
 
 class CitationPolicy:
@@ -73,11 +85,13 @@ class CitationPolicy:
                 f"结论引用了不属于诊断 {case.diagnosis_id} 的 evidence: {unknown_ids}"
             )
 
-        has_device_fact = any(
-            evidence.evidence_type in DEVICE_FACT_EVIDENCE_TYPES for evidence in cited
-        )
-        if conclusion.confidence is ConclusionConfidence.PROBABLE and not has_device_fact:
+        if conclusion.confidence is not ConclusionConfidence.PROBABLE:
+            return
+
+        fact_types = device_fact_type_count([evidence.evidence_type for evidence in cited])
+        if fact_types < MIN_DEVICE_FACT_TYPES_FOR_PROBABLE:
+            allowed = sorted(item.value for item in DEVICE_FACT_EVIDENCE_TYPES)
             raise CitationPolicyViolation(
-                "probable 结论必须至少引用一条设备事实 Evidence"
-                f"（{sorted(item.value for item in DEVICE_FACT_EVIDENCE_TYPES)}）"
+                f"probable 结论必须至少引用 {MIN_DEVICE_FACT_TYPES_FOR_PROBABLE} 类"
+                f"设备事实 Evidence，当前只有 {fact_types} 类（{allowed}）"
             )
