@@ -23,7 +23,8 @@ from security_diagnosis_harness.domain.conclusion import (
 from security_diagnosis_harness.domain.errors import CitationPolicyViolation
 from security_diagnosis_harness.domain.evidence import EvidenceType
 
-# 设备事实类证据：设备状态、告警事件、配置快照、通道、码流、平台拉流。
+# 设备事实类证据：设备状态、告警事件、配置快照、通道、码流、平台拉流，
+# 以及录像计划、存储状态、回放检查（Phase 2C 加入，使录像类事实也能支撑 probable）。
 DEVICE_FACT_EVIDENCE_TYPES: frozenset[EvidenceType] = frozenset(
     {
         EvidenceType.DEVICE_STATUS,
@@ -32,6 +33,9 @@ DEVICE_FACT_EVIDENCE_TYPES: frozenset[EvidenceType] = frozenset(
         EvidenceType.DEVICE_CHANNEL,
         EvidenceType.DEVICE_STREAM,
         EvidenceType.PLATFORM_PULL,
+        EvidenceType.RECORDING_PLAN,
+        EvidenceType.STORAGE_STATUS,
+        EvidenceType.PLAYBACK_CHECK,
     }
 )
 

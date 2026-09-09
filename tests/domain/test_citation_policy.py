@@ -165,6 +165,9 @@ def test_device_fact_evidence_types_exclude_knowledge():
             EvidenceType.DEVICE_CHANNEL,
             EvidenceType.DEVICE_STREAM,
             EvidenceType.PLATFORM_PULL,
+            EvidenceType.RECORDING_PLAN,
+            EvidenceType.STORAGE_STATUS,
+            EvidenceType.PLAYBACK_CHECK,
         }
     )
 
@@ -181,6 +184,40 @@ def test_new_camera_evidence_types_are_device_facts():
         EvidenceType.PLATFORM_PULL,
     ):
         assert evidence_type in DEVICE_FACT_EVIDENCE_TYPES
+
+
+def test_recording_evidence_types_are_device_facts():
+    """Phase 2C：录像类三种 EvidenceType 必须纳入设备事实集合。"""
+    for evidence_type in (
+        EvidenceType.RECORDING_PLAN,
+        EvidenceType.STORAGE_STATUS,
+        EvidenceType.PLAYBACK_CHECK,
+    ):
+        assert evidence_type in DEVICE_FACT_EVIDENCE_TYPES
+
+
+def test_policy_accepts_probable_citing_recording_plan_and_playback_check():
+    """Phase 2C：probable 引用 recording_plan + playback_check 可以通过。"""
+    case = make_case(DIAG_A)
+    plan = _add(case, EvidenceType.RECORDING_PLAN)
+    playback = _add(case, EvidenceType.PLAYBACK_CHECK)
+
+    CitationPolicy().validate(
+        _conclusion(DIAG_A, [plan.evidence_id, playback.evidence_id], "probable"), case
+    )
+
+
+def test_policy_rejects_probable_citing_single_recording_type():
+    """Phase 2C：probable 只引用 recording_plan 一类必须失败。"""
+    case = make_case(DIAG_A)
+    plan = _add(case, EvidenceType.RECORDING_PLAN)
+    another_plan = _add(case, EvidenceType.RECORDING_PLAN)
+
+    with pytest.raises(CitationPolicyViolation, match="probable"):
+        CitationPolicy().validate(
+            _conclusion(DIAG_A, [plan.evidence_id, another_plan.evidence_id], "probable"),
+            case,
+        )
 
 
 def test_policy_rejects_possible_without_citation():
