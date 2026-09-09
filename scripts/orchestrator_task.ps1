@@ -20,7 +20,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\orchestrator_task.ps
 
 param(
     [Parameter(Mandatory = $true)][string]$ReqFile,
-    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [string]$ProjectRoot = "",
     [string]$TaskName = "",
     [string]$CodeBuddyModel = "fast-model",
     [string]$CodexModel = "gpt-5.6-luna",
@@ -103,7 +103,8 @@ function Test-FalseSuccessOutput {
         "permission prompts are not available",
         "not recognized",
         "command not found",
-        "Unknown command"
+        "Unknown command",
+        "Max turns exceeded"
     )
 
     foreach ($pattern in $patterns) {
@@ -145,7 +146,12 @@ function Write-TextFile {
     $Text | Set-Content -Path $Path -Encoding UTF8
 }
 
-$ProjectRoot = (Resolve-Path $ProjectRoot).Path
+if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
+    $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+}
+else {
+    $ProjectRoot = (Resolve-Path $ProjectRoot).Path
+}
 $ReqFile = (Resolve-Path $ReqFile).Path
 $reqName = [System.IO.Path]::GetFileNameWithoutExtension($ReqFile)
 if ([string]::IsNullOrWhiteSpace($TaskName)) {

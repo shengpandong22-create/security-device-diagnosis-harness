@@ -85,7 +85,8 @@ function Test-FalseSuccessOutput {
         "permission prompts are not available",
         "not recognized",
         "command not found",
-        "Unknown command"
+        "Unknown command",
+        "Max turns exceeded"
     )
 
     foreach ($pattern in $patterns) {
