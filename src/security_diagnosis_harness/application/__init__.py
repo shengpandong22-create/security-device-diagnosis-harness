@@ -12,6 +12,7 @@ from security_diagnosis_harness.application.diagnoses import (
     RunDiagnosisResult,
     SecurityDiagnosisApplicationService,
     device_fact_evidence_ids,
+    missing_device_fact_evidence_ids,
     repair_cited_evidence_ids,
 )
 from security_diagnosis_harness.application.errors import (
@@ -34,6 +35,7 @@ __all__ = [
     "device_fact_evidence_ids",
     "extract_camera_facts",
     "infer_camera_black_screen_label",
+    "missing_device_fact_evidence_ids",
     "render_markdown_report",
     "repair_cited_evidence_ids",
 ]

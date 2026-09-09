@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from security_diagnosis_harness.application.diagnoses import repair_cited_evidence_ids
 from security_diagnosis_harness.application.errors import DiagnosisNotFoundError
+from security_diagnosis_harness.domain.citation_policy import (
+    DEVICE_FACT_EVIDENCE_TYPES,
+    MIN_DEVICE_FACT_TYPES_FOR_PROBABLE,
+)
 from security_diagnosis_harness.domain.conclusion import ConclusionConfidence
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus, SecurityFaultType
 from security_diagnosis_harness.domain.errors import (
@@ -15,6 +20,7 @@ from security_diagnosis_harness.domain.errors import (
 from security_diagnosis_harness.domain.evidence import EvidenceType
 from security_diagnosis_harness.domain.review import HumanReviewAction
 
+from ..conftest import make_case, make_evidence
 from .conftest import (
     build_service,
     confirm,
@@ -24,6 +30,26 @@ from .conftest import (
     no_conclusion_llm,
     no_evidence_llm,
 )
+
+
+def _case_with_evidence(*evidence_types: EvidenceType):
+    """构造一个带有指定类型 Evidence 的 Case，返回 (case, {类型: Evidence})。"""
+    case = make_case("diag_repair")
+    by_type: dict[EvidenceType, object] = {}
+    for evidence_type in evidence_types:
+        by_type[evidence_type] = case.add_evidence(
+            make_evidence(
+                case.diagnosis_id,
+                summary=f"{evidence_type.value} 证据",
+                evidence_type=evidence_type,
+            )
+        )
+    return case, by_type
+
+
+def _cited_device_fact_types(case, evidence_ids: list[str]) -> set[EvidenceType]:
+    known = {evidence.evidence_id: evidence for evidence in case.evidence}
+    return {known[eid].evidence_type for eid in evidence_ids} & DEVICE_FACT_EVIDENCE_TYPES
 
 
 def test_create_diagnosis_creates_case(app_service):
@@ -272,3 +298,71 @@ def test_render_report_returns_markdown(app_service):
     assert report.startswith("# 安防设备诊断报告")
     assert diagnosis_id in report
     assert "confirmed" in report
+
+
+def test_repair_probable_partial_citations_preserves_or_adds_two_device_fact_types():
+    """knowledge_sop + 1 类设备事实时，probable 必须补齐到两类设备事实。"""
+    case, by_type = _case_with_evidence(
+        EvidenceType.KNOWLEDGE_SOP,
+        EvidenceType.DEVICE_STATUS,
+        EvidenceType.DEVICE_ALARM,
+    )
+    cited = [
+        by_type[EvidenceType.KNOWLEDGE_SOP].evidence_id,
+        by_type[EvidenceType.DEVICE_STATUS].evidence_id,
+    ]
+
+    repair = repair_cited_evidence_ids(case, cited, ConclusionConfidence.PROBABLE)
+
+    assert repair.confidence is ConclusionConfidence.PROBABLE
+    assert repair.downgraded is False
+    assert repair.repaired is True
+
+    fact_types = _cited_device_fact_types(case, repair.evidence_ids)
+    assert len(fact_types) >= MIN_DEVICE_FACT_TYPES_FOR_PROBABLE
+    assert EvidenceType.DEVICE_STATUS in fact_types
+    assert EvidenceType.DEVICE_ALARM in fact_types
+    assert by_type[EvidenceType.DEVICE_ALARM].evidence_id in repair.evidence_ids
+    # 原有合法引用不丢失。
+    for evidence_id in cited:
+        assert evidence_id in repair.evidence_ids
+
+
+def test_repair_probable_downgrades_when_two_device_fact_types_unavailable():
+    """只有一类设备事实时，probable 必须降级为 possible。"""
+    case, by_type = _case_with_evidence(
+        EvidenceType.KNOWLEDGE_SOP,
+        EvidenceType.DEVICE_STATUS,
+    )
+    cited = [
+        by_type[EvidenceType.KNOWLEDGE_SOP].evidence_id,
+        by_type[EvidenceType.DEVICE_STATUS].evidence_id,
+    ]
+
+    repair = repair_cited_evidence_ids(case, cited, ConclusionConfidence.PROBABLE)
+
+    assert repair.confidence is ConclusionConfidence.POSSIBLE
+    assert repair.downgraded is True
+    assert repair.evidence_ids
+
+    fact_types = _cited_device_fact_types(case, repair.evidence_ids)
+    assert len(fact_types) < MIN_DEVICE_FACT_TYPES_FOR_PROBABLE
+
+
+def test_repair_probable_keeps_existing_two_device_fact_types_untouched():
+    """已经满足两类设备事实时，不做多余补齐。"""
+    case, by_type = _case_with_evidence(
+        EvidenceType.DEVICE_STATUS,
+        EvidenceType.DEVICE_ALARM,
+    )
+    cited = [
+        by_type[EvidenceType.DEVICE_STATUS].evidence_id,
+        by_type[EvidenceType.DEVICE_ALARM].evidence_id,
+    ]
+
+    repair = repair_cited_evidence_ids(case, cited, ConclusionConfidence.PROBABLE)
+
+    assert repair.confidence is ConclusionConfidence.PROBABLE
+    assert repair.evidence_ids == cited
+    assert repair.repaired is False
+    assert repair.downgraded is False

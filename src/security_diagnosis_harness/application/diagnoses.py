@@ -28,7 +28,6 @@ from security_diagnosis_harness.domain.citation_policy import (
     DEVICE_FACT_EVIDENCE_TYPES,
     MIN_DEVICE_FACT_TYPES_FOR_PROBABLE,
     CitationPolicy,
-    device_fact_type_count,
 )
 from security_diagnosis_harness.domain.conclusion import (
     ConclusionConfidence,
@@ -133,6 +132,30 @@ def device_fact_evidence_ids(
     return picked
 
 
+def missing_device_fact_evidence_ids(
+    case: SecurityDiagnosisCase,
+    covered_types: set[EvidenceType],
+    needed: int,
+) -> list[str]:
+    """补充 `covered_types` 之外的设备事实类型，每类取一条，最多 `needed` 条。
+
+    这里只按"缺失类型"补齐，不做全局数量切片，
+    避免 knowledge_sop 之类非设备事实证据挤占设备事实名额。
+    """
+    picked: list[str] = []
+    covered = set(covered_types)
+    for evidence in case.evidence:
+        if evidence.evidence_type not in DEVICE_FACT_EVIDENCE_TYPES:
+            continue
+        if evidence.evidence_type in covered:
+            continue
+        covered.add(evidence.evidence_type)
+        picked.append(evidence.evidence_id)
+        if len(picked) >= needed:
+            break
+    return picked
+
+
 def repair_cited_evidence_ids(
     case: SecurityDiagnosisCase,
     cited_evidence_ids: list[str],
@@ -142,7 +165,7 @@ def repair_cited_evidence_ids(
 
     - 丢弃不属于当前诊断的引用（模型可能幻觉出 ID）；
     - `probable` 要求至少引用 `MIN_DEVICE_FACT_TYPES_FOR_PROBABLE` 类设备事实 Evidence，
-      不满足时优先补齐，补不齐则降级为 `possible`；
+      不足时按缺失类型补齐；补齐后仍不足则必须降级为 `possible`；
     - `possible` 至少引用一条 Evidence；
     - 一条 Evidence 都没有时返回空列表，由调用方进入 inconclusive。
     """
@@ -151,10 +174,12 @@ def repair_cited_evidence_ids(
     repaired = kept != list(cited_evidence_ids)
 
     if confidence is ConclusionConfidence.PROBABLE:
-        kept_types = device_fact_type_count(
-            [known[evidence_id].evidence_type for evidence_id in kept]
-        )
-        if kept_types >= MIN_DEVICE_FACT_TYPES_FOR_PROBABLE:
+        kept_fact_types = {
+            known[evidence_id].evidence_type for evidence_id in kept
+        } & DEVICE_FACT_EVIDENCE_TYPES
+        missing = MIN_DEVICE_FACT_TYPES_FOR_PROBABLE - len(kept_fact_types)
+
+        if missing <= 0:
             return CitationRepair(
                 evidence_ids=kept,
                 confidence=confidence,
@@ -162,11 +187,15 @@ def repair_cited_evidence_ids(
                 downgraded=False,
             )
 
-        needed = device_fact_evidence_ids(case)
-        if len(needed) >= MIN_DEVICE_FACT_TYPES_FOR_PROBABLE:
-            merged = list(dict.fromkeys([*kept, *needed]))[
-                : max(len(needed), MIN_DEVICE_FACT_TYPES_FOR_PROBABLE)
-            ]
+        # 只补缺失的设备事实类型，保留已有引用（包括 knowledge_sop）。
+        added = missing_device_fact_evidence_ids(case, kept_fact_types, missing)
+        merged = [*kept, *added]
+
+        # 补齐后再次确认，绝不允许返回"设备事实类型不足的 probable"。
+        final_fact_types = {
+            known[evidence_id].evidence_type for evidence_id in merged
+        } & DEVICE_FACT_EVIDENCE_TYPES
+        if len(final_fact_types) >= MIN_DEVICE_FACT_TYPES_FOR_PROBABLE:
             return CitationRepair(
                 evidence_ids=merged,
                 confidence=confidence,
@@ -175,7 +204,7 @@ def repair_cited_evidence_ids(
             )
 
         # 设备事实类别不足，probable 不成立，降级为 possible。
-        fallback = kept or needed or ([case.evidence[0].evidence_id] if case.evidence else [])
+        fallback = merged or kept or ([case.evidence[0].evidence_id] if case.evidence else [])
         if not fallback:
             return CitationRepair(evidence_ids=[], confidence=confidence, repaired=True)
         return CitationRepair(
