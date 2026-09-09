@@ -38,6 +38,16 @@ from security_diagnosis_harness.domain.evidence import (
     EvidenceType,
     Reliability,
 )
+from security_diagnosis_harness.domain.recording import (
+    PlaybackCheckResult,
+    PlaybackStatus,
+    RecordingMode,
+    RecordingPlanSnapshot,
+    RecordingPlanStatus,
+    RecordingTimeRange,
+    StorageSnapshot,
+    StorageStatus,
+)
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 
 __all__ = [
@@ -56,13 +66,21 @@ __all__ = [
     "EvidenceType",
     "HumanReview",
     "HumanReviewAction",
+    "PlaybackCheckResult",
+    "PlaybackStatus",
     "PlatformPullStatus",
     "PullStatus",
+    "RecordingMode",
+    "RecordingPlanSnapshot",
+    "RecordingPlanStatus",
     "RecordingStatus",
+    "RecordingTimeRange",
     "Reliability",
     "SecurityDiagnosisCase",
     "SecurityDiagnosisStatus",
     "SecurityFaultType",
+    "StorageSnapshot",
+    "StorageStatus",
     "StreamKind",
     "StreamSnapshot",
     "StreamStatus",
