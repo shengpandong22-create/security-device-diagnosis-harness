@@ -17,11 +17,14 @@ from security_diagnosis_harness.tools.device_status import DeviceStatusTool
 from security_diagnosis_harness.tools.device_stream import DeviceStreamTool
 from security_diagnosis_harness.tools.knowledge_search import KnowledgeSearchTool
 from security_diagnosis_harness.tools.platform_pull import PlatformPullStatusTool
+from security_diagnosis_harness.tools.recording_plan import RecordingPlanTool
+from security_diagnosis_harness.tools.recording_playback import RecordingPlaybackTool
 from security_diagnosis_harness.tools.registry import (
     ToolAlreadyRegisteredError,
     ToolNotFoundError,
     ToolRegistry,
 )
+from security_diagnosis_harness.tools.storage_status import StorageStatusTool
 
 __all__ = [
     "BaseTool",
@@ -32,6 +35,9 @@ __all__ = [
     "DeviceStreamTool",
     "KnowledgeSearchTool",
     "PlatformPullStatusTool",
+    "RecordingPlanTool",
+    "RecordingPlaybackTool",
+    "StorageStatusTool",
     "ToolAlreadyRegisteredError",
     "ToolArgumentError",
     "ToolBypassError",
