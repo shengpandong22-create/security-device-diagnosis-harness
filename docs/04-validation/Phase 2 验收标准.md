@@ -65,13 +65,65 @@
 | `StorageStatus` | `normal` / `full` / `offline` / `degraded` |
 | `PlaybackStatus` | `available` / `missing` / `corrupted` / `index_missing` |
 
-## 2. Phase 2B：只读工具与样例案例（未开始）
+## 2. Phase 2B：只读工具与样例案例（已完成）
 
-- [ ] `recording__query_plan`
-- [ ] `storage__query_status`
-- [ ] `recording__check_playback`
-- [ ] 固定案例：`recording_plan_disabled`、`recording_schedule_gap`、`storage_full`、
-      `storage_offline`、`playback_index_missing`
+### 2.1 工程验收
+
+- [x] `uv run ruff check .` 通过；
+- [x] `uv run pytest` 通过（377 个测试）；
+- [x] Phase 0 demo 仍可运行；
+- [x] Phase 1 eval 仍 5/5；
+- [x] 不新增 API、不修改 ToolLoopRunner / CitationPolicy、不新增规则推断 / eval 脚本；
+- [x] 不修改 `pyproject.toml`，不新增 HTTP 客户端；
+- [x] 不读取 `.env`，不提交真实设备 IP、账号、密码、Token、邮箱授权码。
+
+### 2.2 DeviceGateway Port 扩展
+
+| 方法 | 返回类型 |
+|---|---|
+| `query_recording_plan(device_id, channel_id)` | `RecordingPlanSnapshot` |
+| `query_storage_status(device_id, channel_id)` | `StorageSnapshot` |
+| `check_recording_playback(device_id, channel_id, start_at, end_at)` | `PlaybackCheckResult` |
+
+- [x] 三个方法均只读，返回领域模型（不是 dict）；
+- [x] 设备不存在抛 `DeviceNotFoundError`；
+- [x] 通道/录像事实缺失抛 `DeviceGatewayDataError`；
+- [x] `check_recording_playback` 支持按覆盖优先、重叠次之匹配样例窗口；
+- [x] naive 与 aware 时间统一按 UTC 处理，不抛 `TypeError`。
+
+### 2.3 只读工具
+
+| 工具 | EvidenceType | observation 必含 |
+|---|---|---|
+| `recording__query_plan` | `recording_plan` | 计划状态、模式、时间段数 |
+| `storage__query_status` | `storage_status` | 存储状态、剩余容量、是否容量不足 |
+| `recording__check_playback` | `playback_check` | 回放状态、可回放、文件数、失败原因 |
+
+- [x] 全部 `READ_ONLY`，权限均为 `device:read`；
+- [x] 必须经 ToolRegistry（`invoked_by_registry` 闸门不变）；
+- [x] 参数非法 / 权限不足 / 网关异常 → 受控失败且不携带 EvidenceDraft；
+- [x] `recording__check_playback` 解析 ISO 8601（含 `Z` 后缀、naive、`+08:00`）；
+- [x] `recording__check_playback` 拒绝 `end_at <= start_at` 与超过 31 天的时间窗。
+
+### 2.4 新增 EvidenceType
+
+- [x] `recording_plan` / `storage_status` / `playback_check`（snake_case，与既有风格一致）；
+- [x] 三者尚未纳入 `DEVICE_FACT_EVIDENCE_TYPES`（留给 Phase 2C 与规则口径一起调整）。
+
+### 2.5 固定样例案例
+
+样例文件：`samples/devices/recording_missing_cases.json`（5 个案例，全部 2026-09-08 ~ 09-09 回放窗口）
+
+| case_id | device_id | 录像计划 | 存储 | 回放 |
+|---|---|---|---|---|
+| `recording_plan_disabled` | `cam-rec-plan-disabled-01` | disabled / manual | normal | missing |
+| `recording_schedule_gap` | `cam-rec-schedule-gap-01` | enabled / event_triggered（仅工作日 09:00-18:00） | normal | missing |
+| `storage_full` | `cam-rec-storage-full-01` | enabled / continuous（全天） | full | missing |
+| `storage_offline` | `cam-rec-storage-offline-01` | enabled / continuous（全天） | offline | missing |
+| `playback_index_missing` | `cam-rec-index-missing-01` | enabled / continuous（全天） | normal | index_missing（file_count=12） |
+
+- [x] 样例无真实 IP / 账号 / 密码 / Token / 邮箱授权码；
+- [x] `admin_password` 为占位串且被 `DeviceConfigSnapshot` 脱敏（有测试断言）。
 
 ## 3. Phase 2C：规则、报告与评测（未开始）
 
@@ -81,8 +133,8 @@
 
 ## 4. Phase 2 Definition of Done
 
-- [ ] Phase 2A 领域模型与测试完成（已完成）；
-- [ ] Phase 2B 只读工具与样例案例完成；
+- [x] Phase 2A 领域模型与测试完成；
+- [x] Phase 2B 只读工具与样例案例完成；
 - [ ] Phase 2C 规则、报告与固定评测完成；
 - [ ] label_accuracy >= 0.75；
 - [ ] citation_compliance == 1.0；

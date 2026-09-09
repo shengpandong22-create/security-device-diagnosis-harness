@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1（摄像头黑屏深化）已完成，Phase 2A（录像诊断领域模型）已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B 已完成（录像缺失深化进行中，Phase 2C 未开始）。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -20,7 +20,8 @@
 | Phase 0C | API、报告与 demo | 已完成 |
 | Phase 1 | 摄像头黑屏深化（多子场景 + 评测） | 已完成 |
 | Phase 2A | 录像缺失 / 录像异常领域模型 | 已完成 |
-| Phase 2B / 2C | 录像只读工具、规则、评测 | 未开始 |
+| Phase 2B | 录像只读工具与样例案例 | 已完成 |
+| Phase 2C | 录像规则、报告与评测 | 未开始 |
 
 Phase 0A 交付范围：
 
@@ -78,6 +79,20 @@ uv run python scripts/eval_phase1_camera_black_screen.py
 输出 `demo-output/phase1-camera-black-screen-eval.json` 与 `.md`，
 当前 5 个案例 label 命中率 100%、引用合规率 100%、敏感信息泄露 0、
 `external_model_called=false`。
+
+Phase 2 交付范围（录像缺失 / 录像异常深化）：
+
+- 2A `domain/recording.py`：`RecordingPlanSnapshot`、`RecordingTimeRange`、
+  `StorageSnapshot`、`PlaybackCheckResult` 与 `RecordingPlanStatus` /
+  `RecordingMode` / `StorageStatus` / `PlaybackStatus` 枚举；
+- 2B DeviceGateway 与 StaticDeviceGateway 新增只读方法：
+  `query_recording_plan` / `query_storage_status` / `check_recording_playback`；
+- 2B 新增 EvidenceType：`recording_plan`、`storage_status`、`playback_check`；
+- 2B 新增三个 READ_ONLY 工具：`recording__query_plan`、`storage__query_status`、
+  `recording__check_playback`（均要求 `device:read`）；
+- 2B `samples/devices/recording_missing_cases.json`：5 个固定案例
+  （计划未启用 / 计划时间空隙 / 存储满 / 存储离线 / 回放索引缺失）；
+- 2C 规则推断、报告增强与评测脚本未开始。
 
 ## 快速开始
 
@@ -177,6 +192,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [Phase 1 开发总结与 Phase 2 录像缺失深化计划](./docs/03-progress/2026-09-09-Phase1开发总结与Phase2录像缺失深化计划.md)
 - [Phase 0 验收标准](./docs/04-validation/Phase%200%20验收标准.md)
 - [Phase 1 验收标准](./docs/04-validation/Phase%201%20验收标准.md)
+- [Phase 2 验收标准](./docs/04-validation/Phase%202%20验收标准.md)
 
 ## 最小闭环路线
 
