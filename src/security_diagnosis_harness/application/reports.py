@@ -13,9 +13,15 @@ from security_diagnosis_harness.application.camera_diagnosis_rules import (
     CameraDiagnosisRuleResult,
     infer_camera_black_screen_label,
 )
+from security_diagnosis_harness.application.recording_diagnosis_rules import (
+    RecordingDiagnosisLabel,
+    RecordingDiagnosisRuleResult,
+    infer_recording_missing_label,
+)
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.device import REDACTED_VALUE, is_sensitive_key
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus, SecurityFaultType
+from security_diagnosis_harness.domain.evidence import EvidenceType
 
 REPORT_TITLE = "# 安防设备诊断报告"
 
@@ -50,12 +56,12 @@ def _dump(payload: Any) -> str:
 
 def render_markdown_report(
     case: SecurityDiagnosisCase,
-    insight: CameraDiagnosisRuleResult | None = None,
+    insight: CameraDiagnosisRuleResult | RecordingDiagnosisRuleResult | None = None,
 ) -> str:
     """把一条诊断渲染成可读 Markdown。
 
-    `insight` 为空且故障类型为摄像头黑屏时，会基于 Evidence 重新推导候选标签，
-    因为规则是纯函数，报告可以离线复算。
+    `insight` 为空时，会根据故障类型基于 Evidence 重新推导候选标签
+    （摄像头黑屏或录像缺失），因为规则是纯函数，报告可以离线复算。
     """
     lines: list[str] = [
         REPORT_TITLE,
@@ -100,35 +106,41 @@ def render_markdown_report(
 
     if insight is None and case.fault_type is SecurityFaultType.CAMERA_BLACK_SCREEN:
         insight = infer_camera_black_screen_label(case.evidence)
+    if insight is None and case.fault_type is SecurityFaultType.RECORDING_MISSING:
+        insight = infer_recording_missing_label(case)
 
     if insight is not None:
-        lines += [
-            "## 3. 候选根因与证据链",
-            "",
-            f"- candidate_label: `{insight.label.value}`",
-            f"- 说明: {insight.explanation}",
-            f"- 命中规则: {insight.matched_rule or '（未匹配）'}",
-            f"- 设备事实类别数: {insight.device_fact_type_count}",
-            "",
-            "### 证据链解释",
-        ]
-        if insight.evidence_chain:
-            lines += [f"{index}. {item}" for index, item in enumerate(insight.evidence_chain, 1)]
+        if isinstance(insight.label, RecordingDiagnosisLabel):
+            lines += _render_recording_candidate_section(case, insight)
         else:
-            lines += ["（无可解释的事实链）"]
-        lines += ["", "### 建议排查顺序"]
-        if insight.troubleshooting_order:
             lines += [
-                f"{index}. {step}" for index, step in enumerate(insight.troubleshooting_order, 1)
+                "## 3. 候选根因与证据链",
+                "",
+                f"- candidate_label: `{insight.label.value}`",
+                f"- 说明: {insight.explanation}",
+                f"- 命中规则: {insight.matched_rule or '（未匹配）'}",
+                f"- 设备事实类别数: {insight.device_fact_type_count}",
+                "",
+                "### 证据链解释",
             ]
-        else:
-            lines += ["（无）"]
-        lines += ["", "### 为什么不是其他候选原因"]
-        if insight.excluded_candidates:
-            lines += [f"- {item}" for item in insight.excluded_candidates]
-        else:
-            lines += ["（无）"]
-        lines += [""]
+            if insight.evidence_chain:
+                lines += [
+                    f"{index}. {item}" for index, item in enumerate(insight.evidence_chain, 1)
+                ]
+            else:
+                lines += ["（无可解释的事实链）"]
+            lines += ["", "### 建议排查顺序"]
+            if insight.troubleshooting_order:
+                ordered = enumerate(insight.troubleshooting_order, 1)
+                lines += [f"{index}. {step}" for index, step in ordered]
+            else:
+                lines += ["（无）"]
+            lines += ["", "### 为什么不是其他候选原因"]
+            if insight.excluded_candidates:
+                lines += [f"- {item}" for item in insight.excluded_candidates]
+            else:
+                lines += ["（无）"]
+            lines += [""]
 
     lines += [
         "## 4. 证据清单",
@@ -193,3 +205,105 @@ def render_markdown_report(
         "",
     ]
     return "\n".join(lines)
+
+
+# ------------------------------------------------------------------ 录像诊断小节
+def _first_evidence(case: SecurityDiagnosisCase, evidence_type: EvidenceType) -> Any | None:
+    for item in case.evidence:
+        if item.evidence_type is evidence_type:
+            return item
+    return None
+
+
+def _render_recording_plan_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.RECORDING_PLAN)
+    if evidence is None:
+        return ["（无录像计划证据）"]
+    payload = evidence.payload or {}
+    status = payload.get("status", "-")
+    mode = payload.get("mode", "-")
+    time_ranges = payload.get("time_ranges") or []
+    retention = payload.get("retention_days", "-")
+    gap_hint = "（计划启用但无有效时间段）" if not time_ranges else ""
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 状态: {status}，模式: {mode}，保留天数: {retention}{gap_hint}",
+        f"- 计划时间段数: {len(time_ranges)}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_storage_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.STORAGE_STATUS)
+    if evidence is None:
+        return ["（无存储状态证据）"]
+    payload = evidence.payload or {}
+    status = payload.get("status", "-")
+    total = payload.get("total_gb", "-")
+    free = payload.get("free_gb", "-")
+    used = payload.get("used_percent", "-")
+    last_error = payload.get("last_error") or "-"
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 状态: {status}，总容量: {total}GB，剩余: {free}GB，使用率: {used}%",
+        f"- 最近错误: {last_error}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_playback_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.PLAYBACK_CHECK)
+    if evidence is None:
+        return ["（无回放检查证据）"]
+    payload = evidence.payload or {}
+    status = payload.get("status", "-")
+    file_count = payload.get("file_count", "-")
+    playable = payload.get("playable", "-")
+    failure = payload.get("failure_reason") or "-"
+    start = payload.get("start_at", "-")
+    end = payload.get("end_at", "-")
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 状态: {status}，文件数: {file_count}，可回放: {playable}",
+        f"- 查询窗口: {start} ~ {end}",
+        f"- 失败原因: {failure}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_recording_candidate_section(
+    case: SecurityDiagnosisCase,
+    insight: RecordingDiagnosisRuleResult,
+) -> list[str]:
+    """渲染录像缺失候选根因、证据链、排查顺序、排除项与录像事实摘要。"""
+    lines: list[str] = [
+        "## 3. 录像诊断（候选）",
+        "",
+        f"- candidate_label: `{insight.label.value}`",
+        f"- 说明: {insight.explanation}",
+        f"- 命中规则: {insight.matched_rule or '（未匹配）'}",
+        "",
+        "### 证据链解释",
+    ]
+    if insight.evidence_chain:
+        lines += [f"{index}. {item}" for index, item in enumerate(insight.evidence_chain, 1)]
+    else:
+        lines += ["（无可解释的事实链）"]
+    lines += ["", "### 建议排查顺序"]
+    if insight.troubleshooting_order:
+        lines += [f"{index}. {step}" for index, step in enumerate(insight.troubleshooting_order, 1)]
+    else:
+        lines += ["（无）"]
+    lines += ["", "### 为什么不是其他候选原因"]
+    if insight.excluded_candidates:
+        lines += [f"- {item}" for item in insight.excluded_candidates]
+    else:
+        lines += ["（无）"]
+    lines += ["", "### 录像计划摘要"]
+    lines += _render_recording_plan_summary(case)
+    lines += ["", "### 存储状态摘要"]
+    lines += _render_storage_summary(case)
+    lines += ["", "### 回放检查摘要"]
+    lines += _render_playback_summary(case)
+    lines += [""]
+    return lines
