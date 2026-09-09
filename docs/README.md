@@ -15,6 +15,7 @@
 
 - [Phase 0 实现规格说明](./02-specifications/Phase%200%20实现规格说明.md)
 - [Phase 1 摄像头黑屏深化实施规格说明](./02-specifications/Phase%201%20摄像头黑屏深化实施规格说明.md)
+- [Phase 3 门禁刷卡异常深化实施规格说明](./02-specifications/Phase%203%20门禁刷卡异常深化实施规格说明.md)
 
 ## 03-progress
 
@@ -26,3 +27,4 @@
 - [Phase 0 验收标准](./04-validation/Phase%200%20验收标准.md)
 - [Phase 1 验收标准](./04-validation/Phase%201%20验收标准.md)
 - [Phase 2 验收标准（含 Phase 2C 录像缺失规则 / 报告 / 评测）](./04-validation/Phase%202%20验收标准.md)
+- [Phase 3 验收标准](./04-validation/Phase%203%20验收标准.md)

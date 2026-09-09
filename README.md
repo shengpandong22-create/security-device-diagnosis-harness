@@ -22,6 +22,9 @@
 | Phase 2A | 录像缺失 / 录像异常领域模型 | 已完成 |
 | Phase 2B | 录像只读工具与样例案例 | 已完成 |
 | Phase 2C | 录像规则推断、报告增强与评测 | 已完成 |
+| Phase 3A | 门禁领域模型 | 待开始 |
+| Phase 3B | 门禁只读工具与样例案例 | 待开始 |
+| Phase 3C | 门禁规则、报告与固定评测 | 待开始 |
 
 Phase 0A 交付范围：
 
@@ -214,11 +217,13 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [架构图：安防设备诊断 Harness 总览](./docs/01-architecture/security-device-diagnosis-harness-overview.md)
 - [Phase 0 实现规格说明](./docs/02-specifications/Phase%200%20实现规格说明.md)
 - [Phase 1 摄像头黑屏深化实施规格说明](./docs/02-specifications/Phase%201%20摄像头黑屏深化实施规格说明.md)
+- [Phase 3 门禁刷卡异常深化实施规格说明](./docs/02-specifications/Phase%203%20门禁刷卡异常深化实施规格说明.md)
 - [Phase 0 开发总结与 Phase 1 摄像头黑屏深化计划](./docs/03-progress/2026-09-09-Phase0开发总结与Phase1摄像头黑屏深化计划.md)
 - [Phase 1 开发总结与 Phase 2 录像缺失深化计划](./docs/03-progress/2026-09-09-Phase1开发总结与Phase2录像缺失深化计划.md)
 - [Phase 0 验收标准](./docs/04-validation/Phase%200%20验收标准.md)
 - [Phase 1 验收标准](./docs/04-validation/Phase%201%20验收标准.md)
 - [Phase 2 验收标准](./docs/04-validation/Phase%202%20验收标准.md)
+- [Phase 3 验收标准](./docs/04-validation/Phase%203%20验收标准.md)
 
 ## 最小闭环路线
 
