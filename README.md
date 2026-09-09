@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C 与 Phase 1（摄像头黑屏深化）已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1（摄像头黑屏深化）已完成，Phase 2A（录像诊断领域模型）已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -19,6 +19,8 @@
 | Phase 0B | Harness 与只读工具 | 已完成 |
 | Phase 0C | API、报告与 demo | 已完成 |
 | Phase 1 | 摄像头黑屏深化（多子场景 + 评测） | 已完成 |
+| Phase 2A | 录像缺失 / 录像异常领域模型 | 已完成 |
+| Phase 2B / 2C | 录像只读工具、规则、评测 | 未开始 |
 
 Phase 0A 交付范围：
 
@@ -172,6 +174,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [Phase 0 实现规格说明](./docs/02-specifications/Phase%200%20实现规格说明.md)
 - [Phase 1 摄像头黑屏深化实施规格说明](./docs/02-specifications/Phase%201%20摄像头黑屏深化实施规格说明.md)
 - [Phase 0 开发总结与 Phase 1 摄像头黑屏深化计划](./docs/03-progress/2026-09-09-Phase0开发总结与Phase1摄像头黑屏深化计划.md)
+- [Phase 1 开发总结与 Phase 2 录像缺失深化计划](./docs/03-progress/2026-09-09-Phase1开发总结与Phase2录像缺失深化计划.md)
 - [Phase 0 验收标准](./docs/04-validation/Phase%200%20验收标准.md)
 - [Phase 1 验收标准](./docs/04-validation/Phase%201%20验收标准.md)
 
