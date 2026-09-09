@@ -36,7 +36,15 @@ from security_diagnosis_harness.domain.evidence import (
 )
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 from security_diagnosis_harness.tools.contracts import ToolExecutionContext, ToolPermission
+from security_diagnosis_harness.tools.recording_plan import RecordingPlanTool
+from security_diagnosis_harness.tools.recording_playback import RecordingPlaybackTool
 from security_diagnosis_harness.tools.registry import default_permissions
+from security_diagnosis_harness.tools.storage_status import StorageStatusTool
+
+# Phase 2B 录像缺失样例数据，路径在测试侧定义，避免改动 bootstrap 装配。
+RECORDING_CASES_DATA_PATH = Path(__file__).resolve().parents[1] / (
+    "samples/devices/recording_missing_cases.json"
+)
 
 DEVICE_ID = "camera-3f-001"
 
@@ -229,3 +237,18 @@ def make_tool_context(
 def tool_registry() -> object:
     """注册全部只读工具的 Registry（Phase 0 四个 + Phase 1 三个）。"""
     return build_registry()
+
+
+@pytest.fixture
+def recording_tool_registry(tool_registry) -> object:
+    """在既有工具基础上追加 Phase 2B 三个录像只读工具。"""
+    tool_registry.register(RecordingPlanTool())
+    tool_registry.register(StorageStatusTool())
+    tool_registry.register(RecordingPlaybackTool())
+    return tool_registry
+
+
+@pytest.fixture
+def recording_gateway() -> StaticDeviceGateway:
+    """读取 Phase 2B 录像缺失样例数据的静态网关。"""
+    return StaticDeviceGateway(RECORDING_CASES_DATA_PATH)
