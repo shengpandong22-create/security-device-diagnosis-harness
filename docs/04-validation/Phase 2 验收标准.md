@@ -70,7 +70,7 @@
 ### 2.1 工程验收
 
 - [x] `uv run ruff check .` 通过；
-- [x] `uv run pytest` 通过（377 个测试）；
+- [x] `uv run pytest` 通过（376 个测试）；
 - [x] Phase 0 demo 仍可运行；
 - [x] Phase 1 eval 仍 5/5；
 - [x] 不新增 API、不修改 ToolLoopRunner / CitationPolicy、不新增规则推断 / eval 脚本；
