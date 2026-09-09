@@ -1,0 +1,367 @@
+{
+  "version": 1,
+  "devices": [
+    {
+      "device_id": "cam-rec-plan-disabled-01",
+      "case_id": "recording_plan_disabled",
+      "expected_label": "recording_plan_disabled",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "stopped"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "online",
+        "bound": true,
+        "platform_registered": true
+      },
+      "recording_plans": {
+        "1": {
+          "plan_id": "plan-disabled-001",
+          "status": "disabled",
+          "mode": "manual",
+          "time_ranges": [
+            {
+              "start": "00:00:00",
+              "end": "23:59:59",
+              "weekdays": [1, 2, 3, 4, 5, 6, 7]
+            }
+          ],
+          "retention_days": 30,
+          "last_updated_at": "2026-08-01T09:00:00+08:00"
+        }
+      },
+      "storage": {
+        "1": {
+          "storage_id": "storage-pool-a",
+          "status": "normal",
+          "total_gb": 4000.0,
+          "free_gb": 2600.0,
+          "used_percent": 35.0
+        }
+      },
+      "playback": {
+        "1": [
+          {
+            "start_at": "2026-09-08T00:00:00+08:00",
+            "end_at": "2026-09-09T00:00:00+08:00",
+            "status": "missing",
+            "file_count": 0,
+            "playable": false,
+            "failure_reason": "录像计划未启用，该时间段没有产生录像"
+          }
+        ]
+      },
+      "alarms": [
+        {
+          "event_type": "RECORDING_PLAN_DISABLED",
+          "severity": "warning",
+          "message": "录像计划未启用"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.265",
+        "resolution": "1920x1080",
+        "frame_rate": 25,
+        "bitrate_kbps": 4096,
+        "config": {
+          "bitrate_mode": "CBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "cam-rec-schedule-gap-01",
+      "case_id": "recording_schedule_gap",
+      "expected_label": "recording_schedule_gap",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "stopped"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "online",
+        "bound": true,
+        "platform_registered": true
+      },
+      "recording_plans": {
+        "1": {
+          "plan_id": "plan-gap-001",
+          "status": "enabled",
+          "mode": "event_triggered",
+          "time_ranges": [
+            {
+              "start": "09:00:00",
+              "end": "18:00:00",
+              "weekdays": [1, 2, 3, 4, 5]
+            }
+          ],
+          "retention_days": 14,
+          "last_updated_at": "2026-08-20T10:30:00+08:00"
+        }
+      },
+      "storage": {
+        "1": {
+          "storage_id": "storage-pool-a",
+          "status": "normal",
+          "total_gb": 4000.0,
+          "free_gb": 2200.0,
+          "used_percent": 45.0
+        }
+      },
+      "playback": {
+        "1": [
+          {
+            "start_at": "2026-09-08T00:00:00+08:00",
+            "end_at": "2026-09-09T00:00:00+08:00",
+            "status": "missing",
+            "file_count": 0,
+            "playable": false,
+            "failure_reason": "查询时间不在录像计划时间段内，该时间段没有录像"
+          }
+        ]
+      },
+      "alarms": [
+        {
+          "event_type": "RECORDING_SCHEDULE_GAP",
+          "severity": "warning",
+          "message": "录像计划时间段未覆盖查询时间"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.265",
+        "resolution": "1920x1080",
+        "frame_rate": 25,
+        "bitrate_kbps": 4096,
+        "config": {
+          "bitrate_mode": "VBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "cam-rec-storage-full-01",
+      "case_id": "storage_full",
+      "expected_label": "storage_capacity_or_pool_issue",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "stopped"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "online",
+        "bound": true,
+        "platform_registered": true
+      },
+      "recording_plans": {
+        "1": {
+          "plan_id": "plan-full-001",
+          "status": "enabled",
+          "mode": "continuous",
+          "time_ranges": [
+            {
+              "start": "00:00:00",
+              "end": "00:00:00",
+              "weekdays": [1, 2, 3, 4, 5, 6, 7]
+            }
+          ],
+          "retention_days": 7,
+          "last_updated_at": "2026-09-01T08:00:00+08:00"
+        }
+      },
+      "storage": {
+        "1": {
+          "storage_id": "storage-pool-b",
+          "status": "full",
+          "total_gb": 2000.0,
+          "free_gb": 8.0,
+          "used_percent": 99.6,
+          "last_error": "storage pool full, overwrite stopped"
+        }
+      },
+      "playback": {
+        "1": [
+          {
+            "start_at": "2026-09-08T00:00:00+08:00",
+            "end_at": "2026-09-09T00:00:00+08:00",
+            "status": "missing",
+            "file_count": 0,
+            "playable": false,
+            "failure_reason": "存储空间已满，新录像无法写入"
+          }
+        ]
+      },
+      "alarms": [
+        {
+          "event_type": "STORAGE_FULL",
+          "severity": "critical",
+          "message": "存储池已满，录像写入中断"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.265",
+        "resolution": "1920x1080",
+        "frame_rate": 25,
+        "bitrate_kbps": 4096,
+        "config": {
+          "bitrate_mode": "CBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "cam-rec-storage-offline-01",
+      "case_id": "storage_offline",
+      "expected_label": "storage_capacity_or_pool_issue",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "stopped"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "online",
+        "bound": true,
+        "platform_registered": true
+      },
+      "recording_plans": {
+        "1": {
+          "plan_id": "plan-offline-001",
+          "status": "enabled",
+          "mode": "continuous",
+          "time_ranges": [
+            {
+              "start": "00:00:00",
+              "end": "00:00:00",
+              "weekdays": [1, 2, 3, 4, 5, 6, 7]
+            }
+          ],
+          "retention_days": 30,
+          "last_updated_at": "2026-09-02T08:00:00+08:00"
+        }
+      },
+      "storage": {
+        "1": {
+          "storage_id": "storage-pool-c",
+          "status": "offline",
+          "total_gb": 8000.0,
+          "free_gb": 6000.0,
+          "used_percent": 25.0,
+          "last_error": "storage node unreachable"
+        }
+      },
+      "playback": {
+        "1": [
+          {
+            "start_at": "2026-09-08T00:00:00+08:00",
+            "end_at": "2026-09-09T00:00:00+08:00",
+            "status": "missing",
+            "file_count": 0,
+            "playable": false,
+            "failure_reason": "存储池离线，无法读取历史录像"
+          }
+        ]
+      },
+      "alarms": [
+        {
+          "event_type": "STORAGE_OFFLINE",
+          "severity": "critical",
+          "message": "存储节点不可达"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.264",
+        "resolution": "1920x1080",
+        "frame_rate": 25,
+        "bitrate_kbps": 3072,
+        "config": {
+          "bitrate_mode": "CBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "cam-rec-index-missing-01",
+      "case_id": "playback_index_missing",
+      "expected_label": "playback_index_or_file_issue",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "recording"
+      },
+      "channel": {
+        "channel_id": "1",
+        "channel_status": "online",
+        "bound": true,
+        "platform_registered": true
+      },
+      "recording_plans": {
+        "1": {
+          "plan_id": "plan-index-001",
+          "status": "enabled",
+          "mode": "continuous",
+          "time_ranges": [
+            {
+              "start": "00:00:00",
+              "end": "00:00:00",
+              "weekdays": [1, 2, 3, 4, 5, 6, 7]
+            }
+          ],
+          "retention_days": 30,
+          "last_updated_at": "2026-09-05T08:00:00+08:00"
+        }
+      },
+      "storage": {
+        "1": {
+          "storage_id": "storage-pool-a",
+          "status": "normal",
+          "total_gb": 4000.0,
+          "free_gb": 1800.0,
+          "used_percent": 55.0
+        }
+      },
+      "playback": {
+        "1": [
+          {
+            "start_at": "2026-09-08T00:00:00+08:00",
+            "end_at": "2026-09-09T00:00:00+08:00",
+            "status": "index_missing",
+            "file_count": 12,
+            "playable": false,
+            "failure_reason": "录像文件存在但索引缺失，无法定位回放时间点"
+          }
+        ]
+      },
+      "alarms": [
+        {
+          "event_type": "RECORD_INDEX_REBUILD_FAILED",
+          "severity": "warning",
+          "message": "录像索引重建失败"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "encoding": "H.265",
+        "resolution": "2560x1440",
+        "frame_rate": 25,
+        "bitrate_kbps": 6144,
+        "config": {
+          "bitrate_mode": "CBR",
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    }
+  ]
+}

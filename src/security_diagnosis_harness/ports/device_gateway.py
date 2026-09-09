@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from security_diagnosis_harness.domain.camera import (
@@ -17,6 +18,11 @@ from security_diagnosis_harness.domain.device import (
     DeviceAlarmEvent,
     DeviceConfigSnapshot,
     DeviceSnapshot,
+)
+from security_diagnosis_harness.domain.recording import (
+    PlaybackCheckResult,
+    RecordingPlanSnapshot,
+    StorageSnapshot,
 )
 
 
@@ -54,6 +60,24 @@ class DeviceGateway(Protocol):
 
     def query_platform_pull_status(self, device_id: str) -> PlatformPullStatus:
         """查询平台侧拉流状态。"""
+        ...
+
+    def query_recording_plan(self, device_id: str, channel_id: str) -> RecordingPlanSnapshot:
+        """查询指定通道的录像计划（是否启用、录像模式、计划时间段）。"""
+        ...
+
+    def query_storage_status(self, device_id: str, channel_id: str) -> StorageSnapshot:
+        """查询录像存储池状态与容量。"""
+        ...
+
+    def check_recording_playback(
+        self,
+        device_id: str,
+        channel_id: str,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> PlaybackCheckResult:
+        """检查指定时间段是否存在录像、是否可回放。"""
         ...
 
     def search_alarm_events(

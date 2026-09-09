@@ -19,6 +19,8 @@ class EvidenceType(StrEnum):
 
     `DEVICE_CHANNEL` / `DEVICE_STREAM` / `PLATFORM_PULL` 为 Phase 1 摄像头黑屏深化新增，
     它们同属于设备事实类证据。
+
+    `RECORDING_PLAN` / `STORAGE_STATUS` / `PLAYBACK_CHECK` 为 Phase 2B 录像缺失深化新增。
     """
 
     DEVICE_STATUS = "device_status"
@@ -27,6 +29,9 @@ class EvidenceType(StrEnum):
     DEVICE_CHANNEL = "device_channel"
     DEVICE_STREAM = "device_stream"
     PLATFORM_PULL = "platform_pull"
+    RECORDING_PLAN = "recording_plan"
+    STORAGE_STATUS = "storage_status"
+    PLAYBACK_CHECK = "playback_check"
     KNOWLEDGE_SOP = "knowledge_sop"
     HUMAN_FEEDBACK = "human_feedback"
 

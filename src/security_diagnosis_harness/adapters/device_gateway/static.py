@@ -7,15 +7,18 @@
 
 - Phase 0 `static_devices.sample.json`：只有 snapshot / alarms / config；
 - Phase 1 `camera_black_screen_cases.json`：额外包含 channel / streams /
-  platform_pull / case_id / expected_label。
+  platform_pull / case_id / expected_label；
+- Phase 2B `recording_missing_cases.json`：额外包含 recording_plans / storage /
+  playback（三者都按 channel_id 分键）。
 
-旧文件仍然可用于 Phase 0 demo；读取旧文件里不存在的摄像头事实时，
+旧文件仍然可用于 Phase 0 demo；读取旧文件里不存在的摄像头/录像事实时，
 抛出受控的 `DeviceGatewayDataError`，而不是返回伪造数据。
 """
 
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,10 +35,37 @@ from security_diagnosis_harness.domain.device import (
     DeviceConfigSnapshot,
     DeviceSnapshot,
 )
+from security_diagnosis_harness.domain.recording import (
+    PlaybackCheckResult,
+    RecordingPlanSnapshot,
+    StorageSnapshot,
+)
 from security_diagnosis_harness.ports.device_gateway import (
     DeviceGatewayDataError,
     DeviceNotFoundError,
 )
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    """解析 ISO 时间字符串；无法解析时返回 None。
+
+    兼容以 `Z` 结尾的 UTC 写法（Python 3.11+ 原生支持，这里统一处理）。
+    """
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _ensure_aware(value: datetime) -> datetime:
+    """把 naive datetime 按 UTC 处理，保证可以与 aware datetime 比较。"""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 class StaticDeviceEntry(BaseModel):
@@ -48,6 +78,10 @@ class StaticDeviceEntry(BaseModel):
     channel: dict[str, Any] = Field(default_factory=dict)
     streams: dict[str, dict[str, Any]] = Field(default_factory=dict)
     platform_pull: dict[str, Any] = Field(default_factory=dict)
+    # Phase 2B：录像事实，均按 channel_id 分键。
+    recording_plans: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    storage: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    playback: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
     alarms: list[dict[str, Any]] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
     case_id: str | None = None
@@ -140,6 +174,97 @@ class StaticDeviceGateway:
         if not entry.platform_pull:
             raise DeviceGatewayDataError(f"设备 {device_id} 缺少平台拉流状态数据")
         return PlatformPullStatus.model_validate({"device_id": device_id, **entry.platform_pull})
+
+    # ------------------------------------------------------------ Phase 2B 录像事实
+    def query_recording_plan(self, device_id: str, channel_id: str) -> RecordingPlanSnapshot:
+        entry = self._require_entry(device_id)
+        plan = entry.recording_plans.get(channel_id)
+        if plan is None:
+            raise DeviceGatewayDataError(
+                f"设备 {device_id} 通道 {channel_id} 缺少录像计划数据"
+            )
+        return RecordingPlanSnapshot.model_validate(
+            {"device_id": device_id, "channel_id": channel_id, **plan}
+        )
+
+    def query_storage_status(self, device_id: str, channel_id: str) -> StorageSnapshot:
+        entry = self._require_entry(device_id)
+        storage = entry.storage.get(channel_id)
+        if storage is None:
+            raise DeviceGatewayDataError(
+                f"设备 {device_id} 通道 {channel_id} 缺少录像存储状态数据"
+            )
+        return StorageSnapshot.model_validate(storage)
+
+    def check_recording_playback(
+        self,
+        device_id: str,
+        channel_id: str,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> PlaybackCheckResult:
+        entry = self._require_entry(device_id)
+        candidates = entry.playback.get(channel_id) or []
+        if not candidates:
+            raise DeviceGatewayDataError(
+                f"设备 {device_id} 通道 {channel_id} 缺少录像回放检查数据"
+            )
+
+        matched = self._match_playback_window(candidates, start_at, end_at)
+        if matched is None:
+            raise DeviceGatewayDataError(
+                f"设备 {device_id} 通道 {channel_id} 在 "
+                f"{start_at.isoformat()} ~ {end_at.isoformat()} 时间段没有回放检查数据"
+            )
+        return PlaybackCheckResult.model_validate(
+            {
+                "device_id": device_id,
+                "channel_id": channel_id,
+                "start_at": start_at,
+                "end_at": end_at,
+                **{
+                    key: value
+                    for key, value in matched.items()
+                    if key not in ("start_at", "end_at")
+                },
+            }
+        )
+
+    @staticmethod
+    def _match_playback_window(
+        candidates: list[dict[str, Any]],
+        start_at: datetime,
+        end_at: datetime,
+    ) -> dict[str, Any] | None:
+        """按查询时间窗匹配样例中的回放记录。
+
+        优先返回完全覆盖查询窗口的记录，其次返回有重叠的第一条；
+        都没有时返回 None，由调用方转成受控失败。
+
+        查询与样例窗口可能一个带时区一个不带（naive），比较前统一按 UTC 处理，
+        避免 `can't compare offset-naive and offset-aware datetimes`。
+        """
+        query_start = _ensure_aware(start_at)
+        query_end = _ensure_aware(end_at)
+
+        for candidate in candidates:
+            window_start = _parse_datetime(candidate.get("start_at"))
+            window_end = _parse_datetime(candidate.get("end_at"))
+            if window_start is None or window_end is None:
+                continue
+            window_start = _ensure_aware(window_start)
+            window_end = _ensure_aware(window_end)
+            if window_start <= query_start and window_end >= query_end:
+                return candidate
+
+        for candidate in candidates:
+            window_start = _parse_datetime(candidate.get("start_at"))
+            window_end = _parse_datetime(candidate.get("end_at"))
+            if window_start is None or window_end is None:
+                continue
+            if _ensure_aware(window_start) < query_end and _ensure_aware(window_end) > query_start:
+                return candidate
+        return None
 
     def search_alarm_events(
         self,
