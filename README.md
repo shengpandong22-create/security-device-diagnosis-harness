@@ -28,7 +28,7 @@
 | Phase 4A | 报警误报领域模型 | 已完成 |
 | Phase 4B | 报警只读工具与样例案例 | 已完成 |
 | Phase 4C | 报警规则、报告与固定评测 | 已完成 |
-| Phase 5A | 知识候选领域模型 | 待开始 |
+| Phase 5A | 知识候选领域模型 | 已完成 |
 | Phase 5B | confirmed 诊断生成知识候选 | 待开始 |
 | Phase 5C | 轻量知识检索与 RAG 演进入口 | 待开始 |
 
@@ -236,6 +236,18 @@ uv run python scripts/eval_phase4_alarm_false_positive.py
 输出 `demo-output/phase4-alarm-false-positive-eval.json` 与 `.md`，
 当前 5 个案例 label 命中率 100%、引用合规率 100%、敏感信息泄露 0、
 `external_model_called=false`。
+
+Phase 5A 交付范围（知识候选领域模型）：
+
+- `domain/knowledge.py`：`KnowledgeCandidate`、`KnowledgeReview`、
+  `KnowledgeCandidateStatus`、`KnowledgeCandidateSource`、`KnowledgeReviewAction`；
+- 候选知识必须关联故障类型、候选标签、标题、摘要、根因、现象、排查步骤；
+- 候选知识必须可追溯到 `source_diagnosis_id`、`source_conclusion_id`
+  和 `source_evidence_ids`；
+- 自动创建时只能是 `candidate`，`confirmed` 只能由人工知识审核产生；
+- rejected / retired 不允许重新 confirmed；
+- 文本和 metadata 中的密码、Token、人员标识、卡号、车牌、截图/视频 URL 会被脱敏；
+- 本阶段仅新增 Domain 与测试，未接入数据库、API、Tool、Runner、真实模型或真实设备。
 
 ## 快速开始
 
