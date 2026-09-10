@@ -168,6 +168,11 @@ def test_device_fact_evidence_types_exclude_knowledge():
             EvidenceType.RECORDING_PLAN,
             EvidenceType.STORAGE_STATUS,
             EvidenceType.PLAYBACK_CHECK,
+            EvidenceType.ACCESS_CONTROLLER,
+            EvidenceType.ACCESS_DOOR,
+            EvidenceType.ACCESS_CREDENTIAL,
+            EvidenceType.ACCESS_POLICY,
+            EvidenceType.ACCESS_EVENT,
         }
     )
 
@@ -196,6 +201,18 @@ def test_recording_evidence_types_are_device_facts():
         assert evidence_type in DEVICE_FACT_EVIDENCE_TYPES
 
 
+def test_access_evidence_types_are_device_facts():
+    """Phase 3C：门禁类五种 EvidenceType 必须纳入设备事实集合。"""
+    for evidence_type in (
+        EvidenceType.ACCESS_CONTROLLER,
+        EvidenceType.ACCESS_DOOR,
+        EvidenceType.ACCESS_CREDENTIAL,
+        EvidenceType.ACCESS_POLICY,
+        EvidenceType.ACCESS_EVENT,
+    ):
+        assert evidence_type in DEVICE_FACT_EVIDENCE_TYPES
+
+
 def test_policy_accepts_probable_citing_recording_plan_and_playback_check():
     """Phase 2C：probable 引用 recording_plan + playback_check 可以通过。"""
     case = make_case(DIAG_A)
@@ -216,6 +233,31 @@ def test_policy_rejects_probable_citing_single_recording_type():
     with pytest.raises(CitationPolicyViolation, match="probable"):
         CitationPolicy().validate(
             _conclusion(DIAG_A, [plan.evidence_id, another_plan.evidence_id], "probable"),
+            case,
+        )
+
+
+def test_policy_accepts_probable_citing_access_controller_and_event():
+    """Phase 3C：probable 引用 access_controller + access_event 可以通过。"""
+    case = make_case(DIAG_A)
+    controller = _add(case, EvidenceType.ACCESS_CONTROLLER)
+    event = _add(case, EvidenceType.ACCESS_EVENT)
+
+    CitationPolicy().validate(
+        _conclusion(DIAG_A, [controller.evidence_id, event.evidence_id], "probable"),
+        case,
+    )
+
+
+def test_policy_rejects_probable_citing_single_access_type():
+    """Phase 3C：probable 只引用 access_event 一类必须失败。"""
+    case = make_case(DIAG_A)
+    event = _add(case, EvidenceType.ACCESS_EVENT)
+    another_event = _add(case, EvidenceType.ACCESS_EVENT)
+
+    with pytest.raises(CitationPolicyViolation, match="probable"):
+        CitationPolicy().validate(
+            _conclusion(DIAG_A, [event.evidence_id, another_event.evidence_id], "probable"),
             case,
         )
 
