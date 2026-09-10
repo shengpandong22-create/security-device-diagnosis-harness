@@ -39,7 +39,9 @@ _SENSITIVE_TEXT_PATTERN = re.compile(
     r"|AKIA[0-9A-Z]{16}"
     r"|sk-[A-Za-z0-9_-]{12,}"
     r"|Bearer\s+[A-Za-z0-9._-]+"
-    r"|(?:password|passwd|pwd|token|secret)\s*[:=]\s*\S+",
+    r"|(?:password|passwd|pwd|token|secret)\s*[:=]\s*\S+"
+    r"|(?:card[_-]?(?:no|number|id)|person[_-]?id|id[_-]?card"
+    r"|face[_-]?id|license[_-]?plate)\s*[:=]\s*\S+",
     re.IGNORECASE,
 )
 

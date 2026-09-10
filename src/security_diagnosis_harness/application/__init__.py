@@ -25,6 +25,10 @@ from security_diagnosis_harness.application.diagnoses import (
 from security_diagnosis_harness.application.errors import (
     ApplicationError,
     DiagnosisNotFoundError,
+    KnowledgeCandidateGenerationError,
+)
+from security_diagnosis_harness.application.knowledge_candidates import (
+    KnowledgeCandidateApplicationService,
 )
 from security_diagnosis_harness.application.reports import render_markdown_report
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
@@ -40,6 +44,8 @@ __all__ = [
     "CitationRepair",
     "DiagnosisNotFoundError",
     "InMemoryDiagnosisRepository",
+    "KnowledgeCandidateApplicationService",
+    "KnowledgeCandidateGenerationError",
     "RunDiagnosisResult",
     "SecurityDiagnosisApplicationService",
     "device_fact_evidence_ids",
