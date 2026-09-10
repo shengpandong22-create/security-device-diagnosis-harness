@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A/3B/3C 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A/3B/3C、Phase 4A 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -25,6 +25,9 @@
 | Phase 3A | 门禁领域模型 | 已完成 |
 | Phase 3B | 门禁只读工具与样例案例 | 已完成 |
 | Phase 3C | 门禁规则、报告与固定评测 | 已完成 |
+| Phase 4A | 报警误报领域模型 | 已完成 |
+| Phase 4B | 报警只读工具与样例案例 | 待开始 |
+| Phase 4C | 报警规则、报告与固定评测 | 待开始 |
 
 Phase 0A 交付范围：
 
@@ -176,6 +179,15 @@ uv run python scripts/eval_phase3_access_card_failed.py
 输出 `demo-output/phase3-access-card-failed-eval.json` 与 `.md`，
 当前 5 个案例 label 命中率 100%、引用合规率 100%、敏感信息泄露 0、
 `external_model_called=false`。
+
+Phase 4A 交付范围（报警误报领域模型）：
+
+- `domain/alarm.py`：报警规则、触发信号、环境干扰、复核结果、重复/关联告警五类事实模型；
+- 支持规则灵敏度过高、阈值过低、防抖过短、信号噪声、传感器卡死、雨雾强光风夜间阴影干扰、复核未发现目标、重复告警风暴等事实表达；
+- `AlarmTimeRange` 支持跨天布防与全天布防；
+- 摄像头画面 URL、视频 URL、人员标识、卡号、车牌、手机号、Token、password、secret 等敏感字段脱敏为 `***REDACTED***`；
+- 模型只表达事实，不包含 `confidence`、`root_cause`、`conclusion`、`final_status` 等诊断结论字段；
+- 仅新增 Domain 与测试，未接入 Tool、DeviceGateway、Runner、API、数据库、RAG、真实模型或真实设备。
 
 ## 快速开始
 

@@ -28,6 +28,29 @@ from security_diagnosis_harness.domain.access import (
 from security_diagnosis_harness.domain.access import (
     Weekday as AccessWeekday,
 )
+from security_diagnosis_harness.domain.alarm import (
+    ALL_WEEKDAYS as ALARM_ALL_WEEKDAYS,
+)
+from security_diagnosis_harness.domain.alarm import (
+    AlarmCorrelationSnapshot,
+    AlarmEnvironmentSnapshot,
+    AlarmRuleSensitivity,
+    AlarmRuleSnapshot,
+    AlarmSeverityLevel,
+    AlarmSignalSnapshot,
+    AlarmSignalStatus,
+    AlarmTimeRange,
+    AlarmType,
+    AlarmVerificationSnapshot,
+    CorrelationPattern,
+    EnvironmentInterferenceType,
+    VerificationResult,
+    is_alarm_sensitive_key,
+    redact_alarm_sensitive_values,
+)
+from security_diagnosis_harness.domain.alarm import (
+    Weekday as AlarmWeekday,
+)
 from security_diagnosis_harness.domain.camera import (
     ChannelSnapshot,
     ChannelStatus,
@@ -76,6 +99,7 @@ from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAct
 
 __all__ = [
     "ACCESS_ALL_WEEKDAYS",
+    "ALARM_ALL_WEEKDAYS",
     "AccessControllerHealth",
     "AccessControllerSnapshot",
     "AccessControllerStatus",
@@ -85,10 +109,22 @@ __all__ = [
     "AccessPolicySnapshot",
     "AccessTimeRange",
     "AccessWeekday",
+    "AlarmCorrelationSnapshot",
+    "AlarmEnvironmentSnapshot",
+    "AlarmRuleSensitivity",
+    "AlarmRuleSnapshot",
     "AlarmSeverity",
+    "AlarmSeverityLevel",
+    "AlarmSignalSnapshot",
+    "AlarmSignalStatus",
+    "AlarmTimeRange",
+    "AlarmType",
+    "AlarmVerificationSnapshot",
+    "AlarmWeekday",
     "ChannelSnapshot",
     "ChannelStatus",
     "ConclusionConfidence",
+    "CorrelationPattern",
     "CredentialSnapshot",
     "CredentialStatus",
     "CredentialType",
@@ -104,6 +140,7 @@ __all__ = [
     "DoorStatus",
     "EvidenceSource",
     "EvidenceType",
+    "EnvironmentInterferenceType",
     "HumanReview",
     "HumanReviewAction",
     "PlaybackCheckResult",
@@ -124,8 +161,11 @@ __all__ = [
     "StreamKind",
     "StreamSnapshot",
     "StreamStatus",
+    "VerificationResult",
     "is_access_sensitive_key",
+    "is_alarm_sensitive_key",
     "new_id",
     "redact_access_sensitive_values",
+    "redact_alarm_sensitive_values",
     "utc_now",
 ]
