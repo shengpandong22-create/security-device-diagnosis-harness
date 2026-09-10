@@ -1,5 +1,10 @@
 """Agent 工具层：契约、Registry 与 Phase 0 只读工具。"""
 
+from security_diagnosis_harness.tools.access_controller import AccessControllerTool
+from security_diagnosis_harness.tools.access_credential import AccessCredentialTool
+from security_diagnosis_harness.tools.access_door import AccessDoorTool
+from security_diagnosis_harness.tools.access_events import AccessEventsTool
+from security_diagnosis_harness.tools.access_policy import AccessPolicyTool
 from security_diagnosis_harness.tools.contracts import (
     BaseTool,
     ToolArgumentError,
@@ -28,6 +33,11 @@ from security_diagnosis_harness.tools.storage_status import StorageStatusTool
 
 __all__ = [
     "BaseTool",
+    "AccessControllerTool",
+    "AccessCredentialTool",
+    "AccessDoorTool",
+    "AccessEventsTool",
+    "AccessPolicyTool",
     "DeviceAlarmEventsTool",
     "DeviceChannelTool",
     "DeviceConfigSnapshotTool",
