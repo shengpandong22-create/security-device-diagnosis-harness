@@ -9,6 +9,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from security_diagnosis_harness.application.access_diagnosis_rules import (
+    AccessDiagnosisLabel,
+    AccessDiagnosisRuleResult,
+    infer_access_card_failed_label,
+)
 from security_diagnosis_harness.application.camera_diagnosis_rules import (
     CameraDiagnosisRuleResult,
     infer_camera_black_screen_label,
@@ -18,6 +23,7 @@ from security_diagnosis_harness.application.recording_diagnosis_rules import (
     RecordingDiagnosisRuleResult,
     infer_recording_missing_label,
 )
+from security_diagnosis_harness.domain.access import is_access_sensitive_key
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.device import REDACTED_VALUE, is_sensitive_key
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus, SecurityFaultType
@@ -41,7 +47,7 @@ def redact_payload(payload: Any) -> Any:
     if isinstance(payload, dict):
         return {
             key: REDACTED_VALUE
-            if is_sensitive_key(str(key))
+            if is_sensitive_key(str(key)) or is_access_sensitive_key(str(key))
             else redact_payload(value)
             for key, value in payload.items()
         }
@@ -56,7 +62,9 @@ def _dump(payload: Any) -> str:
 
 def render_markdown_report(
     case: SecurityDiagnosisCase,
-    insight: CameraDiagnosisRuleResult | RecordingDiagnosisRuleResult | None = None,
+    insight: (
+        CameraDiagnosisRuleResult | RecordingDiagnosisRuleResult | AccessDiagnosisRuleResult | None
+    ) = None,
 ) -> str:
     """把一条诊断渲染成可读 Markdown。
 
@@ -108,9 +116,13 @@ def render_markdown_report(
         insight = infer_camera_black_screen_label(case.evidence)
     if insight is None and case.fault_type is SecurityFaultType.RECORDING_MISSING:
         insight = infer_recording_missing_label(case)
+    if insight is None and case.fault_type is SecurityFaultType.ACCESS_CARD_FAILED:
+        insight = infer_access_card_failed_label(case)
 
     if insight is not None:
-        if isinstance(insight.label, RecordingDiagnosisLabel):
+        if isinstance(insight.label, AccessDiagnosisLabel):
+            lines += _render_access_candidate_section(case, insight)
+        elif isinstance(insight.label, RecordingDiagnosisLabel):
             lines += _render_recording_candidate_section(case, insight)
         else:
             lines += [
@@ -305,5 +317,120 @@ def _render_recording_candidate_section(
     lines += _render_storage_summary(case)
     lines += ["", "### 回放检查摘要"]
     lines += _render_playback_summary(case)
+    lines += [""]
+    return lines
+
+
+# ------------------------------------------------------------------ 门禁诊断小节
+def _render_access_controller_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ACCESS_CONTROLLER)
+    if evidence is None:
+        return ["（无门禁控制器证据）"]
+    payload = evidence.payload or {}
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 状态: {payload.get('status', '-')}，健康: {payload.get('health', '-')}",
+        f"- 最近错误: {payload.get('last_error') or '-'}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_access_door_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ACCESS_DOOR)
+    if evidence is None:
+        return ["（无门 / 锁证据）"]
+    payload = evidence.payload or {}
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 门状态: {payload.get('door_status', '-')}，门锁状态: {payload.get('lock_status', '-')}",
+        f"- 门锁异常: {payload.get('has_lock_error', '-')}",
+        f"- 最近错误: {payload.get('last_error') or '-'}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_access_credential_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ACCESS_CREDENTIAL)
+    if evidence is None:
+        return ["（无凭证证据）"]
+    payload = evidence.payload or {}
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 凭证类型: {payload.get('credential_type', '-')}，状态: {payload.get('status', '-')}",
+        f"- 凭证有效: {payload.get('is_valid', '-')}",
+        f"- 过期时间: {payload.get('expires_at') or '-'}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_access_policy_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ACCESS_POLICY)
+    if evidence is None:
+        return ["（无授权策略证据）"]
+    payload = evidence.payload or {}
+    time_ranges = payload.get("time_ranges") or []
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 目标门: {payload.get('door_id', '-')}，允许通行: {payload.get('allowed', '-')}",
+        f"- 授权时段数: {len(time_ranges)}",
+        f"- 有效期: {payload.get('valid_from') or '-'} ~ {payload.get('valid_until') or '-'}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_access_event_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ACCESS_EVENT)
+    if evidence is None:
+        return ["（无刷卡事件证据）"]
+    payload = evidence.payload or {}
+    events = payload.get("events") or []
+    first = events[0] if events and isinstance(events[0], dict) else {}
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 事件数: {len(events)}",
+        f"- 最近结果: {first.get('decision', '-')}，拒绝原因: {first.get('deny_reason') or '-'}",
+        f"- 发生时间: {first.get('occurred_at') or '-'}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_access_candidate_section(
+    case: SecurityDiagnosisCase,
+    insight: AccessDiagnosisRuleResult,
+) -> list[str]:
+    """渲染门禁刷卡异常候选根因、证据链、排查顺序、排除项与门禁事实摘要。"""
+    lines: list[str] = [
+        "## 3. 门禁诊断（候选）",
+        "",
+        f"- candidate_label: `{insight.label.value}`",
+        f"- 说明: {insight.explanation}",
+        f"- 命中规则: {insight.matched_rule or '（未匹配）'}",
+        "",
+        "### 证据链解释",
+    ]
+    if insight.evidence_chain:
+        lines += [f"{index}. {item}" for index, item in enumerate(insight.evidence_chain, 1)]
+    else:
+        lines += ["（无可解释的事实链）"]
+    lines += ["", "### 建议排查顺序"]
+    if insight.troubleshooting_order:
+        lines += [f"{index}. {step}" for index, step in enumerate(insight.troubleshooting_order, 1)]
+    else:
+        lines += ["（无）"]
+    lines += ["", "### 为什么不是其他候选原因"]
+    if insight.excluded_candidates:
+        lines += [f"- {item}" for item in insight.excluded_candidates]
+    else:
+        lines += ["（无）"]
+    lines += ["", "### 门禁控制器摘要"]
+    lines += _render_access_controller_summary(case)
+    lines += ["", "### 门 / 锁摘要"]
+    lines += _render_access_door_summary(case)
+    lines += ["", "### 凭证摘要"]
+    lines += _render_access_credential_summary(case)
+    lines += ["", "### 授权策略摘要"]
+    lines += _render_access_policy_summary(case)
+    lines += ["", "### 刷卡事件摘要"]
+    lines += _render_access_event_summary(case)
     lines += [""]
     return lines

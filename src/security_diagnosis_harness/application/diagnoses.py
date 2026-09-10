@@ -17,6 +17,11 @@ from security_diagnosis_harness.agent.runner import (
     ToolLoopResult,
     ToolLoopRunner,
 )
+from security_diagnosis_harness.application.access_diagnosis_rules import (
+    AccessDiagnosisLabel,
+    AccessDiagnosisRuleResult,
+    infer_access_card_failed_label,
+)
 from security_diagnosis_harness.application.camera_diagnosis_rules import (
     CameraDiagnosisLabel,
     CameraDiagnosisRuleResult,
@@ -76,9 +81,10 @@ class RunDiagnosisResult(BaseModel):
     rounds: int = 0
     tool_calls: int = 0
     error: str | None = None
-    # Phase 1/2C：候选根因标签（只作为候选解释，不产生 confirmed）。
-    # 摄像头场景为 CameraDiagnosisLabel，录像场景为 RecordingDiagnosisLabel。
-    candidate_label: CameraDiagnosisLabel | RecordingDiagnosisLabel | None = None
+    # Phase 1/2/3C：候选根因标签（只作为候选解释，不产生 confirmed）。
+    candidate_label: (
+        CameraDiagnosisLabel | RecordingDiagnosisLabel | AccessDiagnosisLabel | None
+    ) = None
     candidate_explanation: str = ""
     evidence_chain: list[str] = Field(default_factory=list)
     excluded_candidates: list[str] = Field(default_factory=list)
@@ -380,20 +386,22 @@ class SecurityDiagnosisApplicationService:
             troubleshooting_order=insight.troubleshooting_order,
         )
 
-    # ------------------------------------------------------- 候选根因（Phase 1/2C）
+    # ------------------------------------------------------- 候选根因（Phase 1/2/3C）
     def infer_candidate_label(
         self, case: SecurityDiagnosisCase
-    ) -> CameraDiagnosisRuleResult | RecordingDiagnosisRuleResult:
+    ) -> CameraDiagnosisRuleResult | RecordingDiagnosisRuleResult | AccessDiagnosisRuleResult:
         """根据已落地 Evidence 推断候选根因标签。
 
         按故障类型分派到对应规则；摄像头黑屏走摄像头规则，
-        录像缺失走录像规则；其他故障类型返回"事实不足"占位。
+        录像缺失走录像规则，门禁刷卡异常走门禁规则；其他故障类型返回"事实不足"占位。
         不改变任何状态，也不产生 confirmed。
         """
         if case.fault_type is SecurityFaultType.CAMERA_BLACK_SCREEN:
             return infer_camera_black_screen_label(case.evidence)
         if case.fault_type is SecurityFaultType.RECORDING_MISSING:
             return infer_recording_missing_label(case)
+        if case.fault_type is SecurityFaultType.ACCESS_CARD_FAILED:
+            return infer_access_card_failed_label(case)
         return CameraDiagnosisRuleResult(
             label=CameraDiagnosisLabel.INSUFFICIENT_CAMERA_FACTS,
             explanation="当前故障类型不使用摄像头黑屏候选规则",
