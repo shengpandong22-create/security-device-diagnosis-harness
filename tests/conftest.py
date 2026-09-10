@@ -35,6 +35,11 @@ from security_diagnosis_harness.domain.evidence import (
     Reliability,
 )
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
+from security_diagnosis_harness.tools.access_controller import AccessControllerTool
+from security_diagnosis_harness.tools.access_credential import AccessCredentialTool
+from security_diagnosis_harness.tools.access_door import AccessDoorTool
+from security_diagnosis_harness.tools.access_events import AccessEventsTool
+from security_diagnosis_harness.tools.access_policy import AccessPolicyTool
 from security_diagnosis_harness.tools.contracts import ToolExecutionContext, ToolPermission
 from security_diagnosis_harness.tools.recording_plan import RecordingPlanTool
 from security_diagnosis_harness.tools.recording_playback import RecordingPlaybackTool
@@ -44,6 +49,9 @@ from security_diagnosis_harness.tools.storage_status import StorageStatusTool
 # Phase 2B 录像缺失样例数据，路径在测试侧定义，避免改动 bootstrap 装配。
 RECORDING_CASES_DATA_PATH = Path(__file__).resolve().parents[1] / (
     "samples/devices/recording_missing_cases.json"
+)
+ACCESS_CASES_DATA_PATH = Path(__file__).resolve().parents[1] / (
+    "samples/devices/access_card_failed_cases.json"
 )
 
 DEVICE_ID = "camera-3f-001"
@@ -249,6 +257,23 @@ def recording_tool_registry(tool_registry) -> object:
 
 
 @pytest.fixture
+def access_tool_registry(tool_registry) -> object:
+    """在既有工具基础上追加 Phase 3B 五个门禁只读工具。"""
+    tool_registry.register(AccessControllerTool())
+    tool_registry.register(AccessDoorTool())
+    tool_registry.register(AccessCredentialTool())
+    tool_registry.register(AccessPolicyTool())
+    tool_registry.register(AccessEventsTool())
+    return tool_registry
+
+
+@pytest.fixture
 def recording_gateway() -> StaticDeviceGateway:
     """读取 Phase 2B 录像缺失样例数据的静态网关。"""
     return StaticDeviceGateway(RECORDING_CASES_DATA_PATH)
+
+
+@pytest.fixture
+def access_gateway() -> StaticDeviceGateway:
+    """读取 Phase 3B 门禁刷卡异常样例数据的静态网关。"""
+    return StaticDeviceGateway(ACCESS_CASES_DATA_PATH)
