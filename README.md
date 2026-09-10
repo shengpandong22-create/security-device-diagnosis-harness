@@ -28,6 +28,9 @@
 | Phase 4A | 报警误报领域模型 | 已完成 |
 | Phase 4B | 报警只读工具与样例案例 | 已完成 |
 | Phase 4C | 报警规则、报告与固定评测 | 已完成 |
+| Phase 5A | 知识候选领域模型 | 待开始 |
+| Phase 5B | confirmed 诊断生成知识候选 | 待开始 |
+| Phase 5C | 轻量知识检索与 RAG 演进入口 | 待开始 |
 
 Phase 0A 交付范围：
 
@@ -331,6 +334,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [Phase 2 录像缺失深化实施规格说明](./docs/02-specifications/Phase%202%20录像缺失深化实施规格说明.md)
 - [Phase 3 门禁刷卡异常深化实施规格说明](./docs/02-specifications/Phase%203%20门禁刷卡异常深化实施规格说明.md)
 - [Phase 4 报警误报深化实施规格说明](./docs/02-specifications/Phase%204%20报警误报深化实施规格说明.md)
+- [Phase 5 知识沉淀与 RAG 增强实施规格说明](./docs/02-specifications/Phase%205%20知识沉淀与RAG增强实施规格说明.md)
 - [Phase 0 开发总结与 Phase 1 摄像头黑屏深化计划](./docs/03-progress/2026-09-09-Phase0开发总结与Phase1摄像头黑屏深化计划.md)
 - [Phase 1 开发总结与 Phase 2 录像缺失深化计划](./docs/03-progress/2026-09-09-Phase1开发总结与Phase2录像缺失深化计划.md)
 - [Phase 0 验收标准](./docs/04-validation/Phase%200%20验收标准.md)
@@ -338,6 +342,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [Phase 2 验收标准](./docs/04-validation/Phase%202%20验收标准.md)
 - [Phase 3 验收标准](./docs/04-validation/Phase%203%20验收标准.md)
 - [Phase 4 验收标准](./docs/04-validation/Phase%204%20验收标准.md)
+- [Phase 5 验收标准](./docs/04-validation/Phase%205%20验收标准.md)
 
 ## 最小闭环路线
 

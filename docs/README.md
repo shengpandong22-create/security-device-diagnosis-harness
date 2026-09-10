@@ -17,12 +17,14 @@
 - [Phase 1 摄像头黑屏深化实施规格说明](./02-specifications/Phase%201%20摄像头黑屏深化实施规格说明.md)
 - [Phase 3 门禁刷卡异常深化实施规格说明](./02-specifications/Phase%203%20门禁刷卡异常深化实施规格说明.md)
 - [Phase 4 报警误报深化实施规格说明](./02-specifications/Phase%204%20报警误报深化实施规格说明.md)
+- [Phase 5 知识沉淀与 RAG 增强实施规格说明](./02-specifications/Phase%205%20知识沉淀与RAG增强实施规格说明.md)
 
 ## 03-progress
 
 - [2026-09-09：Phase 0 开发总结与 Phase 1 摄像头黑屏深化计划](./03-progress/2026-09-09-Phase0开发总结与Phase1摄像头黑屏深化计划.md)
 - [2026-09-09：Phase 1 开发总结与 Phase 2 录像缺失深化计划](./03-progress/2026-09-09-Phase1开发总结与Phase2录像缺失深化计划.md)
 - [2026-09-11：Phase 3 开发总结与 Phase 4 报警误报深化计划](./03-progress/2026-09-11-Phase3开发总结与Phase4报警误报深化计划.md)
+- [2026-09-11：Phase 4 开发总结与 Phase 5 知识沉淀计划](./03-progress/2026-09-11-Phase4开发总结与Phase5知识沉淀计划.md)
 
 ## 04-validation
 
@@ -31,3 +33,4 @@
 - [Phase 2 验收标准（含 Phase 2C 录像缺失规则 / 报告 / 评测）](./04-validation/Phase%202%20验收标准.md)
 - [Phase 3 验收标准](./04-validation/Phase%203%20验收标准.md)
 - [Phase 4 验收标准](./04-validation/Phase%204%20验收标准.md)
+- [Phase 5 验收标准](./04-validation/Phase%205%20验收标准.md)
