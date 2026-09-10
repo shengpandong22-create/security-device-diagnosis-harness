@@ -5,6 +5,11 @@ from security_diagnosis_harness.tools.access_credential import AccessCredentialT
 from security_diagnosis_harness.tools.access_door import AccessDoorTool
 from security_diagnosis_harness.tools.access_events import AccessEventsTool
 from security_diagnosis_harness.tools.access_policy import AccessPolicyTool
+from security_diagnosis_harness.tools.alarm_correlation import AlarmCorrelationTool
+from security_diagnosis_harness.tools.alarm_environment import AlarmEnvironmentTool
+from security_diagnosis_harness.tools.alarm_rule import AlarmRuleTool
+from security_diagnosis_harness.tools.alarm_signal import AlarmSignalTool
+from security_diagnosis_harness.tools.alarm_verification import AlarmVerificationTool
 from security_diagnosis_harness.tools.contracts import (
     BaseTool,
     ToolArgumentError,
@@ -38,6 +43,11 @@ __all__ = [
     "AccessDoorTool",
     "AccessEventsTool",
     "AccessPolicyTool",
+    "AlarmCorrelationTool",
+    "AlarmEnvironmentTool",
+    "AlarmRuleTool",
+    "AlarmSignalTool",
+    "AlarmVerificationTool",
     "DeviceAlarmEventsTool",
     "DeviceChannelTool",
     "DeviceConfigSnapshotTool",
