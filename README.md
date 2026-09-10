@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -22,7 +22,7 @@
 | Phase 2A | 录像缺失 / 录像异常领域模型 | 已完成 |
 | Phase 2B | 录像只读工具与样例案例 | 已完成 |
 | Phase 2C | 录像规则推断、报告增强与评测 | 已完成 |
-| Phase 3A | 门禁领域模型 | 待开始 |
+| Phase 3A | 门禁领域模型 | 已完成 |
 | Phase 3B | 门禁只读工具与样例案例 | 待开始 |
 | Phase 3C | 门禁规则、报告与固定评测 | 待开始 |
 
@@ -122,6 +122,15 @@ uv run python scripts/eval_phase2_recording_missing.py
 输出 `demo-output/phase2-recording-missing-eval.json` 与 `.md`，
 当前 5 个案例 label 命中率 100%、引用合规率 100%、敏感信息泄露 0、
 `external_model_called=false`。
+
+Phase 3A 交付范围（门禁刷卡异常领域模型）：
+
+- `domain/access.py`：门禁控制器、门状态、凭证状态、授权策略、刷卡事件五类事实模型；
+- 支持控制器离线 / 异常、门锁卡死、凭证冻结或过期、无门权限、授权时段跨天、刷卡拒绝、控制器超时等事实表达；
+- `AccessTimeRange` 支持跨天授权与全天授权；
+- 卡号、人脸特征、指纹模板、PIN、手机号、身份证、Token、password、secret、credential 等敏感字段入模型前脱敏为 `***REDACTED***`；
+- 模型只表达事实，不包含 `confidence`、`root_cause`、`conclusion`、`final_status` 等诊断结论字段；
+- 仅新增 Domain 与测试，未接入 Tool、DeviceGateway、Runner、API、数据库、RAG、真实模型或真实设备。
 
 ## 快速开始
 

@@ -4,42 +4,54 @@
 > Phase 3 分三段：3A 领域模型、3B 只读工具与样例案例、3C 规则与评测。  
 > 本文档不接真实设备、不接真实模型、不接数据库。
 
-## 1. Phase 3A：门禁领域模型（未开始）
+## 1. Phase 3A：门禁领域模型（已完成）
 
 ### 1.1 工程验收
 
-- [ ] `uv run ruff check .` 通过；
-- [ ] `uv run pytest` 通过；
-- [ ] Phase 0 demo 仍可运行；
-- [ ] Phase 1 eval 仍 5/5；
-- [ ] Phase 2 eval 仍 5/5；
-- [ ] 领域模型只依赖标准库与 pydantic；
-- [ ] 不新增 API、Tool、Runner、DeviceGateway 改动、样例 JSON、eval 脚本；
-- [ ] 不新增数据库 / SQLAlchemy / Alembic / 真实模型 SDK；
-- [ ] 不提交真实设备 IP、账号、密码、Token、邮箱授权码、生物特征数据。
+- [x] `uv run ruff check .` 通过；
+- [x] `uv run pytest` 通过；
+- [x] Phase 0 demo 仍可运行；
+- [x] Phase 1 eval 仍 5/5；
+- [x] Phase 2 eval 仍 5/5；
+- [x] 领域模型只依赖标准库与 pydantic；
+- [x] 不新增 API、Tool、Runner、DeviceGateway 改动、样例 JSON、eval 脚本；
+- [x] 不新增数据库 / SQLAlchemy / Alembic / 真实模型 SDK；
+- [x] 不提交真实设备 IP、账号、密码、Token、邮箱授权码、生物特征数据。
 
 ### 1.2 事实模型验收
 
 | 需要表达的事实 | 模型 | 落地方式 |
 |---|---|---|
-| 控制器是否在线 | `AccessControllerSnapshot` | `status`、`last_seen_at` |
-| 控制器是否健康 | `AccessControllerSnapshot` | `health`、`last_error` |
-| 门当前状态 | `DoorSnapshot` | `door_status` |
-| 门锁状态 | `DoorSnapshot` | `lock_status` |
-| 凭证类型 | `CredentialSnapshot` | `credential_type` |
-| 凭证是否有效 | `CredentialSnapshot` | `status`、`expires_at` |
-| 是否有门权限 | `AccessPolicySnapshot` | `allowed`、`door_id`、`person_id` |
-| 授权时段 | `AccessPolicySnapshot` | `time_ranges`、`valid_from`、`valid_until` |
-| 刷卡事件与拒绝原因 | `AccessEvent` | `decision`、`deny_reason`、`occurred_at` |
+| 控制器是否在线 | `AccessControllerSnapshot` | 已落地：`status`、`last_seen_at` |
+| 控制器是否健康 | `AccessControllerSnapshot` | 已落地：`health`、`last_error` |
+| 门当前状态 | `DoorSnapshot` | 已落地：`door_status` |
+| 门锁状态 | `DoorSnapshot` | 已落地：`lock_status`、`has_lock_error` |
+| 凭证类型 | `CredentialSnapshot` | 已落地：`credential_type` |
+| 凭证是否有效 | `CredentialSnapshot` | 已落地：`status`、`expires_at`、`is_valid` |
+| 是否有门权限 | `AccessPolicySnapshot` | 已落地：`allowed`、`door_id`、`person_id` |
+| 授权时段 | `AccessPolicySnapshot` | 已落地：`time_ranges`、`valid_from`、`valid_until` |
+| 刷卡事件与拒绝原因 | `AccessEvent` | 已落地：`decision`、`deny_reason`、`occurred_at` |
 
 ### 1.3 安全与一致性验收
 
-- [ ] 卡号、人脸特征、指纹、PIN、Token、secret 不得原样保存；
-- [ ] `extra` 中凭证类字段统一脱敏为 `***REDACTED***`；
-- [ ] 空 device_id / door_id / credential_id / person_id 应被拒绝；
-- [ ] 时间窗口可以表达跨天授权；
-- [ ] 模型不包含 `confidence` / `root_cause` / `conclusion` 等结论字段；
-- [ ] 模块源码不含 `fastapi` / `sqlalchemy` / `alembic` / `openai` / `httpx` / `requests`。
+- [x] 卡号、人脸特征、指纹、PIN、Token、secret 不得原样保存；
+- [x] `extra` 中凭证类字段统一脱敏为 `***REDACTED***`；
+- [x] 空 device_id / door_id / credential_id / person_id 应被拒绝；
+- [x] 时间窗口可以表达跨天授权；
+- [x] 模型不包含 `confidence` / `root_cause` / `conclusion` 等结论字段；
+- [x] 模块源码不含 `fastapi` / `sqlalchemy` / `alembic` / `openai` / `httpx` / `requests`。
+
+### 1.4 Phase 3A 完成状态
+
+Phase 3A 只完成门禁领域事实建模，不进入工具、样例、规则和评测。
+
+| 项目 | 当前结论 |
+|---|---|
+| 新增领域文件 | `src/security_diagnosis_harness/domain/access.py` |
+| 新增测试文件 | `tests/domain/test_access.py` |
+| 领域测试 | 覆盖控制器、门状态、凭证、授权策略、刷卡事件、脱敏和依赖边界 |
+| confirmed 边界 | 未新增任何可产生 confirmed 的入口 |
+| 后续衔接 | Phase 3B 可在这些模型之上新增 DeviceGateway 只读方法、Static Adapter 样例和门禁工具 |
 
 ## 2. Phase 3B：只读工具与样例案例（未开始）
 
@@ -71,7 +83,7 @@
 
 ## 4. Phase 3 Definition of Done
 
-- [ ] Phase 3A 领域模型与测试完成；
+- [x] Phase 3A 领域模型与测试完成；
 - [ ] Phase 3B 只读工具与样例案例完成；
 - [ ] Phase 3C 规则、报告与固定评测完成；
 - [ ] `label_accuracy == 1.0`；
@@ -79,4 +91,3 @@
 - [ ] `sensitive_leak_count == 0`；
 - [ ] `external_model_called == false`；
 - [ ] Git 工作区干净并推送。
-
