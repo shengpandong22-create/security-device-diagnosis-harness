@@ -48,14 +48,14 @@
 | confirmed 边界 | 未新增任何可产生 confirmed 的入口 |
 | 后续衔接 | Phase 4B 可在这些模型之上新增 DeviceGateway 只读方法、Static Adapter 样例和报警工具 |
 
-## 2. Phase 4B：只读工具与样例案例（待开始）
+## 2. Phase 4B：只读工具与样例案例（已完成）
 
-- [ ] 新增报警类 DeviceGateway 只读方法；
-- [ ] StaticDeviceGateway 支持报警误报样例数据；
-- [ ] 新增 READ_ONLY 报警工具；
-- [ ] 所有报警工具要求 `device:read`；
-- [ ] 工具失败不产生 EvidenceDraft；
-- [ ] 固定案例至少覆盖 5 类典型报警误报。
+- [x] 新增报警类 DeviceGateway 只读方法；
+- [x] StaticDeviceGateway 支持报警误报样例数据；
+- [x] 新增 READ_ONLY 报警工具；
+- [x] 所有报警工具要求 `device:read`；
+- [x] 工具失败不产生 EvidenceDraft；
+- [x] 固定案例至少覆盖 5 类典型报警误报。
 
 建议固定案例：
 
@@ -66,6 +66,17 @@
 | `sensor_noise` | `sensor_noise_or_stuck` |
 | `verification_negative` | `verification_negative_false_alarm` |
 | `duplicate_alarm_burst` | `duplicate_alarm_burst` |
+
+### 2.1 Phase 4B 完成状态
+
+| 项目 | 当前结论 |
+|---|---|
+| 新增样例 | `samples/devices/alarm_false_positive_cases.json` |
+| 新增网关方法 | `query_alarm_rule` / `query_alarm_signal` / `query_alarm_environment` / `query_alarm_verification` / `query_alarm_correlation` |
+| 新增工具 | `alarm__query_rule` / `alarm__query_signal` / `alarm__query_environment` / `alarm__query_verification` / `alarm__query_correlation` |
+| 工具权限 | 全部 `READ_ONLY`，全部要求 `device:read` |
+| 失败边界 | 参数非法、缺权限、设备或报警事实缺失时受控失败，不产生 EvidenceDraft |
+| 后续衔接 | Phase 4C 再把报警 Evidence 纳入 CitationPolicy，并新增规则、报告和固定评测 |
 
 ## 3. Phase 4C：规则、报告与评测（待开始）
 
@@ -101,7 +112,7 @@
 ## 4. Phase 4 Definition of Done
 
 - [x] Phase 4A 领域模型与测试完成；
-- [ ] Phase 4B 只读工具与样例案例完成；
+- [x] Phase 4B 只读工具与样例案例完成；
 - [ ] Phase 4C 规则、报告与固定评测完成；
 - [ ] `label_accuracy == 1.0`；
 - [ ] `citation_compliance == 1.0`；

@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A/3B/3C、Phase 4A 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A/3B/3C、Phase 4A/4B 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -26,7 +26,7 @@
 | Phase 3B | 门禁只读工具与样例案例 | 已完成 |
 | Phase 3C | 门禁规则、报告与固定评测 | 已完成 |
 | Phase 4A | 报警误报领域模型 | 已完成 |
-| Phase 4B | 报警只读工具与样例案例 | 待开始 |
+| Phase 4B | 报警只读工具与样例案例 | 已完成 |
 | Phase 4C | 报警规则、报告与固定评测 | 待开始 |
 
 Phase 0A 交付范围：
@@ -189,6 +189,21 @@ Phase 4A 交付范围（报警误报领域模型）：
 - 模型只表达事实，不包含 `confidence`、`root_cause`、`conclusion`、`final_status` 等诊断结论字段；
 - 仅新增 Domain 与测试，未接入 Tool、DeviceGateway、Runner、API、数据库、RAG、真实模型或真实设备。
 
+Phase 4B 交付范围（报警只读工具与样例案例）：
+
+- DeviceGateway 新增报警只读方法：`query_alarm_rule`、`query_alarm_signal`、
+  `query_alarm_environment`、`query_alarm_verification`、`query_alarm_correlation`；
+- StaticDeviceGateway 支持 `alarm_rules`、`alarm_signals`、`alarm_environments`、
+  `alarm_verifications`、`alarm_correlations` 静态报警事实；
+- 新增 EvidenceType：`alarm_rule`、`alarm_signal`、`alarm_environment`、
+  `alarm_verification`、`alarm_correlation`；
+- 新增五个 READ_ONLY 工具：`alarm__query_rule`、`alarm__query_signal`、
+  `alarm__query_environment`、`alarm__query_verification`、`alarm__query_correlation`
+  （均要求 `device:read`）；
+- `samples/devices/alarm_false_positive_cases.json`：5 个固定案例
+  （规则过敏 / 环境干扰 / 传感器噪声 / 复核未发现目标 / 重复告警风暴）；
+- 本阶段仍不修改 CitationPolicy，不做规则推断、报告增强或固定评测，这些留给 Phase 4C。
+
 ## 快速开始
 
 ```bash
@@ -290,6 +305,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [Phase 1 验收标准](./docs/04-validation/Phase%201%20验收标准.md)
 - [Phase 2 验收标准](./docs/04-validation/Phase%202%20验收标准.md)
 - [Phase 3 验收标准](./docs/04-validation/Phase%203%20验收标准.md)
+- [Phase 4 验收标准](./docs/04-validation/Phase%204%20验收标准.md)
 
 ## 最小闭环路线
 
