@@ -173,6 +173,11 @@ def test_device_fact_evidence_types_exclude_knowledge():
             EvidenceType.ACCESS_CREDENTIAL,
             EvidenceType.ACCESS_POLICY,
             EvidenceType.ACCESS_EVENT,
+            EvidenceType.ALARM_RULE,
+            EvidenceType.ALARM_SIGNAL,
+            EvidenceType.ALARM_ENVIRONMENT,
+            EvidenceType.ALARM_VERIFICATION,
+            EvidenceType.ALARM_CORRELATION,
         }
     )
 
@@ -209,6 +214,18 @@ def test_access_evidence_types_are_device_facts():
         EvidenceType.ACCESS_CREDENTIAL,
         EvidenceType.ACCESS_POLICY,
         EvidenceType.ACCESS_EVENT,
+    ):
+        assert evidence_type in DEVICE_FACT_EVIDENCE_TYPES
+
+
+def test_alarm_evidence_types_are_device_facts():
+    """Phase 4C：报警类五种 EvidenceType 必须纳入设备事实集合。"""
+    for evidence_type in (
+        EvidenceType.ALARM_RULE,
+        EvidenceType.ALARM_SIGNAL,
+        EvidenceType.ALARM_ENVIRONMENT,
+        EvidenceType.ALARM_VERIFICATION,
+        EvidenceType.ALARM_CORRELATION,
     ):
         assert evidence_type in DEVICE_FACT_EVIDENCE_TYPES
 
@@ -258,6 +275,31 @@ def test_policy_rejects_probable_citing_single_access_type():
     with pytest.raises(CitationPolicyViolation, match="probable"):
         CitationPolicy().validate(
             _conclusion(DIAG_A, [event.evidence_id, another_event.evidence_id], "probable"),
+            case,
+        )
+
+
+def test_policy_accepts_probable_citing_alarm_rule_and_signal():
+    """Phase 4C：probable 引用 alarm_rule + alarm_signal 可以通过。"""
+    case = make_case(DIAG_A)
+    rule = _add(case, EvidenceType.ALARM_RULE)
+    signal = _add(case, EvidenceType.ALARM_SIGNAL)
+
+    CitationPolicy().validate(
+        _conclusion(DIAG_A, [rule.evidence_id, signal.evidence_id], "probable"),
+        case,
+    )
+
+
+def test_policy_rejects_probable_citing_single_alarm_type():
+    """Phase 4C：probable 只引用 alarm_rule 一类必须失败。"""
+    case = make_case(DIAG_A)
+    rule = _add(case, EvidenceType.ALARM_RULE)
+    another_rule = _add(case, EvidenceType.ALARM_RULE)
+
+    with pytest.raises(CitationPolicyViolation, match="probable"):
+        CitationPolicy().validate(
+            _conclusion(DIAG_A, [rule.evidence_id, another_rule.evidence_id], "probable"),
             case,
         )
 
