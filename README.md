@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A/3B/3C、Phase 4A/4B/4C 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -29,7 +29,7 @@
 | Phase 4B | 报警只读工具与样例案例 | 已完成 |
 | Phase 4C | 报警规则、报告与固定评测 | 已完成 |
 | Phase 5A | 知识候选领域模型 | 已完成 |
-| Phase 5B | confirmed 诊断生成知识候选 | 待开始 |
+| Phase 5B | confirmed 诊断生成知识候选 | 已完成 |
 | Phase 5C | 轻量知识检索与 RAG 演进入口 | 待开始 |
 
 Phase 0A 交付范围：
@@ -248,6 +248,15 @@ Phase 5A 交付范围（知识候选领域模型）：
 - rejected / retired 不允许重新 confirmed；
 - 文本和 metadata 中的密码、Token、人员标识、卡号、车牌、截图/视频 URL 会被脱敏；
 - 本阶段仅新增 Domain 与测试，未接入数据库、API、Tool、Runner、真实模型或真实设备。
+
+Phase 5B 交付范围（confirmed 诊断提炼知识候选）：
+
+- `application/knowledge_candidates.py`：隔离 Diagnosis 与 Knowledge 的应用层转换边界；
+- 只有状态为 `confirmed` 且存在人工 confirm 记录、候选结论和有效 Evidence 引用的诊断可以生成知识候选；
+- 标题、摘要、根因、现象、排查步骤和排除项由结论与四类确定性诊断规则共同提炼；
+- 仅保留原诊断、结论和 Evidence ID 以供追溯，不复制完整 Evidence payload；
+- 生成结果始终为 `candidate`，不持久化正式知识，也不绕过人工知识审核；
+- 已用 Phase 1～4 的真实本地应用链路验证四类 confirmed 诊断均可沉淀候选知识。
 
 ## 快速开始
 

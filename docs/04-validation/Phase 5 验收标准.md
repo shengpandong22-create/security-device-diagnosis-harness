@@ -53,16 +53,31 @@
 | confirmed 边界 | 初始只能 candidate，confirmed 只能由 `KnowledgeReviewAction.CONFIRM` 产生 |
 | 后续衔接 | Phase 5B 基于该领域模型生成候选知识 |
 
-## 2. Phase 5B：confirmed 诊断生成 Knowledge Candidate（待开始）
+## 2. Phase 5B：confirmed 诊断生成 Knowledge Candidate（已完成）
 
-- [ ] 新增知识候选生成应用服务；
-- [ ] 只有 `SecurityDiagnosisStatus.CONFIRMED` 的诊断可以生成候选知识；
-- [ ] 没有 conclusion 的诊断不能生成候选知识；
-- [ ] conclusion 没有引用 Evidence 时不能生成候选知识；
-- [ ] 生成结果必须是 `candidate`；
-- [ ] 不复制完整 Evidence payload；
-- [ ] 不修改原始 Diagnosis / Conclusion；
-- [ ] 可从摄像头、录像、门禁、报警四类 confirmed 诊断生成候选。
+- [x] 新增知识候选生成应用服务；
+- [x] 只有 `SecurityDiagnosisStatus.CONFIRMED` 的诊断可以生成候选知识；
+- [x] confirmed 状态必须同时存在人工 confirm 审核记录，伪造状态不能生成知识；
+- [x] 没有 conclusion 的诊断不能生成候选知识；
+- [x] conclusion 没有引用 Evidence 时不能生成候选知识；
+- [x] conclusion 引用了不存在的 Evidence 时不能生成候选知识；
+- [x] 生成结果必须是 `candidate`；
+- [x] 不复制完整 Evidence payload；
+- [x] 不修改原始 Diagnosis / Conclusion；
+- [x] 文本字段在知识领域模型入口统一脱敏；
+- [x] 可从摄像头、录像、门禁、报警四类 confirmed 诊断生成候选；
+- [x] 四类诊断均经过 Runner、工具、Evidence、CitationPolicy 和人工确认的完整本地链路验收。
+
+### 2.1 Phase 5B 完成状态
+
+| 项目 | 当前结论 |
+|---|---|
+| 新增应用文件 | `src/security_diagnosis_harness/application/knowledge_candidates.py` |
+| 新增测试文件 | `tests/application/test_knowledge_candidates.py` |
+| 输入闸门 | confirmed 状态 + 人工 confirm 记录 + conclusion + 有效 Evidence 引用 |
+| 输出边界 | 只生成 candidate，不持久化、不自动确认 |
+| 数据最小化 | 复制摘要和来源 ID，不复制 Evidence payload |
+| 四域闭环 | 摄像头、录像、门禁、报警均通过真实本地应用链路测试 |
 
 ## 3. Phase 5C：轻量知识检索与 RAG 演进入口（待开始）
 
@@ -90,9 +105,9 @@
 ## 5. Phase 5 Definition of Done
 
 - [x] Phase 5A 领域模型与测试完成；
-- [ ] Phase 5B confirmed 诊断生成知识候选完成；
+- [x] Phase 5B confirmed 诊断生成知识候选完成；
 - [ ] Phase 5C 轻量知识检索完成；
-- [ ] confirmed knowledge 只能由人工审核产生；
-- [ ] 知识可追溯到原始 Diagnosis、Conclusion 和 Evidence；
+- [x] confirmed knowledge 只能由人工审核产生；
+- [x] 知识可追溯到原始 Diagnosis、Conclusion 和 Evidence；
 - [ ] 引入知识后 Phase 1～4 评测不退化；
 - [ ] Git 工作区干净并推送。
