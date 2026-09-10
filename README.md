@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A/3B/3C、Phase 4A/4B 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A/3B/3C、Phase 4A/4B/4C 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -27,7 +27,7 @@
 | Phase 3C | 门禁规则、报告与固定评测 | 已完成 |
 | Phase 4A | 报警误报领域模型 | 已完成 |
 | Phase 4B | 报警只读工具与样例案例 | 已完成 |
-| Phase 4C | 报警规则、报告与固定评测 | 待开始 |
+| Phase 4C | 报警规则、报告与固定评测 | 已完成 |
 
 Phase 0A 交付范围：
 
@@ -204,6 +204,36 @@ Phase 4B 交付范围（报警只读工具与样例案例）：
   （规则过敏 / 环境干扰 / 传感器噪声 / 复核未发现目标 / 重复告警风暴）；
 - 本阶段仍不修改 CitationPolicy，不做规则推断、报告增强或固定评测，这些留给 Phase 4C。
 
+Phase 4C 交付范围（报警规则、报告与固定评测）：
+
+- `domain/citation_policy.py`：将 `alarm_rule` / `alarm_signal` /
+  `alarm_environment` / `alarm_verification` / `alarm_correlation` 纳入设备事实类型；
+- `application/alarm_diagnosis_rules.py`：报警误报候选根因规则（只基于 Evidence，不读样例 JSON，不产生 confirmed）；
+- `application/diagnoses.py`：运行诊断后可根据 `alarm_false_positive` 输出报警类 `candidate_label`；
+- `application/reports.py`：报告增加报警候选根因、证据链、排查顺序、排除项，以及报警规则 / 触发信号 / 环境干扰 / 复核结果 / 关联告警摘要；
+- `bootstrap/container.py`：新增 Phase 4 本地评测装配，仍使用 `FakeLLM` 与 `StaticDeviceGateway`；
+- `scripts/eval_phase4_alarm_false_positive.py`：固定案例集评测。
+
+### 报警误报子场景
+
+| case_id | device_id | 事实组合 | candidate_label |
+|---|---|---|---|
+| `rule_too_sensitive` | `alarm-rule-sensitive-01` | 灵敏度高、阈值低、防抖短 | `alarm_rule_too_sensitive` |
+| `environment_interference` | `alarm-environment-rain-01` | 雨水与强光干扰 | `environment_interference` |
+| `sensor_noise` | `alarm-sensor-noise-01` | 传感器噪声过高 | `sensor_noise_or_stuck` |
+| `verification_negative` | `alarm-verification-negative-01` | 复核未发现真实目标 | `verification_negative_false_alarm` |
+| `duplicate_alarm_burst` | `alarm-duplicate-burst-01` | 短时间重复告警风暴 | `duplicate_alarm_burst` |
+
+报警误报评测：
+
+```bash
+uv run python scripts/eval_phase4_alarm_false_positive.py
+```
+
+输出 `demo-output/phase4-alarm-false-positive-eval.json` 与 `.md`，
+当前 5 个案例 label 命中率 100%、引用合规率 100%、敏感信息泄露 0、
+`external_model_called=false`。
+
 ## 快速开始
 
 ```bash
@@ -298,7 +328,9 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [架构图：安防设备诊断 Harness 总览](./docs/01-architecture/security-device-diagnosis-harness-overview.md)
 - [Phase 0 实现规格说明](./docs/02-specifications/Phase%200%20实现规格说明.md)
 - [Phase 1 摄像头黑屏深化实施规格说明](./docs/02-specifications/Phase%201%20摄像头黑屏深化实施规格说明.md)
+- [Phase 2 录像缺失深化实施规格说明](./docs/02-specifications/Phase%202%20录像缺失深化实施规格说明.md)
 - [Phase 3 门禁刷卡异常深化实施规格说明](./docs/02-specifications/Phase%203%20门禁刷卡异常深化实施规格说明.md)
+- [Phase 4 报警误报深化实施规格说明](./docs/02-specifications/Phase%204%20报警误报深化实施规格说明.md)
 - [Phase 0 开发总结与 Phase 1 摄像头黑屏深化计划](./docs/03-progress/2026-09-09-Phase0开发总结与Phase1摄像头黑屏深化计划.md)
 - [Phase 1 开发总结与 Phase 2 录像缺失深化计划](./docs/03-progress/2026-09-09-Phase1开发总结与Phase2录像缺失深化计划.md)
 - [Phase 0 验收标准](./docs/04-validation/Phase%200%20验收标准.md)

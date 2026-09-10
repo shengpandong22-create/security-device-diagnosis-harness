@@ -78,14 +78,14 @@
 | 失败边界 | 参数非法、缺权限、设备或报警事实缺失时受控失败，不产生 EvidenceDraft |
 | 后续衔接 | Phase 4C 再把报警 Evidence 纳入 CitationPolicy，并新增规则、报告和固定评测 |
 
-## 3. Phase 4C：规则、报告与评测（待开始）
+## 3. Phase 4C：规则、报告与评测（已完成）
 
-- [ ] 报警类 EvidenceType 纳入 CitationPolicy 设备事实集合；
-- [ ] 新增 `application/alarm_diagnosis_rules.py`；
-- [ ] 报告展示报警候选根因、证据链、排查顺序、排除项；
-- [ ] 新增 `scripts/eval_phase4_alarm_false_positive.py`；
-- [ ] Phase 4 eval 输出 JSON 和 Markdown；
-- [ ] Phase 0/1/2/3 回归不退化。
+- [x] 报警类 EvidenceType 纳入 CitationPolicy 设备事实集合；
+- [x] 新增 `application/alarm_diagnosis_rules.py`；
+- [x] 报告展示报警候选根因、证据链、排查顺序、排除项；
+- [x] 新增 `scripts/eval_phase4_alarm_false_positive.py`；
+- [x] Phase 4 eval 输出 JSON 和 Markdown；
+- [x] Phase 0/1/2/3 回归不退化。
 
 ### 3.1 候选标签
 
@@ -109,13 +109,24 @@
 | sensitive_leak_count | 0 |
 | external_model_called | false |
 
+### 3.3 Phase 4C 完成状态
+
+| 项目 | 当前结论 |
+|---|---|
+| 规则模块 | `src/security_diagnosis_harness/application/alarm_diagnosis_rules.py` |
+| 报告增强 | 新增报警候选根因、证据链、排查顺序、排除项，以及规则/信号/环境/复核/关联摘要 |
+| 固定评测 | `scripts/eval_phase4_alarm_false_positive.py` |
+| 评测案例 | 规则过敏、环境干扰、传感器噪声、复核未发现目标、重复告警风暴 |
+| 评测结果 | 5/5，`label_accuracy=1.0`，`citation_compliance=1.0` |
+| 安全边界 | 不调用真实模型，不访问真实设备，报告不泄露样例凭证、截图或视频地址 |
+
 ## 4. Phase 4 Definition of Done
 
 - [x] Phase 4A 领域模型与测试完成；
 - [x] Phase 4B 只读工具与样例案例完成；
-- [ ] Phase 4C 规则、报告与固定评测完成；
-- [ ] `label_accuracy == 1.0`；
-- [ ] `citation_compliance == 1.0`；
-- [ ] `sensitive_leak_count == 0`；
-- [ ] `external_model_called == false`；
+- [x] Phase 4C 规则、报告与固定评测完成；
+- [x] `label_accuracy == 1.0`；
+- [x] `citation_compliance == 1.0`；
+- [x] `sensitive_leak_count == 0`；
+- [x] `external_model_called == false`；
 - [ ] Git 工作区干净并推送。
