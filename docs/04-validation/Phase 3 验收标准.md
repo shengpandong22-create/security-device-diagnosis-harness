@@ -83,22 +83,67 @@ Phase 3A 只完成门禁领域事实建模，不进入工具、样例、规则�
 | 测试 | `tests/adapters/test_access_cases_gateway.py`、`tests/tools/test_access_tools.py` |
 | 边界 | 仅只读事实采集；未修改 CitationPolicy；未新增规则、报告、评测 |
 
-## 3. Phase 3C：规则、报告与评测（未开始）
+## 3. Phase 3C：规则、报告与评测（已完成）
 
-- [ ] 门禁类 EvidenceType 纳入 CitationPolicy 设备事实集合；
-- [ ] 新增 `application/access_diagnosis_rules.py`；
-- [ ] 报告展示门禁候选根因、证据链、排查顺序、排除项；
-- [ ] 新增 `scripts/eval_phase3_access_card_failed.py`；
-- [ ] Phase 3 eval 输出 JSON 和 Markdown；
-- [ ] Phase 0/1/2 回归不退化。
+- [x] 门禁类 EvidenceType 纳入 CitationPolicy 设备事实集合；
+- [x] 新增 `application/access_diagnosis_rules.py`；
+- [x] 报告展示门禁候选根因、证据链、排查顺序、排除项；
+- [x] 新增 `scripts/eval_phase3_access_card_failed.py`；
+- [x] Phase 3 eval 输出 JSON 和 Markdown；
+- [x] Phase 0/1/2 回归不退化。
+
+### 3.1 CitationPolicy 口径
+
+| EvidenceType | 是否设备事实 | 说明 |
+|---|---:|---|
+| `access_controller` | 是 | 控制器在线、健康与最近错误 |
+| `access_door` | 是 | 门状态、门锁状态、门锁异常 |
+| `access_credential` | 是 | 凭证类型、状态与有效性 |
+| `access_policy` | 是 | 目标门权限与授权时段 |
+| `access_event` | 是 | 最近刷卡事件、处理结果与拒绝原因 |
+
+门禁类事实纳入后，`probable` 仍要求至少引用两类不同设备事实；只引用一类门禁事实仍然不通过。
+
+### 3.2 候选根因规则
+
+文件：`src/security_diagnosis_harness/application/access_diagnosis_rules.py`
+
+| 候选标签 | 判定依据 |
+|---|---|
+| `credential_invalid_or_frozen` | 凭证被冻结、过期、挂失或事件拒绝原因为凭证异常 |
+| `permission_not_granted` | 授权策略 `allowed=false` 或事件拒绝原因为无权限 |
+| `access_time_window_denied` | 事件拒绝原因为授权时段不匹配 |
+| `controller_offline_or_no_response` | 控制器离线 / 健康错误 / 事件超时 |
+| `door_lock_or_sensor_issue` | 门锁卡滞、门状态异常或事件拒绝原因为门锁异常 |
+| `insufficient_access_evidence` | 缺少关键刷卡事件或事实不足 |
+
+规则只读取当前诊断 `Evidence` 的 payload，不读样例 JSON，不访问真实设备，不调用模型，不产生 `confirmed`。
+
+### 3.3 固定评测
+
+脚本：`scripts/eval_phase3_access_card_failed.py`
+
+| 指标 | 当前结果 |
+|---|---:|
+| total | 5 |
+| passed | 5 |
+| label_accuracy | 1.0 |
+| citation_compliance | 1.0 |
+| sensitive_leak_count | 0 |
+| external_model_called | false |
+
+输出：
+
+- `demo-output/phase3-access-card-failed-eval.json`
+- `demo-output/phase3-access-card-failed-eval.md`
 
 ## 4. Phase 3 Definition of Done
 
 - [x] Phase 3A 领域模型与测试完成；
-- [ ] Phase 3B 只读工具与样例案例完成；
-- [ ] Phase 3C 规则、报告与固定评测完成；
-- [ ] `label_accuracy == 1.0`；
-- [ ] `citation_compliance == 1.0`；
-- [ ] `sensitive_leak_count == 0`；
-- [ ] `external_model_called == false`；
+- [x] Phase 3B 只读工具与样例案例完成；
+- [x] Phase 3C 规则、报告与固定评测完成；
+- [x] `label_accuracy == 1.0`；
+- [x] `citation_compliance == 1.0`；
+- [x] `sensitive_leak_count == 0`；
+- [x] `external_model_called == false`；
 - [ ] Git 工作区干净并推送。

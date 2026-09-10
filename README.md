@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1、Phase 2A/2B/2C、Phase 3A/3B/3C 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -24,7 +24,7 @@
 | Phase 2C | 录像规则推断、报告增强与评测 | 已完成 |
 | Phase 3A | 门禁领域模型 | 已完成 |
 | Phase 3B | 门禁只读工具与样例案例 | 已完成 |
-| Phase 3C | 门禁规则、报告与固定评测 | 待开始 |
+| Phase 3C | 门禁规则、报告与固定评测 | 已完成 |
 
 Phase 0A 交付范围：
 
@@ -146,6 +146,36 @@ Phase 3B 交付范围（门禁只读工具与样例案例）：
 - `samples/devices/access_card_failed_cases.json`：5 个固定案例
   （凭证冻结 / 无门权限 / 不在授权时段 / 控制器离线 / 门锁卡滞）；
 - 本阶段仍不修改 CitationPolicy，不做规则推断、报告增强或固定评测，这些留给 Phase 3C。
+
+Phase 3C 交付范围（门禁规则、报告与固定评测）：
+
+- `domain/citation_policy.py`：将 `access_controller` / `access_door` /
+  `access_credential` / `access_policy` / `access_event` 纳入设备事实类型；
+- `application/access_diagnosis_rules.py`：门禁候选根因规则（只基于 Evidence，不读样例 JSON，不产生 confirmed）；
+- `application/diagnoses.py`：运行诊断后可根据 `access_card_failed` 输出门禁类 `candidate_label`；
+- `application/reports.py`：报告增加门禁候选根因、证据链、排查顺序、排除项，以及控制器 / 门锁 / 凭证 / 权限 / 刷卡事件摘要；
+- `bootstrap/container.py`：新增 Phase 3 本地评测装配，仍使用 `FakeLLM` 与 `StaticDeviceGateway`；
+- `scripts/eval_phase3_access_card_failed.py`：固定案例集评测。
+
+### 门禁刷卡异常子场景
+
+| case_id | device_id | 事实组合 | candidate_label |
+|---|---|---|---|
+| `credential_frozen` | `access-credential-frozen-01` | 凭证冻结、刷卡被拒 | `credential_invalid_or_frozen` |
+| `permission_denied` | `access-permission-denied-01` | 凭证有效但无目标门权限 | `permission_not_granted` |
+| `time_window_denied` | `access-time-window-denied-01` | 有权限但刷卡时间不在授权时段 | `access_time_window_denied` |
+| `controller_offline` | `access-controller-offline-01` | 控制器离线 / 请求超时 | `controller_offline_or_no_response` |
+| `door_lock_jammed` | `access-door-lock-jammed-01` | 门锁卡滞 / 门锁反馈异常 | `door_lock_or_sensor_issue` |
+
+门禁刷卡异常评测：
+
+```bash
+uv run python scripts/eval_phase3_access_card_failed.py
+```
+
+输出 `demo-output/phase3-access-card-failed-eval.json` 与 `.md`，
+当前 5 个案例 label 命中率 100%、引用合规率 100%、敏感信息泄露 0、
+`external_model_called=false`。
 
 ## 快速开始
 
