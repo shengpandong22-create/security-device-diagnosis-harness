@@ -85,6 +85,15 @@ from security_diagnosis_harness.domain.evidence import (
     EvidenceType,
     Reliability,
 )
+from security_diagnosis_harness.domain.knowledge import (
+    KnowledgeCandidate,
+    KnowledgeCandidateSource,
+    KnowledgeCandidateStatus,
+    KnowledgeReview,
+    KnowledgeReviewAction,
+    is_knowledge_sensitive_key,
+    redact_knowledge_sensitive_values,
+)
 from security_diagnosis_harness.domain.recording import (
     PlaybackCheckResult,
     PlaybackStatus,
@@ -143,6 +152,11 @@ __all__ = [
     "EnvironmentInterferenceType",
     "HumanReview",
     "HumanReviewAction",
+    "KnowledgeCandidate",
+    "KnowledgeCandidateSource",
+    "KnowledgeCandidateStatus",
+    "KnowledgeReview",
+    "KnowledgeReviewAction",
     "PlaybackCheckResult",
     "PlaybackStatus",
     "PlatformPullStatus",
@@ -164,8 +178,10 @@ __all__ = [
     "VerificationResult",
     "is_access_sensitive_key",
     "is_alarm_sensitive_key",
+    "is_knowledge_sensitive_key",
     "new_id",
     "redact_access_sensitive_values",
     "redact_alarm_sensitive_values",
+    "redact_knowledge_sensitive_values",
     "utc_now",
 ]

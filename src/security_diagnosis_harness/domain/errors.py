@@ -25,3 +25,7 @@ class ReviewNotAllowed(DomainError):
 
 class CitationPolicyViolation(DomainError):
     """结论引用不满足 Citation Policy。"""
+
+
+class KnowledgeReviewNotAllowed(DomainError):
+    """当前状态下不允许该知识审核动作。"""
