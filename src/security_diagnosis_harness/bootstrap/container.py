@@ -28,6 +28,11 @@ from security_diagnosis_harness.ports.llm import (
     LLMResponse,
     ToolCall,
 )
+from security_diagnosis_harness.tools.access_controller import AccessControllerTool
+from security_diagnosis_harness.tools.access_credential import AccessCredentialTool
+from security_diagnosis_harness.tools.access_door import AccessDoorTool
+from security_diagnosis_harness.tools.access_events import AccessEventsTool
+from security_diagnosis_harness.tools.access_policy import AccessPolicyTool
 from security_diagnosis_harness.tools.device_alarm_events import DeviceAlarmEventsTool
 from security_diagnosis_harness.tools.device_channel import DeviceChannelTool
 from security_diagnosis_harness.tools.device_config import DeviceConfigSnapshotTool
@@ -44,6 +49,7 @@ SAMPLES_DIR = Path(__file__).resolve().parents[3] / "samples" / "devices"
 DEFAULT_DEVICE_DATA_PATH = SAMPLES_DIR / "static_devices.sample.json"
 CAMERA_CASES_DATA_PATH = SAMPLES_DIR / "camera_black_screen_cases.json"
 RECORDING_CASES_DATA_PATH = SAMPLES_DIR / "recording_missing_cases.json"
+ACCESS_CASES_DATA_PATH = SAMPLES_DIR / "access_card_failed_cases.json"
 
 PHASE0_TOOLS: tuple[str, ...] = (
     "device__query_status",
@@ -67,6 +73,16 @@ PHASE2_TOOLS: tuple[str, ...] = (
     "recording__query_plan",
     "storage__query_status",
     "recording__check_playback",
+    "knowledge__search",
+)
+
+# Phase 3C：门禁刷卡异常评测使用的只读工具（控制器 / 门 / 凭证 / 权限 / 事件）。
+PHASE3_TOOLS: tuple[str, ...] = (
+    "access__query_controller",
+    "access__query_door",
+    "access__query_credential",
+    "access__query_policy",
+    "access__search_events",
     "knowledge__search",
 )
 
@@ -360,18 +376,170 @@ def build_phase2_container(
     )
 
 
+# ------------------------------------------------------------------ Phase 3C
+def build_access_registry() -> ToolRegistry:
+    """注册基础只读工具，并补充门禁类只读工具。"""
+    registry = build_registry()
+    for tool_cls in (
+        AccessControllerTool,
+        AccessDoorTool,
+        AccessCredentialTool,
+        AccessPolicyTool,
+        AccessEventsTool,
+    ):
+        tool = tool_cls()
+        if not registry.has(tool.name):
+            registry.register(tool)
+    return registry
+
+
+def build_access_responder() -> Responder:
+    """构造门禁刷卡异常闭环脚本。
+
+    第一轮请求门禁相关只读工具；拿到工具结果后给出候选结论。
+    结论故意不携带 Evidence ID，由应用服务做最小引用修正，
+    用来验证 CitationPolicy 是真正的硬闸门。
+    """
+
+    credentials: dict[str, tuple[str, str]] = {
+        "access-credential-frozen-01": ("sample-card-frozen", "sample-person-frozen"),
+        "access-permission-denied-01": (
+            "sample-card-no-permission",
+            "sample-person-no-permission",
+        ),
+        "access-time-window-denied-01": (
+            "sample-card-time-window",
+            "sample-person-time-window",
+        ),
+        "access-controller-offline-01": (
+            "sample-card-controller-offline",
+            "sample-person-controller-offline",
+        ),
+        "access-door-lock-jammed-01": (
+            "sample-card-lock-jammed",
+            "sample-person-lock-jammed",
+        ),
+    }
+
+    def responder(request: LLMRequest) -> LLMResponse:
+        device_id = str(request.metadata.get("device_id", ""))
+        has_tool_results = any(message.role is ChatRole.TOOL for message in request.messages)
+        credential_id, person_id = credentials.get(
+            device_id, ("sample-card-unknown", "sample-person-unknown")
+        )
+
+        if not has_tool_results:
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        call_id="c1",
+                        tool_name="access__query_controller",
+                        arguments={"device_id": device_id},
+                    ),
+                    ToolCall(
+                        call_id="c2",
+                        tool_name="access__query_door",
+                        arguments={"device_id": device_id, "door_id": "door-1"},
+                    ),
+                    ToolCall(
+                        call_id="c3",
+                        tool_name="access__query_credential",
+                        arguments={"credential_id": credential_id},
+                    ),
+                    ToolCall(
+                        call_id="c4",
+                        tool_name="access__query_policy",
+                        arguments={"person_id": person_id, "door_id": "door-1"},
+                    ),
+                    ToolCall(
+                        call_id="c5",
+                        tool_name="access__search_events",
+                        arguments={
+                            "device_id": device_id,
+                            "door_id": "door-1",
+                            "credential_id": credential_id,
+                            "limit": 5,
+                        },
+                    ),
+                    ToolCall(
+                        call_id="c6",
+                        tool_name="knowledge__search",
+                        arguments={"query": "门禁 刷卡失败 权限 凭证 控制器 门锁", "limit": 3},
+                    ),
+                ],
+                finish_reason=FinishReason.TOOL_CALLS,
+            )
+
+        return LLMResponse(
+            final_conclusion=ConclusionDraft(
+                fault_type=SecurityFaultType.ACCESS_CARD_FAILED,
+                summary="门禁刷卡失败需要结合控制器、门锁、凭证、授权策略和刷卡事件定位根因",
+                root_cause=None,
+                confidence="probable",
+                cited_evidence_ids=[],
+                next_steps=[
+                    "按候选根因对应的排查顺序逐项验证",
+                    "确认权限、凭证和控制器状态是否与刷卡事件一致",
+                    "无法定位时补充现场信息后重新运行诊断",
+                ],
+            ),
+            finish_reason=FinishReason.STOP,
+        )
+
+    return responder
+
+
+def build_phase3_container(
+    device_data_path: str | Path | None = None,
+) -> Container:
+    """装配 Phase 3C 门禁刷卡异常评测环境。"""
+    data_path = Path(device_data_path) if device_data_path else ACCESS_CASES_DATA_PATH
+    gateway = StaticDeviceGateway(data_path)
+    registry = build_access_registry()
+    llm = FakeLLM(responder=build_access_responder())
+    runner = ToolLoopRunner(
+        llm,
+        registry,
+        budget=ToolLoopBudget(max_rounds=3, max_tool_calls=10),
+    )
+    repository = InMemoryDiagnosisRepository()
+    citation_policy = CitationPolicy()
+    service = SecurityDiagnosisApplicationService(
+        repository=repository,
+        runner=runner,
+        registry=registry,
+        gateway=gateway,
+        citation_policy=citation_policy,
+        tool_allowlist=list(PHASE3_TOOLS),
+    )
+    return Container(
+        service=service,
+        repository=repository,
+        runner=runner,
+        registry=registry,
+        gateway=gateway,
+        llm=llm,
+        citation_policy=citation_policy,
+    )
+
+
 __all__ = [
+    "ACCESS_CASES_DATA_PATH",
     "CAMERA_CASES_DATA_PATH",
     "Container",
     "DEFAULT_DEVICE_DATA_PATH",
     "PHASE0_TOOLS",
     "PHASE1_TOOLS",
     "PHASE2_TOOLS",
+    "PHASE3_TOOLS",
     "RECORDING_CASES_DATA_PATH",
+    "build_access_registry",
+    "build_access_responder",
     "build_camera_black_screen_responder",
     "build_container",
     "build_phase1_container",
     "build_phase2_container",
+    "build_phase3_container",
     "build_recording_registry",
     "build_recording_responder",
     "build_registry",
