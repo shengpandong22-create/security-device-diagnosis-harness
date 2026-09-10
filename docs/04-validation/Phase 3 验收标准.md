@@ -53,14 +53,14 @@ Phase 3A 只完成门禁领域事实建模，不进入工具、样例、规则�
 | confirmed 边界 | 未新增任何可产生 confirmed 的入口 |
 | 后续衔接 | Phase 3B 可在这些模型之上新增 DeviceGateway 只读方法、Static Adapter 样例和门禁工具 |
 
-## 2. Phase 3B：只读工具与样例案例（未开始）
+## 2. Phase 3B：只读工具与样例案例（已完成）
 
-- [ ] 新增门禁类 DeviceGateway 只读方法；
-- [ ] StaticDeviceGateway 支持门禁样例数据；
-- [ ] 新增 READ_ONLY 门禁工具；
-- [ ] 所有门禁工具要求 `device:read`；
-- [ ] 工具失败不产生 EvidenceDraft；
-- [ ] 固定案例至少覆盖 5 类典型刷卡异常。
+- [x] 新增门禁类 DeviceGateway 只读方法；
+- [x] StaticDeviceGateway 支持门禁样例数据；
+- [x] 新增 READ_ONLY 门禁工具；
+- [x] 所有门禁工具要求 `device:read`；
+- [x] 工具失败不产生 EvidenceDraft；
+- [x] 固定案例至少覆盖 5 类典型刷卡异常。
 
 建议固定案例：
 
@@ -71,6 +71,17 @@ Phase 3A 只完成门禁领域事实建模，不进入工具、样例、规则�
 | `time_window_denied` | `access_time_window_denied` |
 | `controller_offline` | `controller_offline_or_no_response` |
 | `door_lock_jammed` | `door_lock_or_sensor_issue` |
+
+### 2.1 Phase 3B 落地清单
+
+| 类别 | 当前实现 |
+|---|---|
+| 样例文件 | `samples/devices/access_card_failed_cases.json` |
+| 网关方法 | `query_access_controller` / `query_door` / `query_credential` / `query_access_policy` / `search_access_events` |
+| 工具 | `access__query_controller` / `access__query_door` / `access__query_credential` / `access__query_policy` / `access__search_events` |
+| EvidenceType | `access_controller` / `access_door` / `access_credential` / `access_policy` / `access_event` |
+| 测试 | `tests/adapters/test_access_cases_gateway.py`、`tests/tools/test_access_tools.py` |
+| 边界 | 仅只读事实采集；未修改 CitationPolicy；未新增规则、报告、评测 |
 
 ## 3. Phase 3C：规则、报告与评测（未开始）
 

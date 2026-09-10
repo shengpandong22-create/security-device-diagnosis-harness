@@ -23,7 +23,7 @@
 | Phase 2B | 录像只读工具与样例案例 | 已完成 |
 | Phase 2C | 录像规则推断、报告增强与评测 | 已完成 |
 | Phase 3A | 门禁领域模型 | 已完成 |
-| Phase 3B | 门禁只读工具与样例案例 | 待开始 |
+| Phase 3B | 门禁只读工具与样例案例 | 已完成 |
 | Phase 3C | 门禁规则、报告与固定评测 | 待开始 |
 
 Phase 0A 交付范围：
@@ -131,6 +131,21 @@ Phase 3A 交付范围（门禁刷卡异常领域模型）：
 - 卡号、人脸特征、指纹模板、PIN、手机号、身份证、Token、password、secret、credential 等敏感字段入模型前脱敏为 `***REDACTED***`；
 - 模型只表达事实，不包含 `confidence`、`root_cause`、`conclusion`、`final_status` 等诊断结论字段；
 - 仅新增 Domain 与测试，未接入 Tool、DeviceGateway、Runner、API、数据库、RAG、真实模型或真实设备。
+
+Phase 3B 交付范围（门禁只读工具与样例案例）：
+
+- DeviceGateway 新增门禁只读方法：`query_access_controller`、`query_door`、
+  `query_credential`、`query_access_policy`、`search_access_events`；
+- StaticDeviceGateway 支持 `access_controller`、`doors`、`credentials`、
+  `access_policies`、`access_events` 静态门禁事实；
+- 新增 EvidenceType：`access_controller`、`access_door`、`access_credential`、
+  `access_policy`、`access_event`；
+- 新增五个 READ_ONLY 工具：`access__query_controller`、`access__query_door`、
+  `access__query_credential`、`access__query_policy`、`access__search_events`
+  （均要求 `device:read`）；
+- `samples/devices/access_card_failed_cases.json`：5 个固定案例
+  （凭证冻结 / 无门权限 / 不在授权时段 / 控制器离线 / 门锁卡滞）；
+- 本阶段仍不修改 CitationPolicy，不做规则推断、报告增强或固定评测，这些留给 Phase 3C。
 
 ## 快速开始
 
