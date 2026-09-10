@@ -14,6 +14,11 @@ from security_diagnosis_harness.application.access_diagnosis_rules import (
     AccessDiagnosisRuleResult,
     infer_access_card_failed_label,
 )
+from security_diagnosis_harness.application.alarm_diagnosis_rules import (
+    AlarmDiagnosisLabel,
+    AlarmDiagnosisRuleResult,
+    infer_alarm_false_positive_label,
+)
 from security_diagnosis_harness.application.camera_diagnosis_rules import (
     CameraDiagnosisRuleResult,
     infer_camera_black_screen_label,
@@ -24,6 +29,7 @@ from security_diagnosis_harness.application.recording_diagnosis_rules import (
     infer_recording_missing_label,
 )
 from security_diagnosis_harness.domain.access import is_access_sensitive_key
+from security_diagnosis_harness.domain.alarm import is_alarm_sensitive_key
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.device import REDACTED_VALUE, is_sensitive_key
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus, SecurityFaultType
@@ -47,7 +53,11 @@ def redact_payload(payload: Any) -> Any:
     if isinstance(payload, dict):
         return {
             key: REDACTED_VALUE
-            if is_sensitive_key(str(key)) or is_access_sensitive_key(str(key))
+            if (
+                is_sensitive_key(str(key))
+                or is_access_sensitive_key(str(key))
+                or is_alarm_sensitive_key(str(key))
+            )
             else redact_payload(value)
             for key, value in payload.items()
         }
@@ -63,7 +73,11 @@ def _dump(payload: Any) -> str:
 def render_markdown_report(
     case: SecurityDiagnosisCase,
     insight: (
-        CameraDiagnosisRuleResult | RecordingDiagnosisRuleResult | AccessDiagnosisRuleResult | None
+        CameraDiagnosisRuleResult
+        | RecordingDiagnosisRuleResult
+        | AccessDiagnosisRuleResult
+        | AlarmDiagnosisRuleResult
+        | None
     ) = None,
 ) -> str:
     """把一条诊断渲染成可读 Markdown。
@@ -118,9 +132,13 @@ def render_markdown_report(
         insight = infer_recording_missing_label(case)
     if insight is None and case.fault_type is SecurityFaultType.ACCESS_CARD_FAILED:
         insight = infer_access_card_failed_label(case)
+    if insight is None and case.fault_type is SecurityFaultType.ALARM_FALSE_POSITIVE:
+        insight = infer_alarm_false_positive_label(case)
 
     if insight is not None:
-        if isinstance(insight.label, AccessDiagnosisLabel):
+        if isinstance(insight.label, AlarmDiagnosisLabel):
+            lines += _render_alarm_candidate_section(case, insight)
+        elif isinstance(insight.label, AccessDiagnosisLabel):
             lines += _render_access_candidate_section(case, insight)
         elif isinstance(insight.label, RecordingDiagnosisLabel):
             lines += _render_recording_candidate_section(case, insight)
@@ -432,5 +450,124 @@ def _render_access_candidate_section(
     lines += _render_access_policy_summary(case)
     lines += ["", "### 刷卡事件摘要"]
     lines += _render_access_event_summary(case)
+    lines += [""]
+    return lines
+
+
+# ------------------------------------------------------------------ 报警误报诊断小节
+def _render_alarm_rule_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ALARM_RULE)
+    if evidence is None:
+        return ["（无报警规则证据）"]
+    payload = evidence.payload or {}
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 类型: {payload.get('alarm_type', '-')}，启用: {payload.get('enabled', '-')}",
+        f"- 灵敏度: {payload.get('sensitivity', '-')}，阈值: {payload.get('threshold', '-')}",
+        f"- 防抖时间: {payload.get('debounce_seconds', '-')} 秒",
+        f"- 疑似过敏: {payload.get('is_over_sensitive', '-')}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_alarm_signal_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ALARM_SIGNAL)
+    if evidence is None:
+        return ["（无触发信号证据）"]
+    payload = evidence.payload or {}
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 信号状态: {payload.get('status', '-')}，信号值: {payload.get('signal_value', '-')}",
+        f"- 阈值: {payload.get('threshold', '-')}，噪声等级: {payload.get('noise_level', '-')}",
+        f"- 超过阈值: {payload.get('exceeds_threshold', '-')}",
+        f"- 噪声异常: {payload.get('is_noisy', '-')}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_alarm_environment_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ALARM_ENVIRONMENT)
+    if evidence is None:
+        return ["（无环境干扰证据）"]
+    payload = evidence.payload or {}
+    interferences = payload.get("interference_types") or []
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 干扰类型: {', '.join(interferences) or '-'}",
+        f"- 可见度: {payload.get('visibility', '-')}，照度: {payload.get('illumination_lux', '-')}",
+        f"- 风速: {payload.get('wind_speed', '-')}",
+        f"- 存在干扰: {payload.get('has_interference', '-')}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_alarm_verification_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ALARM_VERIFICATION)
+    if evidence is None:
+        return ["（无复核结果证据）"]
+    payload = evidence.payload or {}
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 复核结果: {payload.get('result', '-')}，目标数量: {payload.get('target_count', '-')}",
+        f"- 复核人/系统: {payload.get('checked_by', '-')}",
+        f"- 疑似误报: {payload.get('indicates_false_alarm', '-')}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_alarm_correlation_summary(case: SecurityDiagnosisCase) -> list[str]:
+    evidence = _first_evidence(case, EvidenceType.ALARM_CORRELATION)
+    if evidence is None:
+        return ["（无关联告警证据）"]
+    payload = evidence.payload or {}
+    return [
+        f"- evidence_id: `{evidence.evidence_id}`",
+        f"- 模式: {payload.get('pattern', '-')}，窗口: {payload.get('window_seconds', '-')} 秒",
+        f"- 重复次数: {payload.get('repeated_count', '-')}",
+        f"- 相邻设备告警数: {payload.get('neighbor_alarm_count', '-')}",
+        f"- 告警风暴: {payload.get('is_burst', '-')}",
+        f"- 相邻关联: {payload.get('has_neighbor_correlation', '-')}",
+        f"- payload: `{_dump(payload)}`",
+    ]
+
+
+def _render_alarm_candidate_section(
+    case: SecurityDiagnosisCase,
+    insight: AlarmDiagnosisRuleResult,
+) -> list[str]:
+    """渲染报警误报候选根因、证据链、排查顺序、排除项与报警事实摘要。"""
+    lines: list[str] = [
+        "## 3. 报警诊断（候选）",
+        "",
+        f"- candidate_label: `{insight.label.value}`",
+        f"- 说明: {insight.explanation}",
+        f"- 命中规则: {insight.matched_rule or '（未匹配）'}",
+        "",
+        "### 证据链解释",
+    ]
+    if insight.evidence_chain:
+        lines += [f"{index}. {item}" for index, item in enumerate(insight.evidence_chain, 1)]
+    else:
+        lines += ["（无可解释的事实链）"]
+    lines += ["", "### 建议排查顺序"]
+    if insight.troubleshooting_order:
+        lines += [f"{index}. {step}" for index, step in enumerate(insight.troubleshooting_order, 1)]
+    else:
+        lines += ["（无）"]
+    lines += ["", "### 为什么不是其他候选原因"]
+    if insight.excluded_candidates:
+        lines += [f"- {item}" for item in insight.excluded_candidates]
+    else:
+        lines += ["（无）"]
+    lines += ["", "### 报警规则摘要"]
+    lines += _render_alarm_rule_summary(case)
+    lines += ["", "### 触发信号摘要"]
+    lines += _render_alarm_signal_summary(case)
+    lines += ["", "### 环境干扰摘要"]
+    lines += _render_alarm_environment_summary(case)
+    lines += ["", "### 复核结果摘要"]
+    lines += _render_alarm_verification_summary(case)
+    lines += ["", "### 关联告警摘要"]
+    lines += _render_alarm_correlation_summary(case)
     lines += [""]
     return lines
