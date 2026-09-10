@@ -15,6 +15,13 @@ from security_diagnosis_harness.domain.access import (
     CredentialSnapshot,
     DoorSnapshot,
 )
+from security_diagnosis_harness.domain.alarm import (
+    AlarmCorrelationSnapshot,
+    AlarmEnvironmentSnapshot,
+    AlarmRuleSnapshot,
+    AlarmSignalSnapshot,
+    AlarmVerificationSnapshot,
+)
 from security_diagnosis_harness.domain.camera import (
     ChannelSnapshot,
     PlatformPullStatus,
@@ -111,6 +118,32 @@ class DeviceGateway(Protocol):
         limit: int = 10,
     ) -> list[AccessEvent]:
         """查询近期门禁通行事件。"""
+        ...
+
+    def query_alarm_rule(self, device_id: str, rule_id: str) -> AlarmRuleSnapshot:
+        """查询报警规则配置。"""
+        ...
+
+    def query_alarm_signal(self, device_id: str, alarm_id: str) -> AlarmSignalSnapshot:
+        """查询报警触发时的信号快照。"""
+        ...
+
+    def query_alarm_environment(
+        self, device_id: str, alarm_id: str
+    ) -> AlarmEnvironmentSnapshot:
+        """查询报警触发时的环境干扰事实。"""
+        ...
+
+    def query_alarm_verification(
+        self, device_id: str, alarm_id: str
+    ) -> AlarmVerificationSnapshot:
+        """查询报警复核结果。"""
+        ...
+
+    def query_alarm_correlation(
+        self, device_id: str, alarm_id: str
+    ) -> AlarmCorrelationSnapshot:
+        """查询重复 / 关联告警事实。"""
         ...
 
     def search_alarm_events(

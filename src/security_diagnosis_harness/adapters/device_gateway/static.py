@@ -12,6 +12,8 @@
   playback（三者都按 channel_id 分键）。
 - Phase 3B `access_card_failed_cases.json`：额外包含 access_controller /
   doors / credentials / access_policies / access_events。
+- Phase 4B `alarm_false_positive_cases.json`：额外包含 alarm_rules /
+  alarm_signals / alarm_environments / alarm_verifications / alarm_correlations。
 
 旧文件仍然可用于 Phase 0 demo；读取旧文件里不存在的摄像头/录像事实时，
 抛出受控的 `DeviceGatewayDataError`，而不是返回伪造数据。
@@ -32,6 +34,13 @@ from security_diagnosis_harness.domain.access import (
     AccessPolicySnapshot,
     CredentialSnapshot,
     DoorSnapshot,
+)
+from security_diagnosis_harness.domain.alarm import (
+    AlarmCorrelationSnapshot,
+    AlarmEnvironmentSnapshot,
+    AlarmRuleSnapshot,
+    AlarmSignalSnapshot,
+    AlarmVerificationSnapshot,
 )
 from security_diagnosis_harness.domain.camera import (
     ChannelSnapshot,
@@ -97,6 +106,12 @@ class StaticDeviceEntry(BaseModel):
     credentials: dict[str, dict[str, Any]] = Field(default_factory=dict)
     access_policies: list[dict[str, Any]] = Field(default_factory=list)
     access_events: list[dict[str, Any]] = Field(default_factory=list)
+    # Phase 4B：报警误报事实。
+    alarm_rules: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    alarm_signals: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    alarm_environments: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    alarm_verifications: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    alarm_correlations: dict[str, dict[str, Any]] = Field(default_factory=dict)
     alarms: list[dict[str, Any]] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
     case_id: str | None = None
@@ -333,6 +348,64 @@ class StaticDeviceGateway:
                 continue
             matched.append(AccessEvent.model_validate({"device_id": device_id, **event}))
         return matched[:limit]
+
+    # ------------------------------------------------------------ Phase 4B 报警事实
+    def query_alarm_rule(self, device_id: str, rule_id: str) -> AlarmRuleSnapshot:
+        entry = self._require_entry(device_id)
+        rule = entry.alarm_rules.get(rule_id)
+        if rule is None:
+            raise DeviceGatewayDataError(f"设备 {device_id} 规则 {rule_id} 缺少报警规则数据")
+        return AlarmRuleSnapshot.model_validate(
+            {"device_id": device_id, "rule_id": rule_id, **rule}
+        )
+
+    def query_alarm_signal(self, device_id: str, alarm_id: str) -> AlarmSignalSnapshot:
+        entry = self._require_entry(device_id)
+        signal = entry.alarm_signals.get(alarm_id)
+        if signal is None:
+            raise DeviceGatewayDataError(f"设备 {device_id} 告警 {alarm_id} 缺少触发信号数据")
+        return AlarmSignalSnapshot.model_validate(
+            {"device_id": device_id, "alarm_id": alarm_id, **signal}
+        )
+
+    def query_alarm_environment(
+        self,
+        device_id: str,
+        alarm_id: str,
+    ) -> AlarmEnvironmentSnapshot:
+        entry = self._require_entry(device_id)
+        environment = entry.alarm_environments.get(alarm_id)
+        if environment is None:
+            raise DeviceGatewayDataError(f"设备 {device_id} 告警 {alarm_id} 缺少环境数据")
+        return AlarmEnvironmentSnapshot.model_validate(
+            {"device_id": device_id, "alarm_id": alarm_id, **environment}
+        )
+
+    def query_alarm_verification(
+        self,
+        device_id: str,
+        alarm_id: str,
+    ) -> AlarmVerificationSnapshot:
+        entry = self._require_entry(device_id)
+        verification = entry.alarm_verifications.get(alarm_id)
+        if verification is None:
+            raise DeviceGatewayDataError(f"设备 {device_id} 告警 {alarm_id} 缺少复核数据")
+        return AlarmVerificationSnapshot.model_validate(
+            {"device_id": device_id, "alarm_id": alarm_id, **verification}
+        )
+
+    def query_alarm_correlation(
+        self,
+        device_id: str,
+        alarm_id: str,
+    ) -> AlarmCorrelationSnapshot:
+        entry = self._require_entry(device_id)
+        correlation = entry.alarm_correlations.get(alarm_id)
+        if correlation is None:
+            raise DeviceGatewayDataError(f"设备 {device_id} 告警 {alarm_id} 缺少关联告警数据")
+        return AlarmCorrelationSnapshot.model_validate(
+            {"device_id": device_id, "alarm_id": alarm_id, **correlation}
+        )
 
     def search_alarm_events(
         self,

@@ -1,0 +1,279 @@
+{
+  "version": 1,
+  "devices": [
+    {
+      "device_id": "alarm-rule-sensitive-01",
+      "case_id": "rule_too_sensitive",
+      "expected_label": "alarm_rule_too_sensitive",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "recording"
+      },
+      "alarm_rules": {
+        "rule-1": {
+          "alarm_type": "motion",
+          "enabled": true,
+          "severity": "warning",
+          "sensitivity": "high",
+          "threshold": 20,
+          "debounce_seconds": 1,
+          "armed_time_ranges": [
+            {"start": "00:00:00", "end": "00:00:00", "weekdays": [1, 2, 3, 4, 5, 6, 7]}
+          ]
+        }
+      },
+      "alarm_signals": {
+        "alarm-1": {
+          "sensor_id": "motion-sensor-1",
+          "signal_value": 32,
+          "threshold": 20,
+          "noise_level": 0.2,
+          "status": "stable",
+          "triggered_at": "2026-09-10T20:00:00+08:00"
+        }
+      },
+      "alarm_environments": {
+        "alarm-1": {
+          "interference_types": ["none"],
+          "visibility": "normal"
+        }
+      },
+      "alarm_verifications": {
+        "alarm-1": {
+          "result": "inconclusive",
+          "target_count": 0,
+          "checked_by": "system"
+        }
+      },
+      "alarm_correlations": {
+        "alarm-1": {
+          "repeated_count": 1,
+          "neighbor_alarm_count": 0,
+          "pattern": "isolated",
+          "window_seconds": 300
+        }
+      },
+      "config": {
+        "enabled": true,
+        "config": {
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "alarm-environment-rain-01",
+      "case_id": "environment_interference",
+      "expected_label": "environment_interference",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "recording"
+      },
+      "alarm_rules": {
+        "rule-1": {
+          "alarm_type": "line_crossing",
+          "enabled": true,
+          "severity": "warning",
+          "sensitivity": "medium",
+          "threshold": 60,
+          "debounce_seconds": 8
+        }
+      },
+      "alarm_signals": {
+        "alarm-1": {
+          "sensor_id": "video-analytic-1",
+          "signal_value": 66,
+          "threshold": 60,
+          "noise_level": 0.3,
+          "status": "stable",
+          "triggered_at": "2026-09-10T21:00:00+08:00"
+        }
+      },
+      "alarm_environments": {
+        "alarm-1": {
+          "interference_types": ["rain", "strong_light"],
+          "visibility": "low",
+          "illumination_lux": 15000,
+          "wind_speed": 9
+        }
+      },
+      "alarm_verifications": {
+        "alarm-1": {
+          "result": "inconclusive",
+          "target_count": 0,
+          "checked_by": "system"
+        }
+      },
+      "alarm_correlations": {
+        "alarm-1": {
+          "repeated_count": 1,
+          "neighbor_alarm_count": 0,
+          "pattern": "isolated",
+          "window_seconds": 300
+        }
+      }
+    },
+    {
+      "device_id": "alarm-sensor-noise-01",
+      "case_id": "sensor_noise",
+      "expected_label": "sensor_noise_or_stuck",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "recording"
+      },
+      "alarm_rules": {
+        "rule-1": {
+          "alarm_type": "intrusion",
+          "enabled": true,
+          "severity": "warning",
+          "sensitivity": "medium",
+          "threshold": 65,
+          "debounce_seconds": 8
+        }
+      },
+      "alarm_signals": {
+        "alarm-1": {
+          "sensor_id": "pir-sensor-1",
+          "signal_value": 70,
+          "threshold": 65,
+          "noise_level": 0.92,
+          "status": "noisy",
+          "triggered_at": "2026-09-10T22:00:00+08:00"
+        }
+      },
+      "alarm_environments": {
+        "alarm-1": {
+          "interference_types": ["none"],
+          "visibility": "normal"
+        }
+      },
+      "alarm_verifications": {
+        "alarm-1": {
+          "result": "inconclusive",
+          "target_count": 0,
+          "checked_by": "system"
+        }
+      },
+      "alarm_correlations": {
+        "alarm-1": {
+          "repeated_count": 2,
+          "neighbor_alarm_count": 0,
+          "pattern": "isolated",
+          "window_seconds": 300
+        }
+      }
+    },
+    {
+      "device_id": "alarm-verification-negative-01",
+      "case_id": "verification_negative",
+      "expected_label": "verification_negative_false_alarm",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "recording"
+      },
+      "alarm_rules": {
+        "rule-1": {
+          "alarm_type": "intrusion",
+          "enabled": true,
+          "severity": "warning",
+          "sensitivity": "medium",
+          "threshold": 65,
+          "debounce_seconds": 8
+        }
+      },
+      "alarm_signals": {
+        "alarm-1": {
+          "sensor_id": "video-analytic-2",
+          "signal_value": 68,
+          "threshold": 65,
+          "noise_level": 0.2,
+          "status": "stable",
+          "triggered_at": "2026-09-10T23:00:00+08:00"
+        }
+      },
+      "alarm_environments": {
+        "alarm-1": {
+          "interference_types": ["none"],
+          "visibility": "normal"
+        }
+      },
+      "alarm_verifications": {
+        "alarm-1": {
+          "result": "no_target_found",
+          "target_count": 0,
+          "checked_by": "system",
+          "extra": {
+            "snapshot_url": "http://example.local/snapshot/not-real.jpg"
+          }
+        }
+      },
+      "alarm_correlations": {
+        "alarm-1": {
+          "repeated_count": 1,
+          "neighbor_alarm_count": 0,
+          "pattern": "isolated",
+          "window_seconds": 300
+        }
+      }
+    },
+    {
+      "device_id": "alarm-duplicate-burst-01",
+      "case_id": "duplicate_alarm_burst",
+      "expected_label": "duplicate_alarm_burst",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "normal",
+        "recording_status": "recording"
+      },
+      "alarm_rules": {
+        "rule-1": {
+          "alarm_type": "motion",
+          "enabled": true,
+          "severity": "warning",
+          "sensitivity": "medium",
+          "threshold": 55,
+          "debounce_seconds": 6
+        }
+      },
+      "alarm_signals": {
+        "alarm-1": {
+          "sensor_id": "motion-sensor-2",
+          "signal_value": 62,
+          "threshold": 55,
+          "noise_level": 0.4,
+          "status": "stable",
+          "triggered_at": "2026-09-10T23:30:00+08:00"
+        }
+      },
+      "alarm_environments": {
+        "alarm-1": {
+          "interference_types": ["none"],
+          "visibility": "normal"
+        }
+      },
+      "alarm_verifications": {
+        "alarm-1": {
+          "result": "inconclusive",
+          "target_count": 0,
+          "checked_by": "system"
+        }
+      },
+      "alarm_correlations": {
+        "alarm-1": {
+          "repeated_count": 12,
+          "neighbor_alarm_count": 0,
+          "pattern": "burst",
+          "window_seconds": 300
+        }
+      }
+    }
+  ]
+}

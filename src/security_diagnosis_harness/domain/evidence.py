@@ -24,6 +24,9 @@ class EvidenceType(StrEnum):
 
     `ACCESS_CONTROLLER` / `ACCESS_DOOR` / `ACCESS_CREDENTIAL` /
     `ACCESS_POLICY` / `ACCESS_EVENT` 为 Phase 3B 门禁刷卡异常深化新增。
+
+    `ALARM_RULE` / `ALARM_SIGNAL` / `ALARM_ENVIRONMENT` /
+    `ALARM_VERIFICATION` / `ALARM_CORRELATION` 为 Phase 4B 报警误报深化新增。
     """
 
     DEVICE_STATUS = "device_status"
@@ -40,6 +43,11 @@ class EvidenceType(StrEnum):
     ACCESS_CREDENTIAL = "access_credential"
     ACCESS_POLICY = "access_policy"
     ACCESS_EVENT = "access_event"
+    ALARM_RULE = "alarm_rule"
+    ALARM_SIGNAL = "alarm_signal"
+    ALARM_ENVIRONMENT = "alarm_environment"
+    ALARM_VERIFICATION = "alarm_verification"
+    ALARM_CORRELATION = "alarm_correlation"
     KNOWLEDGE_SOP = "knowledge_sop"
     HUMAN_FEEDBACK = "human_feedback"
 
