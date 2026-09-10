@@ -1,5 +1,12 @@
 """应用编排层：用例边界、状态推进与报告渲染。"""
 
+from security_diagnosis_harness.application.access_diagnosis_rules import (
+    AccessDiagnosisLabel,
+    AccessDiagnosisRuleResult,
+    AccessFacts,
+    extract_access_facts,
+    infer_access_card_failed_label,
+)
 from security_diagnosis_harness.application.camera_diagnosis_rules import (
     CameraDiagnosisLabel,
     CameraDiagnosisRuleResult,
@@ -23,6 +30,9 @@ from security_diagnosis_harness.application.reports import render_markdown_repor
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 
 __all__ = [
+    "AccessDiagnosisLabel",
+    "AccessDiagnosisRuleResult",
+    "AccessFacts",
     "ApplicationError",
     "CameraDiagnosisLabel",
     "CameraDiagnosisRuleResult",
@@ -33,7 +43,9 @@ __all__ = [
     "RunDiagnosisResult",
     "SecurityDiagnosisApplicationService",
     "device_fact_evidence_ids",
+    "extract_access_facts",
     "extract_camera_facts",
+    "infer_access_card_failed_label",
     "infer_camera_black_screen_label",
     "missing_device_fact_evidence_ids",
     "render_markdown_report",
