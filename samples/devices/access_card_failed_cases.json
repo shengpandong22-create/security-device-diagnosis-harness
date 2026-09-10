@@ -1,0 +1,354 @@
+{
+  "version": 1,
+  "devices": [
+    {
+      "device_id": "access-credential-frozen-01",
+      "case_id": "credential_frozen",
+      "expected_label": "credential_invalid_or_frozen",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "unknown",
+        "recording_status": "not_supported"
+      },
+      "access_controller": {
+        "controller_id": "ctrl-frozen-01",
+        "status": "online",
+        "health": "healthy",
+        "last_seen_at": "2026-09-10T08:00:00+08:00"
+      },
+      "doors": {
+        "door-1": {
+          "controller_id": "ctrl-frozen-01",
+          "door_status": "closed",
+          "lock_status": "locked"
+        }
+      },
+      "credentials": {
+        "sample-card-frozen": {
+          "credential_type": "card",
+          "status": "frozen",
+          "expires_at": "2026-12-31T23:59:59+08:00",
+          "extra": {
+            "card_no": "sample-card-no-not-real"
+          }
+        }
+      },
+      "access_policies": [
+        {
+          "door_id": "door-1",
+          "person_id": "sample-person-frozen",
+          "credential_id": "sample-card-frozen",
+          "allowed": true,
+          "time_ranges": [
+            {
+              "start": "00:00:00",
+              "end": "00:00:00",
+              "weekdays": [1, 2, 3, 4, 5, 6, 7]
+            }
+          ]
+        }
+      ],
+      "access_events": [
+        {
+          "door_id": "door-1",
+          "credential_id": "sample-card-frozen",
+          "person_id": "sample-person-frozen",
+          "credential_type": "card",
+          "decision": "denied",
+          "deny_reason": "frozen_credential",
+          "occurred_at": "2026-09-10T08:05:00+08:00"
+        }
+      ],
+      "alarms": [
+        {
+          "event_type": "ACCESS_DENIED",
+          "severity": "warning",
+          "message": "凭证被冻结，刷卡被拒"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "config": {
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "access-permission-denied-01",
+      "case_id": "permission_denied",
+      "expected_label": "permission_not_granted",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "unknown",
+        "recording_status": "not_supported"
+      },
+      "access_controller": {
+        "controller_id": "ctrl-permission-01",
+        "status": "online",
+        "health": "healthy",
+        "last_seen_at": "2026-09-10T08:00:00+08:00"
+      },
+      "doors": {
+        "door-1": {
+          "controller_id": "ctrl-permission-01",
+          "door_status": "closed",
+          "lock_status": "locked"
+        }
+      },
+      "credentials": {
+        "sample-card-no-permission": {
+          "credential_type": "card",
+          "status": "active",
+          "expires_at": "2026-12-31T23:59:59+08:00"
+        }
+      },
+      "access_policies": [
+        {
+          "door_id": "door-1",
+          "person_id": "sample-person-no-permission",
+          "credential_id": "sample-card-no-permission",
+          "allowed": false
+        }
+      ],
+      "access_events": [
+        {
+          "door_id": "door-1",
+          "credential_id": "sample-card-no-permission",
+          "person_id": "sample-person-no-permission",
+          "credential_type": "card",
+          "decision": "denied",
+          "deny_reason": "permission_denied",
+          "occurred_at": "2026-09-10T08:10:00+08:00"
+        }
+      ],
+      "alarms": [
+        {
+          "event_type": "ACCESS_PERMISSION_DENIED",
+          "severity": "warning",
+          "message": "人员没有该门权限"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "config": {
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "access-time-window-denied-01",
+      "case_id": "time_window_denied",
+      "expected_label": "access_time_window_denied",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "unknown",
+        "recording_status": "not_supported"
+      },
+      "access_controller": {
+        "controller_id": "ctrl-time-window-01",
+        "status": "online",
+        "health": "healthy",
+        "last_seen_at": "2026-09-10T08:00:00+08:00"
+      },
+      "doors": {
+        "door-1": {
+          "controller_id": "ctrl-time-window-01",
+          "door_status": "closed",
+          "lock_status": "locked"
+        }
+      },
+      "credentials": {
+        "sample-card-time-window": {
+          "credential_type": "card",
+          "status": "active",
+          "expires_at": "2026-12-31T23:59:59+08:00"
+        }
+      },
+      "access_policies": [
+        {
+          "door_id": "door-1",
+          "person_id": "sample-person-time-window",
+          "credential_id": "sample-card-time-window",
+          "allowed": true,
+          "time_ranges": [
+            {
+              "start": "09:00:00",
+              "end": "18:00:00",
+              "weekdays": [1, 2, 3, 4, 5]
+            }
+          ]
+        }
+      ],
+      "access_events": [
+        {
+          "door_id": "door-1",
+          "credential_id": "sample-card-time-window",
+          "person_id": "sample-person-time-window",
+          "credential_type": "card",
+          "decision": "denied",
+          "deny_reason": "time_window_denied",
+          "occurred_at": "2026-09-10T22:30:00+08:00"
+        }
+      ],
+      "alarms": [
+        {
+          "event_type": "ACCESS_TIME_WINDOW_DENIED",
+          "severity": "warning",
+          "message": "刷卡时间不在授权时段内"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "config": {
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "access-controller-offline-01",
+      "case_id": "controller_offline",
+      "expected_label": "controller_offline_or_no_response",
+      "snapshot": {
+        "online": false,
+        "channel_online": null,
+        "stream_status": "unknown",
+        "recording_status": "not_supported"
+      },
+      "access_controller": {
+        "controller_id": "ctrl-offline-01",
+        "status": "offline",
+        "health": "error",
+        "last_seen_at": "2026-09-10T07:40:00+08:00",
+        "last_error": "controller heartbeat lost"
+      },
+      "doors": {
+        "door-1": {
+          "controller_id": "ctrl-offline-01",
+          "door_status": "unknown",
+          "lock_status": "unknown"
+        }
+      },
+      "credentials": {
+        "sample-card-controller-offline": {
+          "credential_type": "card",
+          "status": "active",
+          "expires_at": "2026-12-31T23:59:59+08:00"
+        }
+      },
+      "access_policies": [
+        {
+          "door_id": "door-1",
+          "person_id": "sample-person-controller-offline",
+          "credential_id": "sample-card-controller-offline",
+          "allowed": true,
+          "time_ranges": [
+            {
+              "start": "00:00:00",
+              "end": "00:00:00",
+              "weekdays": [1, 2, 3, 4, 5, 6, 7]
+            }
+          ]
+        }
+      ],
+      "access_events": [
+        {
+          "door_id": "door-1",
+          "credential_id": "sample-card-controller-offline",
+          "person_id": "sample-person-controller-offline",
+          "credential_type": "card",
+          "decision": "timeout",
+          "deny_reason": "controller_timeout",
+          "occurred_at": "2026-09-10T08:15:00+08:00"
+        }
+      ],
+      "alarms": [
+        {
+          "event_type": "ACCESS_CONTROLLER_OFFLINE",
+          "severity": "critical",
+          "message": "门禁控制器离线"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "config": {
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    },
+    {
+      "device_id": "access-door-lock-jammed-01",
+      "case_id": "door_lock_jammed",
+      "expected_label": "door_lock_or_sensor_issue",
+      "snapshot": {
+        "online": true,
+        "channel_online": true,
+        "stream_status": "unknown",
+        "recording_status": "not_supported"
+      },
+      "access_controller": {
+        "controller_id": "ctrl-lock-01",
+        "status": "online",
+        "health": "degraded",
+        "last_seen_at": "2026-09-10T08:00:00+08:00",
+        "last_error": "door lock feedback abnormal"
+      },
+      "doors": {
+        "door-1": {
+          "controller_id": "ctrl-lock-01",
+          "door_status": "closed",
+          "lock_status": "jammed",
+          "last_error": "lock motor blocked"
+        }
+      },
+      "credentials": {
+        "sample-card-lock-jammed": {
+          "credential_type": "card",
+          "status": "active",
+          "expires_at": "2026-12-31T23:59:59+08:00"
+        }
+      },
+      "access_policies": [
+        {
+          "door_id": "door-1",
+          "person_id": "sample-person-lock-jammed",
+          "credential_id": "sample-card-lock-jammed",
+          "allowed": true,
+          "time_ranges": [
+            {
+              "start": "00:00:00",
+              "end": "00:00:00",
+              "weekdays": [1, 2, 3, 4, 5, 6, 7]
+            }
+          ]
+        }
+      ],
+      "access_events": [
+        {
+          "door_id": "door-1",
+          "credential_id": "sample-card-lock-jammed",
+          "person_id": "sample-person-lock-jammed",
+          "credential_type": "card",
+          "decision": "denied",
+          "deny_reason": "door_lock_error",
+          "occurred_at": "2026-09-10T08:20:00+08:00"
+        }
+      ],
+      "alarms": [
+        {
+          "event_type": "DOOR_LOCK_JAMMED",
+          "severity": "critical",
+          "message": "门锁卡滞，开门失败"
+        }
+      ],
+      "config": {
+        "enabled": true,
+        "config": {
+          "admin_password": "sample-admin-pwd-not-real"
+        }
+      }
+    }
+  ]
+}

@@ -8,6 +8,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
+from security_diagnosis_harness.domain.access import (
+    AccessControllerSnapshot,
+    AccessEvent,
+    AccessPolicySnapshot,
+    CredentialSnapshot,
+    DoorSnapshot,
+)
 from security_diagnosis_harness.domain.camera import (
     ChannelSnapshot,
     PlatformPullStatus,
@@ -78,6 +85,32 @@ class DeviceGateway(Protocol):
         end_at: datetime,
     ) -> PlaybackCheckResult:
         """检查指定时间段是否存在录像、是否可回放。"""
+        ...
+
+    def query_access_controller(self, device_id: str) -> AccessControllerSnapshot:
+        """查询门禁控制器在线状态、健康状态与最近错误。"""
+        ...
+
+    def query_door(self, device_id: str, door_id: str) -> DoorSnapshot:
+        """查询门状态、门锁状态与门磁异常。"""
+        ...
+
+    def query_credential(self, credential_id: str) -> CredentialSnapshot:
+        """查询卡、人脸、二维码、指纹等凭证状态。"""
+        ...
+
+    def query_access_policy(self, person_id: str, door_id: str) -> AccessPolicySnapshot:
+        """查询人员 / 凭证对指定门的权限与授权时间段。"""
+        ...
+
+    def search_access_events(
+        self,
+        device_id: str,
+        door_id: str,
+        credential_id: str,
+        limit: int = 10,
+    ) -> list[AccessEvent]:
+        """查询近期门禁通行事件。"""
         ...
 
     def search_alarm_events(

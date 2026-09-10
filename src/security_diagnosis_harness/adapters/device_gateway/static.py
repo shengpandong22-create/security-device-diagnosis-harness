@@ -10,6 +10,8 @@
   platform_pull / case_id / expected_label；
 - Phase 2B `recording_missing_cases.json`：额外包含 recording_plans / storage /
   playback（三者都按 channel_id 分键）。
+- Phase 3B `access_card_failed_cases.json`：额外包含 access_controller /
+  doors / credentials / access_policies / access_events。
 
 旧文件仍然可用于 Phase 0 demo；读取旧文件里不存在的摄像头/录像事实时，
 抛出受控的 `DeviceGatewayDataError`，而不是返回伪造数据。
@@ -24,6 +26,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from security_diagnosis_harness.domain.access import (
+    AccessControllerSnapshot,
+    AccessEvent,
+    AccessPolicySnapshot,
+    CredentialSnapshot,
+    DoorSnapshot,
+)
 from security_diagnosis_harness.domain.camera import (
     ChannelSnapshot,
     PlatformPullStatus,
@@ -82,6 +91,12 @@ class StaticDeviceEntry(BaseModel):
     recording_plans: dict[str, dict[str, Any]] = Field(default_factory=dict)
     storage: dict[str, dict[str, Any]] = Field(default_factory=dict)
     playback: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    # Phase 3B：门禁事实。
+    access_controller: dict[str, Any] = Field(default_factory=dict)
+    doors: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    credentials: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    access_policies: list[dict[str, Any]] = Field(default_factory=list)
+    access_events: list[dict[str, Any]] = Field(default_factory=list)
     alarms: list[dict[str, Any]] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
     case_id: str | None = None
@@ -265,6 +280,59 @@ class StaticDeviceGateway:
             if _ensure_aware(window_start) < query_end and _ensure_aware(window_end) > query_start:
                 return candidate
         return None
+
+    # ------------------------------------------------------------ Phase 3B 门禁事实
+    def query_access_controller(self, device_id: str) -> AccessControllerSnapshot:
+        entry = self._require_entry(device_id)
+        if not entry.access_controller:
+            raise DeviceGatewayDataError(f"设备 {device_id} 缺少门禁控制器状态数据")
+        return AccessControllerSnapshot.model_validate(
+            {"device_id": device_id, **entry.access_controller}
+        )
+
+    def query_door(self, device_id: str, door_id: str) -> DoorSnapshot:
+        entry = self._require_entry(device_id)
+        door = entry.doors.get(door_id)
+        if door is None:
+            raise DeviceGatewayDataError(f"设备 {device_id} 门 {door_id} 缺少门状态数据")
+        return DoorSnapshot.model_validate({"device_id": device_id, "door_id": door_id, **door})
+
+    def query_credential(self, credential_id: str) -> CredentialSnapshot:
+        for entry in self._entries.values():
+            credential = entry.credentials.get(credential_id)
+            if credential is not None:
+                return CredentialSnapshot.model_validate(
+                    {"device_id": entry.device_id, "credential_id": credential_id, **credential}
+                )
+        raise DeviceGatewayDataError(f"凭证 {credential_id} 不存在于静态样例数据中")
+
+    def query_access_policy(self, person_id: str, door_id: str) -> AccessPolicySnapshot:
+        for entry in self._entries.values():
+            for policy in entry.access_policies:
+                if policy.get("person_id") == person_id and policy.get("door_id") == door_id:
+                    return AccessPolicySnapshot.model_validate(
+                        {"device_id": entry.device_id, **policy}
+                    )
+        raise DeviceGatewayDataError(
+            f"人员 {person_id} 与门 {door_id} 缺少门禁授权策略数据"
+        )
+
+    def search_access_events(
+        self,
+        device_id: str,
+        door_id: str,
+        credential_id: str,
+        limit: int = 10,
+    ) -> list[AccessEvent]:
+        entry = self._require_entry(device_id)
+        matched: list[AccessEvent] = []
+        for event in entry.access_events:
+            if event.get("door_id") != door_id:
+                continue
+            if event.get("credential_id") != credential_id:
+                continue
+            matched.append(AccessEvent.model_validate({"device_id": device_id, **event}))
+        return matched[:limit]
 
     def search_alarm_events(
         self,

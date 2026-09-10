@@ -21,6 +21,9 @@ class EvidenceType(StrEnum):
     它们同属于设备事实类证据。
 
     `RECORDING_PLAN` / `STORAGE_STATUS` / `PLAYBACK_CHECK` 为 Phase 2B 录像缺失深化新增。
+
+    `ACCESS_CONTROLLER` / `ACCESS_DOOR` / `ACCESS_CREDENTIAL` /
+    `ACCESS_POLICY` / `ACCESS_EVENT` 为 Phase 3B 门禁刷卡异常深化新增。
     """
 
     DEVICE_STATUS = "device_status"
@@ -32,6 +35,11 @@ class EvidenceType(StrEnum):
     RECORDING_PLAN = "recording_plan"
     STORAGE_STATUS = "storage_status"
     PLAYBACK_CHECK = "playback_check"
+    ACCESS_CONTROLLER = "access_controller"
+    ACCESS_DOOR = "access_door"
+    ACCESS_CREDENTIAL = "access_credential"
+    ACCESS_POLICY = "access_policy"
+    ACCESS_EVENT = "access_event"
     KNOWLEDGE_SOP = "knowledge_sop"
     HUMAN_FEEDBACK = "human_feedback"
 
