@@ -24,8 +24,9 @@ from security_diagnosis_harness.domain.errors import CitationPolicyViolation
 from security_diagnosis_harness.domain.evidence import EvidenceType
 
 # 设备事实类证据：设备状态、告警事件、配置快照、通道、码流、平台拉流，
-# 录像计划、存储状态、回放检查，以及门禁控制器、门、凭证、授权策略和刷卡事件。
-# Phase 3C 起，门禁类事实也能支撑 probable，但仍然要求至少两类不同设备事实。
+# 录像计划、存储状态、回放检查，门禁控制器、门、凭证、授权策略和刷卡事件，
+# 以及报警规则、信号、环境、复核和关联告警。
+# Phase 4C 起，报警类事实也能支撑 probable，但仍然要求至少两类不同设备事实。
 DEVICE_FACT_EVIDENCE_TYPES: frozenset[EvidenceType] = frozenset(
     {
         EvidenceType.DEVICE_STATUS,
@@ -42,6 +43,11 @@ DEVICE_FACT_EVIDENCE_TYPES: frozenset[EvidenceType] = frozenset(
         EvidenceType.ACCESS_CREDENTIAL,
         EvidenceType.ACCESS_POLICY,
         EvidenceType.ACCESS_EVENT,
+        EvidenceType.ALARM_RULE,
+        EvidenceType.ALARM_SIGNAL,
+        EvidenceType.ALARM_ENVIRONMENT,
+        EvidenceType.ALARM_VERIFICATION,
+        EvidenceType.ALARM_CORRELATION,
     }
 )
 
