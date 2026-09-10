@@ -4,6 +4,30 @@
 HTTP 客户端或具体 LLM SDK。
 """
 
+from security_diagnosis_harness.domain.access import (
+    ALL_WEEKDAYS as ACCESS_ALL_WEEKDAYS,
+)
+from security_diagnosis_harness.domain.access import (
+    AccessControllerHealth,
+    AccessControllerSnapshot,
+    AccessControllerStatus,
+    AccessDecision,
+    AccessDenyReason,
+    AccessEvent,
+    AccessPolicySnapshot,
+    AccessTimeRange,
+    CredentialSnapshot,
+    CredentialStatus,
+    CredentialType,
+    DoorLockStatus,
+    DoorSnapshot,
+    DoorStatus,
+    is_access_sensitive_key,
+    redact_access_sensitive_values,
+)
+from security_diagnosis_harness.domain.access import (
+    Weekday as AccessWeekday,
+)
 from security_diagnosis_harness.domain.camera import (
     ChannelSnapshot,
     ChannelStatus,
@@ -51,10 +75,23 @@ from security_diagnosis_harness.domain.recording import (
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 
 __all__ = [
+    "ACCESS_ALL_WEEKDAYS",
+    "AccessControllerHealth",
+    "AccessControllerSnapshot",
+    "AccessControllerStatus",
+    "AccessDecision",
+    "AccessDenyReason",
+    "AccessEvent",
+    "AccessPolicySnapshot",
+    "AccessTimeRange",
+    "AccessWeekday",
     "AlarmSeverity",
     "ChannelSnapshot",
     "ChannelStatus",
     "ConclusionConfidence",
+    "CredentialSnapshot",
+    "CredentialStatus",
+    "CredentialType",
     "Device",
     "DeviceAlarmEvent",
     "DeviceConfigSnapshot",
@@ -62,6 +99,9 @@ __all__ = [
     "DeviceType",
     "DiagnosisConclusion",
     "DiagnosisEvidence",
+    "DoorLockStatus",
+    "DoorSnapshot",
+    "DoorStatus",
     "EvidenceSource",
     "EvidenceType",
     "HumanReview",
@@ -84,6 +124,8 @@ __all__ = [
     "StreamKind",
     "StreamSnapshot",
     "StreamStatus",
+    "is_access_sensitive_key",
     "new_id",
+    "redact_access_sensitive_values",
     "utc_now",
 ]
