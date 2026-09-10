@@ -40,6 +40,11 @@ from security_diagnosis_harness.tools.access_credential import AccessCredentialT
 from security_diagnosis_harness.tools.access_door import AccessDoorTool
 from security_diagnosis_harness.tools.access_events import AccessEventsTool
 from security_diagnosis_harness.tools.access_policy import AccessPolicyTool
+from security_diagnosis_harness.tools.alarm_correlation import AlarmCorrelationTool
+from security_diagnosis_harness.tools.alarm_environment import AlarmEnvironmentTool
+from security_diagnosis_harness.tools.alarm_rule import AlarmRuleTool
+from security_diagnosis_harness.tools.alarm_signal import AlarmSignalTool
+from security_diagnosis_harness.tools.alarm_verification import AlarmVerificationTool
 from security_diagnosis_harness.tools.contracts import ToolExecutionContext, ToolPermission
 from security_diagnosis_harness.tools.recording_plan import RecordingPlanTool
 from security_diagnosis_harness.tools.recording_playback import RecordingPlaybackTool
@@ -52,6 +57,9 @@ RECORDING_CASES_DATA_PATH = Path(__file__).resolve().parents[1] / (
 )
 ACCESS_CASES_DATA_PATH = Path(__file__).resolve().parents[1] / (
     "samples/devices/access_card_failed_cases.json"
+)
+ALARM_CASES_DATA_PATH = Path(__file__).resolve().parents[1] / (
+    "samples/devices/alarm_false_positive_cases.json"
 )
 
 DEVICE_ID = "camera-3f-001"
@@ -268,6 +276,17 @@ def access_tool_registry(tool_registry) -> object:
 
 
 @pytest.fixture
+def alarm_tool_registry(tool_registry) -> object:
+    """在既有工具基础上追加 Phase 4B 五个报警只读工具。"""
+    tool_registry.register(AlarmRuleTool())
+    tool_registry.register(AlarmSignalTool())
+    tool_registry.register(AlarmEnvironmentTool())
+    tool_registry.register(AlarmVerificationTool())
+    tool_registry.register(AlarmCorrelationTool())
+    return tool_registry
+
+
+@pytest.fixture
 def recording_gateway() -> StaticDeviceGateway:
     """读取 Phase 2B 录像缺失样例数据的静态网关。"""
     return StaticDeviceGateway(RECORDING_CASES_DATA_PATH)
@@ -277,3 +296,9 @@ def recording_gateway() -> StaticDeviceGateway:
 def access_gateway() -> StaticDeviceGateway:
     """读取 Phase 3B 门禁刷卡异常样例数据的静态网关。"""
     return StaticDeviceGateway(ACCESS_CASES_DATA_PATH)
+
+
+@pytest.fixture
+def alarm_gateway() -> StaticDeviceGateway:
+    """读取 Phase 4B 报警误报样例数据的静态网关。"""
+    return StaticDeviceGateway(ALARM_CASES_DATA_PATH)
