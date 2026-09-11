@@ -75,6 +75,39 @@ def test_knowledge_already_exists_maps_to_409():
     _expect(service, KnowledgeAlreadyExistsError("knw-x"), 409, "knowledge_already_exists")
 
 
+def test_unsupported_fault_type_maps_to_422():
+    """正式 Runtime 不支持录像 / 门禁 / 报警时必须 422 且不返回成功。"""
+    import tempfile
+    from pathlib import Path as _Path
+
+    from security_diagnosis_harness.config import RuntimeSettings
+    from security_diagnosis_harness.runtime import build_runtime_container
+
+    tmpdir = _Path(tempfile.mkdtemp(prefix="phase6b-422-"))
+    settings = RuntimeSettings(
+        repository_mode="sqlite",
+        database_url=f"sqlite:///{(tmpdir / 'cap.db').as_posix()}",
+    )
+    with build_runtime_container(settings) as runtime:
+        client = TestClient(create_app(runtime.service))
+        response = client.post(
+            "/api/v1/diagnoses",
+            json={
+                "device_id": "cam-rec-plan-disabled-01",
+                "fault_type": "recording_missing",
+                "reporter": "probe",
+            },
+        )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "unsupported_fault_type"
+    assert body["data"] is None
+    serialized = response.text
+    for marker in ("ToolRegistry", "FakeLLM", ".py", "sqlite:///", "class "):
+        assert marker not in serialized
+
+
 def test_repository_persistence_error_maps_to_503():
     service = build_container().service
     _expect(
