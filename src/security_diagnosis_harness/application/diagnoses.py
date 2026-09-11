@@ -32,6 +32,7 @@ from security_diagnosis_harness.application.camera_diagnosis_rules import (
     CameraDiagnosisRuleResult,
     infer_camera_black_screen_label,
 )
+from security_diagnosis_harness.application.errors import UnsupportedFaultTypeError
 from security_diagnosis_harness.application.recording_diagnosis_rules import (
     RecordingDiagnosisLabel,
     RecordingDiagnosisRuleResult,
@@ -265,6 +266,7 @@ class SecurityDiagnosisApplicationService:
         gateway: DeviceGateway,
         citation_policy: CitationPolicy | None = None,
         tool_allowlist: list[str] | None = None,
+        supported_fault_types: frozenset[SecurityFaultType] | None = None,
     ) -> None:
         self._repository = repository
         self._runner = runner
@@ -272,6 +274,21 @@ class SecurityDiagnosisApplicationService:
         self._gateway = gateway
         self._citation_policy = citation_policy or CitationPolicy()
         self._tool_allowlist = tool_allowlist
+        # None 表示不限制（Phase 0～5 独立评测 Container 的既有语义）。
+        self._supported_fault_types = supported_fault_types
+        self.supported_fault_types = supported_fault_types
+
+    # -------------------------------------------------------------- 能力闸门
+    def is_fault_type_supported(self, fault_type: SecurityFaultType) -> bool:
+        """当前 Runtime 是否装配了该故障类型的诊断能力。"""
+        if self._supported_fault_types is None:
+            return True
+        return fault_type in self._supported_fault_types
+
+    def ensure_fault_type_supported(self, fault_type: SecurityFaultType) -> None:
+        """不支持时抛 `UnsupportedFaultTypeError`（受控失败，不写入任何数据）。"""
+        if not self.is_fault_type_supported(fault_type):
+            raise UnsupportedFaultTypeError(fault_type.value)
 
     # ------------------------------------------------------------------ 查询
     def get_diagnosis(self, diagnosis_id: str) -> SecurityDiagnosisCase:
@@ -291,7 +308,11 @@ class SecurityDiagnosisApplicationService:
         reporter: str,
         description: str = "",
     ) -> SecurityDiagnosisCase:
-        """创建一条诊断，初始状态为 created。"""
+        """创建一条诊断，初始状态为 created。
+
+        能力闸门在**写入之前**执行：不支持的故障类型不落库。
+        """
+        self.ensure_fault_type_supported(fault_type)
         case = SecurityDiagnosisCase(
             fault_type=fault_type,
             device_id=device_id,
@@ -312,6 +333,10 @@ class SecurityDiagnosisApplicationService:
             raise InvalidStatusTransition(
                 f"诊断 {case.diagnosis_id} 当前状态 {case.status.value} 不允许启动运行"
             )
+
+        # 能力闸门必须在状态推进之前：数据库可能含历史遗留的、当前 Runtime
+        # 已不支持的故障类型。拒绝时不得写入任何 Evidence / Conclusion / Review。
+        self.ensure_fault_type_supported(case.fault_type)
 
         case.transition_to(SecurityDiagnosisStatus.INVESTIGATING)
         context = ToolExecutionContext(

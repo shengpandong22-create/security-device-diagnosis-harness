@@ -50,6 +50,7 @@ from security_diagnosis_harness.config import (
     build_runtime_settings,
 )
 from security_diagnosis_harness.domain.citation_policy import CitationPolicy
+from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
 from security_diagnosis_harness.tools.device_channel import DeviceChannelTool
 from security_diagnosis_harness.tools.device_stream import DeviceStreamTool
@@ -87,6 +88,19 @@ def upgrade_database(database_url: str) -> None:
     config = _build_alembic_config(database_url)
     # 不使用 Base.metadata.create_all()，schema 完全由 Alembic 迁移管理。
     command.upgrade(config, "head")
+
+
+# Phase 6B-1 尚未实现四故障域统一 Strategy Router，正式 Runtime 只装配
+# 摄像头黑屏诊断能力（工具白名单 + 确定性 responder 都是摄像头专用）。
+# 录像 / 门禁 / 报警的正式运行路由留给后续阶段，绝不能用宽泛 allowlist 假装支持。
+SUPPORTED_RUNTIME_FAULT_TYPES: frozenset[SecurityFaultType] = frozenset(
+    {SecurityFaultType.CAMERA_BLACK_SCREEN}
+)
+
+
+def supported_runtime_fault_types() -> frozenset[SecurityFaultType]:
+    """正式 Runtime 当前支持的故障类型集合。"""
+    return SUPPORTED_RUNTIME_FAULT_TYPES
 
 
 @dataclass
@@ -191,6 +205,8 @@ def build_runtime_container(
         registry=registry,
         gateway=gateway,
         citation_policy=citation_policy,
+        # 显式能力约束：正式 Runtime 只支持已装配的故障类型。
+        supported_fault_types=SUPPORTED_RUNTIME_FAULT_TYPES,
     )
     return RuntimeContainer(
         settings=resolved,
@@ -206,15 +222,10 @@ def build_runtime_container(
     )
 
 
-def build_runtime_service(
-    settings: RuntimeSettings | None = None,
-) -> SecurityDiagnosisApplicationService:
-    """仅返回服务（调用方负责通过 RuntimeContainer 管理 Engine 生命周期）。
-
-    用法提示：直接调用本函数会失去 `close()` 能力，正式入口请使用
-    `build_runtime_container()`。
-    """
-    return build_runtime_container(settings).service
+# 注意：这里刻意**不**提供 `build_runtime_service()` 之类的入口。
+# 任何"创建 Engine 却只返回 service"的 builder 都会丢失资源 owner，
+# 调用方无法 dispose Engine。正式入口必须使用 `build_runtime_container()`
+# 并通过 `close()` / context manager 释放资源。
 
 
 def build_camera_registry() -> ToolRegistry:
@@ -232,9 +243,10 @@ def build_camera_registry() -> ToolRegistry:
 __all__ = [
     "ALEMBIC_INI_PATH",
     "MIGRATIONS_DIR",
+    "SUPPORTED_RUNTIME_FAULT_TYPES",
     "RuntimeContainer",
     "build_camera_registry",
     "build_runtime_container",
-    "build_runtime_service",
+    "supported_runtime_fault_types",
     "upgrade_database",
 ]

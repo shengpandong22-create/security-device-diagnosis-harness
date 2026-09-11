@@ -21,6 +21,7 @@ from security_diagnosis_harness.application.errors import (
     KnowledgeAlreadyExistsError,
     KnowledgeNotFoundError,
     RepositoryPersistenceError,
+    UnsupportedFaultTypeError,
 )
 from security_diagnosis_harness.domain.errors import (
     CitationPolicyViolation,
@@ -39,6 +40,7 @@ REPOSITORY_UNAVAILABLE_MESSAGE = "诊断数据暂时不可用"
 # 顺序敏感：子类必须排在父类之前。
 ERROR_STATUS_CODES: tuple[tuple[type[BaseException], int], ...] = (
     (CitationPolicyViolation, 422),
+    (UnsupportedFaultTypeError, 422),
     (RepositoryPersistenceError, 503),
     (DiagnosisAlreadyExistsError, 409),
     (KnowledgeAlreadyExistsError, 409),
@@ -52,6 +54,7 @@ ERROR_STATUS_CODES: tuple[tuple[type[BaseException], int], ...] = (
 
 ERROR_CODES: tuple[tuple[type[BaseException], str], ...] = (
     (CitationPolicyViolation, "citation_policy_violation"),
+    (UnsupportedFaultTypeError, "unsupported_fault_type"),
     (RepositoryPersistenceError, REPOSITORY_UNAVAILABLE_CODE),
     (DiagnosisAlreadyExistsError, "diagnosis_already_exists"),
     (KnowledgeAlreadyExistsError, "knowledge_already_exists"),

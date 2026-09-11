@@ -53,5 +53,17 @@ class RepositoryPersistenceError(ApplicationError):
         self.reason = reason
 
 
+class UnsupportedFaultTypeError(ApplicationError):
+    """当前 Runtime 未装配该故障类型的诊断能力。
+
+    Phase 6B-1 尚未实现四故障域统一路由，正式 Runtime 只支持已装配的故障类型；
+    其余类型必须在 create 与 run 两处都被拒绝。
+    """
+
+    def __init__(self, fault_type: str) -> None:
+        super().__init__(f"当前运行环境暂不支持故障类型 {fault_type} 的诊断")
+        self.fault_type = fault_type
+
+
 class KnowledgeCandidateGenerationError(ApplicationError):
     """当前诊断不满足生成知识候选的前置条件。"""
