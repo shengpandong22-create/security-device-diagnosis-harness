@@ -75,6 +75,27 @@ def test_knowledge_already_exists_maps_to_409():
     _expect(service, KnowledgeAlreadyExistsError("knw-x"), 409, "knowledge_already_exists")
 
 
+def test_concurrent_update_maps_to_409():
+    """乐观锁冲突必须 409，且不暴露 expected/actual version。"""
+    from security_diagnosis_harness.application.errors import ConcurrentUpdateError
+
+    service = build_container().service
+    service.get_diagnosis = _raiser(  # type: ignore[method-assign]
+        ConcurrentUpdateError("诊断", "diag-x", 3)
+    )
+
+    response = _client(service).get("/api/v1/diagnoses/diag-x")
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["code"] == "concurrent_update"
+    assert body["message"] == "诊断已被其他请求更新，请刷新后重试"
+    assert body["data"] is None
+    # 不得泄漏版本号与内部细节
+    assert "3" not in response.text
+    assert "version" not in response.text.lower()
+
+
 def test_unsupported_fault_type_maps_to_422():
     """正式 Runtime 不支持录像 / 门禁 / 报警时必须 422 且不返回成功。"""
     import tempfile

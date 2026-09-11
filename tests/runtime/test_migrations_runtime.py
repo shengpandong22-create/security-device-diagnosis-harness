@@ -163,4 +163,65 @@ def test_alembic_version_recorded(tmp_path: Path):
     finally:
         engine.dispose()
 
-    assert version == "0001"
+    assert version == "0002"
+
+
+def test_version_columns_exist_after_migration(tmp_path: Path):
+    """Phase 6B-2：两张表都应具备 version 列。"""
+    url = _url(tmp_path)
+    upgrade_database(url)
+
+    engine = create_engine(url, future=True)
+    try:
+        for table in ("diagnosis_cases", "knowledge_candidates"):
+            columns = {
+                column["name"] for column in inspect(engine).get_columns(table)
+            }
+            assert "version" in columns, f"{table} 缺少 version 列"
+    finally:
+        engine.dispose()
+
+
+def test_legacy_rows_get_version_one(tmp_path: Path):
+    """旧数据升级到 0002 时 version 应为 1。"""
+    url = _url(tmp_path)
+    upgrade_database(url)
+
+    engine = create_engine(url, future=True)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO diagnosis_cases "
+                    "(diagnosis_id, fault_type, device_id, reporter, description,"
+                    " status, created_at, updated_at, evidence, conclusion, reviews)"
+                    " VALUES (:id, 'camera_black_screen', 'cam-1', 'r', 'd',"
+                    " 'created', '2026-01-01 00:00:00', '2026-01-01 00:00:00',"
+                    " '[]', NULL, '[]')"
+                ),
+                {"id": "diag-legacy"},
+            )
+            stored = connection.execute(
+                text("SELECT version FROM diagnosis_cases WHERE diagnosis_id = :id"),
+                {"id": "diag-legacy"},
+            ).scalar()
+    finally:
+        engine.dispose()
+
+    assert stored == 1
+
+
+def test_downgrade_to_base_removes_version_columns(tmp_path: Path):
+    """downgrade 到 base 后 version 列应被移除。"""
+    url = _url(tmp_path)
+    upgrade_database(url)
+
+    from alembic import command
+    from alembic.config import Config
+
+    config = Config(str(REPO_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config.set_main_option("sqlalchemy.url", url)
+    command.downgrade(config, "base")
+
+    assert EXPECTED_TABLES.isdisjoint(_tables(url))

@@ -97,8 +97,9 @@ def test_in_memory_and_sqlite_repositories_behave_the_same(engine):
             repository.save(case)
         with pytest.raises(DiagnosisNotFoundError):
             repository.get("missing")
+        missing = build_confirmed_case("diag-unknown").model_copy(update={"version": 1})
         with pytest.raises(DiagnosisNotFoundError):
-            repository.update(build_confirmed_case("diag-unknown"))
+            repository.update(missing)
 
 
 def test_gitignore_covers_database_artifacts():

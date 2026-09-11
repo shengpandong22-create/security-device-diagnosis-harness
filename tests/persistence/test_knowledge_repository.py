@@ -157,8 +157,9 @@ def test_duplicate_save_is_rejected(knowledge_repository):
 def test_get_and_update_unknown_are_rejected(knowledge_repository):
     with pytest.raises(KnowledgeNotFoundError):
         knowledge_repository.get("missing")
+    missing = build_knowledge_candidate("knw-missing").model_copy(update={"version": 1})
     with pytest.raises(KnowledgeNotFoundError):
-        knowledge_repository.update(build_knowledge_candidate("knw-missing"))
+        knowledge_repository.update(missing)
 
 
 def test_local_mutation_does_not_implicitly_persist(knowledge_repository):

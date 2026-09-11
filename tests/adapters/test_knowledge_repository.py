@@ -62,8 +62,9 @@ def test_repository_get_and_update_unknown_fail():
     repository = InMemoryKnowledgeRepository()
     with pytest.raises(KnowledgeNotFoundError):
         repository.get("missing")
+    missing = _candidate().model_copy(update={"version": 1})
     with pytest.raises(KnowledgeNotFoundError):
-        repository.update(_candidate())
+        repository.update(missing)
 
 
 @pytest.mark.parametrize("terminal_action", [None, KnowledgeReviewAction.REJECT])

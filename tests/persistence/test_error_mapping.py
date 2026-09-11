@@ -36,16 +36,33 @@ class _Row(dict):
         self[name] = value
 
 
+class _Result:
+    """假执行结果，暴露 CAS 需要检查的 `rowcount`。"""
+
+    def __init__(self, rowcount: int) -> None:
+        self.rowcount = rowcount
+
+
 class _FakeSession:
-    """可注入 commit 异常并记录 rollback / close 的假 Session。
+    """可注入 commit / execute 异常并记录 rollback / close 的假 Session。
 
     `row_exists` 控制回滚后「目标 ID 是否已存在」，
     用于区分主键冲突与其它完整性错误。
+    `rowcount` 控制 CAS UPDATE 的影响行数。
     """
 
-    def __init__(self, error: Exception | None = None, *, row_exists: bool = True) -> None:
+    def __init__(
+        self,
+        error: Exception | None = None,
+        *,
+        row_exists: bool = True,
+        rowcount: int = 1,
+        execute_error: Exception | None = None,
+    ) -> None:
         self._error = error
         self._row_exists = row_exists
+        self._rowcount = rowcount
+        self._execute_error = execute_error
         self.rolled_back = False
         self.closed = False
 
@@ -55,6 +72,11 @@ class _FakeSession:
     def get(self, _model, _pk):
         # update 路径需要可 setattr 的行；save 路径用它判断 ID 是否存在。
         return _Row() if self._row_exists else None
+
+    def execute(self, _statement, _parameters=None) -> _Result:
+        if self._execute_error is not None:
+            raise self._execute_error
+        return _Result(self._rowcount)
 
     def commit(self) -> None:
         if self._error is not None:
@@ -144,11 +166,13 @@ def test_diagnosis_sqlalchemy_error_is_not_leaked():
 
 
 def test_diagnosis_update_maps_persistence_error():
-    session = _FakeSession(_operational_error())
+    """CAS 成功后 commit 失败 → rollback + RepositoryPersistenceError。"""
+    session = _FakeSession(_operational_error(), rowcount=1)
     repository = SqlAlchemyDiagnosisRepository(_factory(session))
+    persisted = build_confirmed_case().model_copy(update={"version": 1})
 
     with pytest.raises(RepositoryPersistenceError):
-        repository.update(build_confirmed_case())
+        repository.update(persisted)
 
     assert session.rolled_back is True
 
@@ -213,10 +237,14 @@ def test_not_found_semantics_are_symmetric(diagnosis_repository, knowledge_repos
     with pytest.raises(KnowledgeNotFoundError):
         knowledge_repository.get("missing")
 
+    missing_case = build_confirmed_case("diag-unknown").model_copy(update={"version": 1})
     with pytest.raises(DiagnosisNotFoundError):
-        diagnosis_repository.update(build_confirmed_case("diag-unknown"))
+        diagnosis_repository.update(missing_case)
+    missing_candidate = build_knowledge_candidate("knw-unknown").model_copy(
+        update={"version": 1}
+    )
     with pytest.raises(KnowledgeNotFoundError):
-        knowledge_repository.update(build_knowledge_candidate("knw-unknown"))
+        knowledge_repository.update(missing_candidate)
 
 
 def test_duplicate_semantics_are_symmetric(diagnosis_repository, knowledge_repository):
@@ -248,17 +276,17 @@ def test_sqlalchemy_knowledge_adapter_does_not_import_in_memory_adapter():
 
 # ---------------------------------------------------------------- 回归
 def test_normal_paths_still_work(diagnosis_repository, knowledge_repository):
-    case = build_confirmed_case()
-    diagnosis_repository.save(case)
+    case = diagnosis_repository.save(build_confirmed_case())
     case.description = "补充说明"
-    diagnosis_repository.update(case)
+    updated = diagnosis_repository.update(case)
+    assert updated.version == 2
     assert diagnosis_repository.get(case.diagnosis_id).description == "补充说明"
     assert diagnosis_repository.count() == 1
 
-    candidate = build_knowledge_candidate()
-    knowledge_repository.save(candidate)
+    candidate = knowledge_repository.save(build_knowledge_candidate())
     candidate.title = "更新后的标题"
-    knowledge_repository.update(candidate)
+    updated_candidate = knowledge_repository.update(candidate)
+    assert updated_candidate.version == 2
     assert knowledge_repository.get(candidate.knowledge_id).title == "更新后的标题"
 
 

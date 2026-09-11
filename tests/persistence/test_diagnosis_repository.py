@@ -110,8 +110,9 @@ def test_duplicate_save_is_rejected(diagnosis_repository):
 
 
 def test_update_unknown_is_rejected(diagnosis_repository):
+    missing = build_confirmed_case("diag-unknown").model_copy(update={"version": 1})
     with pytest.raises(DiagnosisNotFoundError):
-        diagnosis_repository.update(build_confirmed_case("diag-unknown"))
+        diagnosis_repository.update(missing)
 
 
 def test_local_mutation_does_not_implicitly_persist(diagnosis_repository):
