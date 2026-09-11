@@ -114,3 +114,45 @@
 - [x] Phase 3 门禁异常评测 5/5；
 - [x] Phase 4 报警误报评测 5/5；
 - [x] Phase 5 检索评测可离线跑通（`FakeEmbeddingAdapter`，不依赖 BGE 服务）。
+
+## 10. 审计收尾修复（Codex 审计发现）
+
+### 10.1 P0：自由文本敏感信息明文入库
+
+- [x] 新增 `domain/redaction.py` 作为**唯一**自由文本脱敏入口；
+- [x] 覆盖 password / passwd / pwd、token / access_token、secret / client_secret、
+      API Key、Bearer Token、URL userinfo 与查询串凭证、安防敏感标识与裸 URL；
+- [x] Domain 构造期即脱敏：`SecurityDiagnosisCase.description`、
+      `DiagnosisEvidence.summary` / `payload`、`DiagnosisConclusion.summary` /
+      `root_cause` / `next_steps`、`HumanReview.comment`、
+      `KnowledgeCandidate` 文本与 metadata、`KnowledgeReview.comment`；
+- [x] Evidence **先脱敏再计算 `content_hash`**，hash 不与明文绑定；
+- [x] `redacted=True` 反映实际发生的脱敏；
+- [x] Persistence Adapter 只做边界安全断言（复用同一脱敏函数），不另立第二套正则；
+- [x] 真实反例：`description="password=plain-secret-token"` 入库后为
+      `password= ***REDACTED***`，原始密码在 SQLite 原始字段与 JSON 字节中均不存在。
+
+### 10.2 P1：Repository 异常契约统一
+
+- [x] `application/errors.py` 新增 `KnowledgeNotFoundError` /
+      `KnowledgeAlreadyExistsError` / `RepositoryPersistenceError`；
+- [x] `InMemoryKnowledgeRepository` 与 `SqlAlchemyKnowledgeRepository` 使用同一组异常；
+- [x] 保留旧导入路径兼容导出（`adapters/knowledge/in_memory.py`、`adapters/knowledge/__init__.py`）；
+- [x] SQLite Knowledge Adapter **不再 import** 内存 Adapter；
+- [x] Diagnosis 与 Knowledge 的重复 / 不存在行为对称；
+- [x] Repository Port 文档明确异常语义与「本地修改不隐式写库」。
+
+### 10.3 P1：阻止 SQLAlchemy 异常泄漏
+
+- [x] `save` / `update` 取消 `select exists -> insert` 竞态，依赖主键约束；
+- [x] 捕获 `IntegrityError` → 映射为对应 `*AlreadyExistsError`，并显式 `rollback()`；
+- [x] 其它 `SQLAlchemyError` → 映射为 `RepositoryPersistenceError`，并 `rollback()`；
+- [x] 不向 Application / API 泄漏 `IntegrityError` / `OperationalError`；
+- [x] Python 编程错误（非 SQLAlchemy 异常）原样抛出，不被吞掉；
+- [x] Session 经 `with` 上下文确保关闭。
+
+### 10.4 一致性修复
+
+- [x] `DiagnosisRepository` docstring 修正为「调用方本地修改**不会**隐式修改数据库」；
+- [x] 内存与 SQLite `list()` 排序统一为 `created_at ASC, diagnosis_id ASC`；
+- [x] `count()` 改用 SQL `COUNT` 聚合，不再加载全部 ID。
