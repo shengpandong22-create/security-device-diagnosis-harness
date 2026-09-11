@@ -23,20 +23,30 @@ from typing import Any
 REDACTED_VALUE = "***REDACTED***"
 
 # 凭证类键名（子串匹配，与既有 device 规则保持一致）。
+# 这里刻意保留子串语义，例如 `refresh_token` / `admin_password` / `api_key` 都应命中。
 _SENSITIVE_KEY_PATTERN = re.compile(
-    r"password|passwd|pwd|token|secret|credential|access[_-]?key|private[_-]?key",
+    r"password|passwd|pwd|token|secret|credential|access[_-]?key|private[_-]?key"
+    r"|api[_-]?key|apikey",
     re.IGNORECASE,
 )
 
-# 安防领域敏感标识（键名 + 文本内联赋值形式）。
+# 安防领域敏感标识的**完整键名**（用边界锚定，避免子串误伤）。
+#
+# 反例说明：`pin` 必须匹配 `pin` / `door_pin`，但不得命中 `spindle` / `pinned`。
+# 因此这里用 `(?:^|[_\-.])pin(?:$|[_\-.])` 之类的边界，而不是裸 `pin`。
+_IDENTIFIER_KEY_ALTERNATIVES = (
+    r"card[_-]?(?:no|number|id)",
+    r"person[_-]?id",
+    r"id[_-]?card",
+    r"face[_-]?(?:id|feature|template)",
+    r"finger[_-]?(?:print|template)",
+    r"license[_-]?plate",
+    r"phone",
+    r"mobile",
+    r"pin",
+)
 _SENSITIVE_IDENTIFIER_KEY_PATTERN = re.compile(
-    r"card[_-]?(?:no|number|id)"
-    r"|face[_-]?(?:id|feature|template)"
-    r"|finger[_-]?(?:print|template)"
-    r"|person[_-]?id"
-    r"|id[_-]?card"
-    r"|license[_-]?plate"
-    r"|phone|mobile|pin",
+    r"(?<![a-z0-9])(?:" + "|".join(_IDENTIFIER_KEY_ALTERNATIVES) + r")(?![a-z0-9])",
     re.IGNORECASE,
 )
 
@@ -54,9 +64,10 @@ _SENSITIVE_TEXT_PATTERN = re.compile(
     r"|access[_-]?token|refresh[_-]?token|api[_-]?key|apikey"
     r"|access[_-]?key|private[_-]?key|auth[_-]?token)\b\s*[:=]\s*"
     r"(?:\"[^\"]*\"|'[^']*'|\S+))"
-    # 安防敏感标识的 key = value 形式（卡号 / 人员 ID / 车牌等）
-    r"|(?P<identifier_kv>\b(?:card[_-]?(?:no|number|id)|person[_-]?id|id[_-]?card"
-    r"|face[_-]?id|license[_-]?plate|phone|mobile)\b\s*[:=]\s*"
+    # 安防敏感标识的 key = value 形式（卡号 / 人员 ID / 车牌 / PIN 等）
+    r"|(?P<identifier_kv>(?<![a-z0-9])(?:card[_-]?(?:no|number|id)|person[_-]?id"
+    r"|id[_-]?card|face[_-]?(?:id|feature|template)|finger[_-]?(?:print|template)"
+    r"|license[_-]?plate|phone|mobile|pin)(?![a-z0-9])\s*[:=]\s*"
     r"(?:\"[^\"]*\"|'[^']*'|\S+))"
     # URL 查询串里的凭证参数：?token=xxx&...
     r"|(?P<url_param>[?&](?:token|access_token|api_key|apikey|secret|password|pwd|signature|sig)=[^&\s]+)",
@@ -65,8 +76,15 @@ _SENSITIVE_TEXT_PATTERN = re.compile(
 
 
 def is_sensitive_key(key: str) -> bool:
-    """判断键名是否属于凭证类敏感字段。"""
-    return _SENSITIVE_KEY_PATTERN.search(key) is not None
+    """判断键名是否属于凭证类或安防标识类敏感字段。
+
+    - 凭证类（password / token / secret / ...）沿用子串语义；
+    - 安防标识类（card_no / person_id / license_plate / pin / ...）使用
+      带边界的完整键名匹配，避免 `pin` 误伤 `spindle`。
+    """
+    if _SENSITIVE_KEY_PATTERN.search(key) is not None:
+        return True
+    return _SENSITIVE_IDENTIFIER_KEY_PATTERN.search(key) is not None
 
 
 def redact_text(value: str) -> tuple[str, bool]:

@@ -47,8 +47,12 @@ class SqlAlchemyDiagnosisRepository:
     def save(self, case: SecurityDiagnosisCase) -> SecurityDiagnosisCase:
         """新增一条诊断；ID 重复时受控失败。
 
-        不做 `select exists -> insert` 的竞态检查，直接插入并依赖主键约束：
-        捕获 `IntegrityError` 后映射为 `DiagnosisAlreadyExistsError`。
+        不做 `select exists -> insert` 的竞态检查，直接插入并依赖主键约束。
+        捕获 `IntegrityError` 后回滚，**再确认目标 ID 是否真的已存在**：
+
+        - 已存在 → `DiagnosisAlreadyExistsError`（主键冲突）；
+        - 不存在 → `RepositoryPersistenceError`（NOT NULL / CHECK 等其它完整性错误，
+          不能误报成「ID 已存在」）。
         """
         with self._session_factory() as session:
             session.add(DiagnosisCaseRow(**case_to_columns(case)))
@@ -56,7 +60,9 @@ class SqlAlchemyDiagnosisRepository:
                 session.commit()
             except IntegrityError as exc:
                 session.rollback()
-                raise DiagnosisAlreadyExistsError(case.diagnosis_id) from exc
+                if session.get(DiagnosisCaseRow, case.diagnosis_id) is not None:
+                    raise DiagnosisAlreadyExistsError(case.diagnosis_id) from exc
+                raise RepositoryPersistenceError(_ENTITY, "integrity") from exc
             except SQLAlchemyError as exc:
                 session.rollback()
                 raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc

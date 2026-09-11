@@ -1,13 +1,17 @@
 """Domain 对象与持久化 JSON / ORM 行之间的双向转换。
 
-职责单一：**只做序列化与反序列化**，不做业务判断，也不重新实现脱敏规则
-（脱敏由 Domain 的 `model_validator` 保证，转换过程不得绕过）。
+职责边界：
 
-关键约束：
-
+- **不做业务判断，也不另写一套脱敏正则**；
+- 写入前对**整个聚合**做深层安全规范化（`sanitize_*`），
+  复用 Domain 自己的 `model_validator` 作为唯一脱敏规则；
 - 读回时必须重新构造真正的 Domain 对象（`model_validate`），枚举 / 时间自动恢复；
 - 时间统一为 timezone-aware UTC，写入前把 naive 时间补成 UTC；
 - 复杂子结构以 `model_dump(mode="json")` 落地，读到的是纯 JSON 可序列化数据。
+
+为什么需要深层规范化：Pydantic 允许在构造之后就地修改字段
+（例如 `evidence.payload["password"] = "..."`），这种修改不会再触发
+`model_validator`。因此持久化前必须把聚合重新走一遍 Domain 校验。
 """
 
 from __future__ import annotations
@@ -19,7 +23,6 @@ from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.conclusion import DiagnosisConclusion
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence
 from security_diagnosis_harness.domain.knowledge import KnowledgeCandidate, KnowledgeReview
-from security_diagnosis_harness.domain.redaction import redact_text
 from security_diagnosis_harness.domain.review import HumanReview
 
 
@@ -30,33 +33,47 @@ def ensure_aware(value: datetime) -> datetime:
     return value
 
 
-def assert_redacted(value: str) -> str:
-    """持久化边界的安全断言：写入前再过一次统一脱敏。
+def sanitize_case_for_persistence(case: SecurityDiagnosisCase) -> SecurityDiagnosisCase:
+    """返回一个经 Domain 校验重新规范化的诊断副本。
 
-    这不是"第二套规则"，而是复用 Domain 同一个脱敏函数的兜底：
-    Pydantic 允许在构造后直接赋值绕过 validator，本函数保证这种
-    "事后赋值"也不会把明文写进数据库。
+    - 使用 `model_dump(mode="python")` 得到独立数据，**不修改调用方原对象**；
+    - 重新 `model_validate` 会让嵌套的 Evidence / Conclusion / Review
+      validators 全部再次执行（含脱敏与 content_hash 重算）；
+    - Evidence 的 hash 会基于**脱敏后的最终内容**重新计算。
     """
-    cleaned, _ = redact_text(value)
-    return cleaned
+    dumped = case.model_dump(mode="python")
+    return SecurityDiagnosisCase.model_validate(dumped)
+
+
+def sanitize_knowledge_for_persistence(
+    candidate: KnowledgeCandidate,
+) -> KnowledgeCandidate:
+    """返回一个经 Domain 校验重新规范化的知识候选副本。
+
+    覆盖 title / summary / root_cause / symptoms / troubleshooting_steps /
+    excluded_causes / metadata 以及嵌套 KnowledgeReview。
+    """
+    dumped = candidate.model_dump(mode="python")
+    return KnowledgeCandidate.model_validate(dumped)
 
 
 def case_to_columns(case: SecurityDiagnosisCase) -> dict[str, Any]:
-    """把诊断聚合拆成 ORM 列字典。"""
+    """把诊断聚合拆成 ORM 列字典（先做深层安全规范化）。"""
+    safe = sanitize_case_for_persistence(case)
     return {
-        "diagnosis_id": case.diagnosis_id,
-        "fault_type": case.fault_type.value,
-        "device_id": case.device_id,
-        "reporter": case.reporter,
-        "description": assert_redacted(case.description),
-        "status": case.status.value,
-        "created_at": ensure_aware(case.created_at),
-        "updated_at": ensure_aware(case.updated_at),
-        "evidence": [item.model_dump(mode="json") for item in case.evidence],
+        "diagnosis_id": safe.diagnosis_id,
+        "fault_type": safe.fault_type.value,
+        "device_id": safe.device_id,
+        "reporter": safe.reporter,
+        "description": safe.description,
+        "status": safe.status.value,
+        "created_at": ensure_aware(safe.created_at),
+        "updated_at": ensure_aware(safe.updated_at),
+        "evidence": [item.model_dump(mode="json") for item in safe.evidence],
         "conclusion": (
-            case.conclusion.model_dump(mode="json") if case.conclusion is not None else None
+            safe.conclusion.model_dump(mode="json") if safe.conclusion is not None else None
         ),
-        "reviews": [item.model_dump(mode="json") for item in case.reviews],
+        "reviews": [item.model_dump(mode="json") for item in safe.reviews],
     }
 
 
@@ -83,27 +100,28 @@ def columns_to_case(row: Any) -> SecurityDiagnosisCase:
 
 
 def knowledge_to_columns(candidate: KnowledgeCandidate) -> dict[str, Any]:
-    """把知识候选拆成 ORM 列字典。"""
+    """把知识候选拆成 ORM 列字典（先做深层安全规范化）。"""
+    safe = sanitize_knowledge_for_persistence(candidate)
     return {
-        "knowledge_id": candidate.knowledge_id,
-        "fault_type": candidate.fault_type.value,
-        "candidate_label": candidate.candidate_label,
-        "title": assert_redacted(candidate.title),
-        "summary": assert_redacted(candidate.summary),
-        "root_cause": assert_redacted(candidate.root_cause),
-        "status": candidate.status.value,
-        "source_diagnosis_id": candidate.source_diagnosis_id,
-        "source_conclusion_id": candidate.source_conclusion_id,
-        "created_at": ensure_aware(candidate.created_at),
-        "updated_at": ensure_aware(candidate.updated_at),
-        "symptoms": list(candidate.symptoms),
-        "troubleshooting_steps": list(candidate.troubleshooting_steps),
-        "excluded_causes": list(candidate.excluded_causes),
-        "source_evidence_ids": list(candidate.source_evidence_ids),
-        "reviews": [item.model_dump(mode="json") for item in candidate.reviews],
-        "source": candidate.source.value,
-        "redacted": candidate.redacted,
-        "metadata_json": dict(candidate.metadata),
+        "knowledge_id": safe.knowledge_id,
+        "fault_type": safe.fault_type.value,
+        "candidate_label": safe.candidate_label,
+        "title": safe.title,
+        "summary": safe.summary,
+        "root_cause": safe.root_cause,
+        "status": safe.status.value,
+        "source_diagnosis_id": safe.source_diagnosis_id,
+        "source_conclusion_id": safe.source_conclusion_id,
+        "created_at": ensure_aware(safe.created_at),
+        "updated_at": ensure_aware(safe.updated_at),
+        "symptoms": list(safe.symptoms),
+        "troubleshooting_steps": list(safe.troubleshooting_steps),
+        "excluded_causes": list(safe.excluded_causes),
+        "source_evidence_ids": list(safe.source_evidence_ids),
+        "reviews": [item.model_dump(mode="json") for item in safe.reviews],
+        "source": safe.source.value,
+        "redacted": safe.redacted,
+        "metadata_json": dict(safe.metadata),
     }
 
 
@@ -134,10 +152,11 @@ def columns_to_knowledge(row: Any) -> KnowledgeCandidate:
 
 
 __all__ = [
-    "assert_redacted",
     "case_to_columns",
     "columns_to_case",
     "columns_to_knowledge",
     "ensure_aware",
     "knowledge_to_columns",
+    "sanitize_case_for_persistence",
+    "sanitize_knowledge_for_persistence",
 ]

@@ -87,10 +87,14 @@ class DiagnosisEvidence(BaseModel):
 
     @model_validator(mode="after")
     def _redact_then_hash(self) -> DiagnosisEvidence:
-        """先脱敏，再计算 content_hash。
+        """先脱敏，再基于**最终内容**重新计算 content_hash。
 
-        顺序不可颠倒：`content_hash` 必须基于脱敏后的内容，
-        否则等值去重与审计都会与明文绑定。
+        顺序不可颠倒：`content_hash` 必须对应实际持久化的脱敏内容。
+
+        关键点：每次 Domain 校验都重新计算 hash，而不是「非空就沿用」。
+        这样对象在构造后被就地修改（例如 `payload["password"] = ...`）时，
+        重新 `model_validate` 得到的哈希会反映脱敏后的新内容，
+        不会出现「payload 已变化但 hash 仍是旧值」。
         """
         changed = False
         cleaned_summary, summary_changed = redact_text(self.summary)
@@ -106,15 +110,14 @@ class DiagnosisEvidence(BaseModel):
         if changed:
             self.redacted = True
 
-        if not self.content_hash:
-            self.content_hash = content_hash(
-                {
-                    "evidence_type": self.evidence_type.value,
-                    "source": self.source.value,
-                    "summary": self.summary,
-                    "payload": self.payload,
-                }
-            )
+        self.content_hash = content_hash(
+            {
+                "evidence_type": self.evidence_type.value,
+                "source": self.source.value,
+                "summary": self.summary,
+                "payload": self.payload,
+            }
+        )
         return self
 
     def belongs_to(self, diagnosis_id: str) -> bool:

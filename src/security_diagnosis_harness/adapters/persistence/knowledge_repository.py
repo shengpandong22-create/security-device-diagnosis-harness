@@ -60,9 +60,12 @@ class SqlAlchemyKnowledgeRepository:
             try:
                 session.commit()
             except IntegrityError as exc:
-                # 主键冲突（常见于并发或重复 ID）→ 受控的 AlreadyExists。
+                # 回滚后确认目标 ID 是否真的已存在，避免把 NOT NULL /
+                # CHECK 等其它完整性错误误报成「ID 已存在」。
                 session.rollback()
-                raise KnowledgeAlreadyExistsError(candidate.knowledge_id) from exc
+                if session.get(KnowledgeCandidateRow, candidate.knowledge_id) is not None:
+                    raise KnowledgeAlreadyExistsError(candidate.knowledge_id) from exc
+                raise RepositoryPersistenceError(_ENTITY, "integrity") from exc
             except SQLAlchemyError as exc:
                 session.rollback()
                 raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
