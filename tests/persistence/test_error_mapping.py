@@ -37,10 +37,15 @@ class _Row(dict):
 
 
 class _FakeSession:
-    """可注入 commit 异常并记录 rollback / close 的假 Session。"""
+    """可注入 commit 异常并记录 rollback / close 的假 Session。
 
-    def __init__(self, error: Exception | None = None) -> None:
+    `row_exists` 控制回滚后「目标 ID 是否已存在」，
+    用于区分主键冲突与其它完整性错误。
+    """
+
+    def __init__(self, error: Exception | None = None, *, row_exists: bool = True) -> None:
         self._error = error
+        self._row_exists = row_exists
         self.rolled_back = False
         self.closed = False
 
@@ -48,8 +53,8 @@ class _FakeSession:
         return None
 
     def get(self, _model, _pk):
-        # 让 update 路径先通过「存在性」检查，并允许 setattr 写回列值。
-        return _Row()
+        # update 路径需要可 setattr 的行；save 路径用它判断 ID 是否存在。
+        return _Row() if self._row_exists else None
 
     def commit(self) -> None:
         if self._error is not None:
@@ -102,6 +107,17 @@ def test_diagnosis_integrity_error_triggers_rollback():
     repository = SqlAlchemyDiagnosisRepository(_factory(session))
 
     with pytest.raises(DiagnosisAlreadyExistsError):
+        repository.save(build_confirmed_case())
+
+    assert session.rolled_back is True
+
+
+def test_diagnosis_integrity_error_without_existing_row_is_persistence_error():
+    """非主键冲突（例如 NOT NULL / CHECK）不能误报成 AlreadyExists。"""
+    session = _FakeSession(_integrity_error(), row_exists=False)
+    repository = SqlAlchemyDiagnosisRepository(_factory(session))
+
+    with pytest.raises(RepositoryPersistenceError):
         repository.save(build_confirmed_case())
 
     assert session.rolled_back is True
@@ -165,6 +181,16 @@ def test_knowledge_integrity_error_triggers_rollback():
     repository = SqlAlchemyKnowledgeRepository(_factory(session))
 
     with pytest.raises(KnowledgeAlreadyExistsError):
+        repository.save(build_knowledge_candidate())
+
+    assert session.rolled_back is True
+
+
+def test_knowledge_integrity_error_without_existing_row_is_persistence_error():
+    session = _FakeSession(_integrity_error(), row_exists=False)
+    repository = SqlAlchemyKnowledgeRepository(_factory(session))
+
+    with pytest.raises(RepositoryPersistenceError):
         repository.save(build_knowledge_candidate())
 
     assert session.rolled_back is True
