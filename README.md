@@ -271,6 +271,8 @@ Phase 5C 交付范围（知识检索与 RAG）：
   `0.75 / 0.75 / 0.8333`，Recall@3 为 `0.75 / 1.0 / 1.0`，
   MRR 为 `0.75 / 0.8611 / 0.9028`；BGE 容器冷启动约 `7.24s`，
   热查询平均约 `41～52ms/条`。
+- `scripts/demo_phase5_knowledge_loop.py` 串联诊断确认、知识候选生成、知识人工确认、
+  Repository、Hybrid Retriever 与 `knowledge_sop` Evidence，形成可运行完整闭环。
 
 ## 快速开始
 
