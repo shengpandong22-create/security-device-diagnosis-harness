@@ -72,7 +72,11 @@ def _run_with_engine(connectable: Engine) -> None:
 
 
 def run_migrations_online() -> None:
-    """在线模式：使用同步 Engine 执行迁移。"""
+    """在线模式：使用同步 Engine 执行迁移。
+
+    Engine 必须显式 dispose（成功与失败路径都要），不能依赖垃圾回收：
+    否则 SQLite 文件句柄会一直被占用，迁移后无法删除数据库文件。
+    """
     url = _resolve_url()
     ensure_sqlite_directory(url)
     section = config.get_section(config.config_ini_section, {})
@@ -83,7 +87,10 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
         future=True,
     )
-    _run_with_engine(connectable)
+    try:
+        _run_with_engine(connectable)
+    finally:
+        connectable.dispose()
 
 
 if context.is_offline_mode():

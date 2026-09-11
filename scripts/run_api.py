@@ -36,14 +36,22 @@ DEFAULT_PORT = 8000
 
 
 def build_app():
-    """构建 (app, runtime)；调用方负责在退出时 `runtime.close()`。"""
+    """构建 (app, runtime)；调用方负责在退出时 `runtime.close()`。
+
+    若 `create_app` 失败，必须在这里就 release 已创建的 Runtime，
+    否则调用方拿不到对象，Engine 会泄漏。
+    """
     settings = build_runtime_settings()
     runtime = build_runtime_container(settings)
-    app = create_app(
-        runtime.service,
-        repository_mode=settings.repository_mode.value,
-        database_ready=runtime.database_ready,
-    )
+    try:
+        app = create_app(
+            runtime.service,
+            repository_mode=settings.repository_mode.value,
+            database_ready=runtime.database_ready,
+        )
+    except Exception:
+        runtime.close()
+        raise
     return app, runtime
 
 
