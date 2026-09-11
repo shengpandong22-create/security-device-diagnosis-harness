@@ -13,6 +13,7 @@ from security_diagnosis_harness.domain.enums import (
     SecurityFaultType,
 )
 from security_diagnosis_harness.domain.errors import (
+    ConclusionFaultTypeMismatch,
     EvidenceDiagnosisMismatch,
     InvalidStatusTransition,
     ReviewNotAllowed,
@@ -134,10 +135,23 @@ class SecurityDiagnosisCase(BaseModel):
 
     # ------------------------------------------------------------------ 结论
     def set_conclusion(self, conclusion: DiagnosisConclusion) -> DiagnosisConclusion:
-        """登记模型候选结论，并校验引用只指向本诊断的证据。"""
+        """登记模型候选结论，并校验引用只指向本诊断的证据。
+
+        不变量（无论使用哪个 Runtime / LLM / 工具都必须成立）：
+
+        - `conclusion.diagnosis_id == case.diagnosis_id`；
+        - `conclusion.fault_type == case.fault_type`。
+
+        任一不满足都抛受控异常，且不修改任何 Case 状态。
+        """
         if not conclusion.belongs_to(self.diagnosis_id):
             raise EvidenceDiagnosisMismatch(
                 f"conclusion {conclusion.conclusion_id} 不属于诊断 {self.diagnosis_id}"
+            )
+        if conclusion.fault_type is not self.fault_type:
+            raise ConclusionFaultTypeMismatch(
+                f"结论故障类型 {conclusion.fault_type.value} 与诊断故障类型 "
+                f"{self.fault_type.value} 不一致，禁止跨故障域结论"
             )
         known = {item.evidence_id for item in self.evidence}
         unknown = [eid for eid in conclusion.cited_evidence_ids if eid not in known]

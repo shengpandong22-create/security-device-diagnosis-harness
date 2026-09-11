@@ -20,7 +20,10 @@ from security_diagnosis_harness.domain.conclusion import (
     ConclusionConfidence,
     DiagnosisConclusion,
 )
-from security_diagnosis_harness.domain.errors import CitationPolicyViolation
+from security_diagnosis_harness.domain.errors import (
+    CitationPolicyViolation,
+    ConclusionFaultTypeMismatch,
+)
 from security_diagnosis_harness.domain.evidence import EvidenceType
 
 # 设备事实类证据：设备状态、告警事件、配置快照、通道、码流、平台拉流，
@@ -66,11 +69,21 @@ class CitationPolicy:
     def validate(self, conclusion: DiagnosisConclusion, case: SecurityDiagnosisCase) -> None:
         """校验结论引用，不通过则抛出 `CitationPolicyViolation`。
 
-        校验顺序：诊断归属 -> 可信度合法 -> 至少一条引用 -> 引用归属 -> probable 设备事实。
+        校验顺序：诊断归属 -> 故障域归属 -> 可信度合法 -> 至少一条引用
+        -> 引用归属 -> probable 设备事实。
+
+        故障域校验是防御性的：调用方若绕过 `case.set_conclusion()` 直接调用
+        Policy，也必须被拦住。
         """
         if conclusion.diagnosis_id != case.diagnosis_id:
             raise CitationPolicyViolation(
                 f"结论属于诊断 {conclusion.diagnosis_id}，不能用于诊断 {case.diagnosis_id}"
+            )
+
+        if conclusion.fault_type is not case.fault_type:
+            raise ConclusionFaultTypeMismatch(
+                f"结论故障类型 {conclusion.fault_type.value} 与诊断故障类型 "
+                f"{case.fault_type.value} 不一致，禁止跨故障域结论"
             )
 
         if conclusion.confidence not in tuple(ConclusionConfidence):

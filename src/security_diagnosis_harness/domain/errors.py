@@ -19,6 +19,10 @@ class UnknownEvidenceReference(DomainError):
     """结论引用了当前诊断中不存在的 Evidence。"""
 
 
+class ConclusionFaultTypeMismatch(DomainError):
+    """结论的 fault_type 与诊断的 fault_type 不一致（跨故障域结论）。"""
+
+
 class ReviewNotAllowed(DomainError):
     """当前状态下不允许该人工审核动作。"""
 
