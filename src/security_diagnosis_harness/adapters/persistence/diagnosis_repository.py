@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -23,6 +23,7 @@ from security_diagnosis_harness.adapters.persistence.mapping import (
 )
 from security_diagnosis_harness.adapters.persistence.models import DiagnosisCaseRow
 from security_diagnosis_harness.application.errors import (
+    ConcurrentUpdateError,
     DiagnosisAlreadyExistsError,
     DiagnosisNotFoundError,
     RepositoryPersistenceError,
@@ -47,6 +48,7 @@ class SqlAlchemyDiagnosisRepository:
     def save(self, case: SecurityDiagnosisCase) -> SecurityDiagnosisCase:
         """新增一条诊断；ID 重复时受控失败。
 
+        只接受全新聚合（`version == 0`），写入后版本为 1。
         不做 `select exists -> insert` 的竞态检查，直接插入并依赖主键约束。
         捕获 `IntegrityError` 后回滚，**再确认目标 ID 是否真的已存在**：
 
@@ -54,8 +56,16 @@ class SqlAlchemyDiagnosisRepository:
         - 不存在 → `RepositoryPersistenceError`（NOT NULL / CHECK 等其它完整性错误，
           不能误报成「ID 已存在」）。
         """
+        if case.version != 0:
+            raise ValueError(
+                f"save() 只接受全新聚合（version=0），当前 {case.diagnosis_id} "
+                f"的 version={case.version}"
+            )
+
+        columns = case_to_columns(case)
+        columns["version"] = 1
         with self._session_factory() as session:
-            session.add(DiagnosisCaseRow(**case_to_columns(case)))
+            session.add(DiagnosisCaseRow(**columns))
             try:
                 session.commit()
             except IntegrityError as exc:
@@ -69,13 +79,39 @@ class SqlAlchemyDiagnosisRepository:
         return self.get(case.diagnosis_id)
 
     def update(self, case: SecurityDiagnosisCase) -> SecurityDiagnosisCase:
-        """更新一条已存在诊断；不存在时受控失败。"""
+        """CAS 更新：`WHERE id = ? AND version = ?`。
+
+        - `rowcount == 1` → commit，返回 `version + 1` 的新 Domain 副本；
+        - `rowcount == 0` → 先 rollback，再判 ID：
+          不存在 → `DiagnosisNotFoundError`；存在 → `ConcurrentUpdateError`；
+        - CAS 成功后 `commit()` 失败 → rollback + `RepositoryPersistenceError`，
+          不返回已经递增版本的假成功对象。
+        """
+        if case.version <= 0:
+            raise ValueError(
+                f"update() 不接受未保存聚合（version>=1），当前 "
+                f"{case.diagnosis_id} 的 version={case.version}"
+            )
+
+        columns = case_to_columns(case)
+        columns.pop("diagnosis_id", None)
+        # CAS 目标版本：只在 rowcount == 1 时生效。
+        columns["version"] = case.version + 1
+
         with self._session_factory() as session:
-            row = session.get(DiagnosisCaseRow, case.diagnosis_id)
-            if row is None:
-                raise DiagnosisNotFoundError(case.diagnosis_id)
-            for key, value in case_to_columns(case).items():
-                setattr(row, key, value)
+            result = session.execute(
+                update(DiagnosisCaseRow)
+                .where(
+                    DiagnosisCaseRow.diagnosis_id == case.diagnosis_id,
+                    DiagnosisCaseRow.version == case.version,
+                )
+                .values(**columns)
+            )
+            if result.rowcount != 1:
+                session.rollback()
+                if session.get(DiagnosisCaseRow, case.diagnosis_id) is None:
+                    raise DiagnosisNotFoundError(case.diagnosis_id)
+                raise ConcurrentUpdateError(_ENTITY, case.diagnosis_id, case.version)
             try:
                 session.commit()
             except SQLAlchemyError as exc:

@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -26,6 +26,7 @@ from security_diagnosis_harness.adapters.persistence.mapping import (
 )
 from security_diagnosis_harness.adapters.persistence.models import KnowledgeCandidateRow
 from security_diagnosis_harness.application.errors import (
+    ConcurrentUpdateError,
     KnowledgeAlreadyExistsError,
     KnowledgeNotFoundError,
     RepositoryPersistenceError,
@@ -55,8 +56,17 @@ class SqlAlchemyKnowledgeRepository:
 
     # ------------------------------------------------------------------ 写
     def save(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
+        """新增知识候选；只接受全新聚合（`version == 0`），写入后版本为 1。"""
+        if candidate.version != 0:
+            raise ValueError(
+                f"save() 只接受全新聚合（version=0），当前 {candidate.knowledge_id} "
+                f"的 version={candidate.version}"
+            )
+
+        columns = knowledge_to_columns(candidate)
+        columns["version"] = 1
         with self._session_factory() as session:
-            session.add(KnowledgeCandidateRow(**knowledge_to_columns(candidate)))
+            session.add(KnowledgeCandidateRow(**columns))
             try:
                 session.commit()
             except IntegrityError as exc:
@@ -72,12 +82,31 @@ class SqlAlchemyKnowledgeRepository:
         return self.get(candidate.knowledge_id)
 
     def update(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
+        """CAS 更新：`WHERE id = ? AND version = ?`（语义与诊断仓储一致）。"""
+        if candidate.version <= 0:
+            raise ValueError(
+                f"update() 不接受未保存聚合（version>=1），当前 "
+                f"{candidate.knowledge_id} 的 version={candidate.version}"
+            )
+
+        columns = knowledge_to_columns(candidate)
+        columns.pop("knowledge_id", None)
+        columns["version"] = candidate.version + 1
+
         with self._session_factory() as session:
-            row = session.get(KnowledgeCandidateRow, candidate.knowledge_id)
-            if row is None:
-                raise KnowledgeNotFoundError(candidate.knowledge_id)
-            for key, value in knowledge_to_columns(candidate).items():
-                setattr(row, key, value)
+            result = session.execute(
+                update(KnowledgeCandidateRow)
+                .where(
+                    KnowledgeCandidateRow.knowledge_id == candidate.knowledge_id,
+                    KnowledgeCandidateRow.version == candidate.version,
+                )
+                .values(**columns)
+            )
+            if result.rowcount != 1:
+                session.rollback()
+                if session.get(KnowledgeCandidateRow, candidate.knowledge_id) is None:
+                    raise KnowledgeNotFoundError(candidate.knowledge_id)
+                raise ConcurrentUpdateError(_ENTITY, candidate.knowledge_id, candidate.version)
             try:
                 session.commit()
             except SQLAlchemyError as exc:

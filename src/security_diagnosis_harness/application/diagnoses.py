@@ -399,7 +399,8 @@ class SecurityDiagnosisApplicationService:
 
         case.set_conclusion(conclusion)
         case.transition_to(SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION)
-        self._repository.update(case)
+        # update() 返回最新持久化副本（version 已递增），后续逻辑必须用它。
+        case = self._repository.update(case)
 
         insight = self.infer_candidate_label(case)
 
@@ -466,7 +467,7 @@ class SecurityDiagnosisApplicationService:
             comment=comment,
         )
         case.apply_human_review(review)
-        self._repository.update(case)
+        case = self._repository.update(case)
 
         return ReviewResult(
             diagnosis_id=case.diagnosis_id,
@@ -495,7 +496,7 @@ class SecurityDiagnosisApplicationService:
     ) -> RunDiagnosisResult:
         """受控失败：不伪造 Evidence，只推进状态并记录错误。"""
         case.transition_to(status)
-        self._repository.update(case)
+        case = self._repository.update(case)
         return RunDiagnosisResult(
             diagnosis_id=case.diagnosis_id,
             ok=False,

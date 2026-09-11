@@ -16,6 +16,7 @@ from security_diagnosis_harness.api.schemas import ApiResponse, HealthData
 from security_diagnosis_harness.application.diagnoses import SecurityDiagnosisApplicationService
 from security_diagnosis_harness.application.errors import (
     ApplicationError,
+    ConcurrentUpdateError,
     DiagnosisAlreadyExistsError,
     DiagnosisNotFoundError,
     KnowledgeAlreadyExistsError,
@@ -41,6 +42,7 @@ REPOSITORY_UNAVAILABLE_MESSAGE = "诊断数据暂时不可用"
 ERROR_STATUS_CODES: tuple[tuple[type[BaseException], int], ...] = (
     (CitationPolicyViolation, 422),
     (UnsupportedFaultTypeError, 422),
+    (ConcurrentUpdateError, 409),
     (RepositoryPersistenceError, 503),
     (DiagnosisAlreadyExistsError, 409),
     (KnowledgeAlreadyExistsError, 409),
@@ -55,6 +57,7 @@ ERROR_STATUS_CODES: tuple[tuple[type[BaseException], int], ...] = (
 ERROR_CODES: tuple[tuple[type[BaseException], str], ...] = (
     (CitationPolicyViolation, "citation_policy_violation"),
     (UnsupportedFaultTypeError, "unsupported_fault_type"),
+    (ConcurrentUpdateError, "concurrent_update"),
     (RepositoryPersistenceError, REPOSITORY_UNAVAILABLE_CODE),
     (DiagnosisAlreadyExistsError, "diagnosis_already_exists"),
     (KnowledgeAlreadyExistsError, "knowledge_already_exists"),
@@ -67,6 +70,8 @@ ERROR_CODES: tuple[tuple[type[BaseException], str], ...] = (
 # 这些异常对外只允许返回安全文案，不暴露内部细节。
 SANITIZED_MESSAGES: tuple[tuple[type[BaseException], str], ...] = (
     (RepositoryPersistenceError, REPOSITORY_UNAVAILABLE_MESSAGE),
+    # 不暴露 expected / actual version，只给可操作提示。
+    (ConcurrentUpdateError, "诊断已被其他请求更新，请刷新后重试"),
 )
 
 

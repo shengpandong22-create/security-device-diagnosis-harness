@@ -37,6 +37,22 @@ class KnowledgeAlreadyExistsError(ApplicationError):
         self.knowledge_id = knowledge_id
 
 
+class ConcurrentUpdateError(ApplicationError):
+    """乐观锁冲突：陈旧副本试图覆盖较新的持久化状态。
+
+    内部保留 entity_type / entity_id / expected_version 供上层排查，
+    但 API 只返回安全文案，不暴露 expected / actual version。
+    """
+
+    def __init__(self, entity_type: str, entity_id: str, expected_version: int) -> None:
+        super().__init__(
+            f"{entity_type} {entity_id} 已被其他请求更新，请重新读取后再操作"
+        )
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        self.expected_version = expected_version
+
+
 class RepositoryPersistenceError(ApplicationError):
     """无法归类的持久化写入失败。
 
