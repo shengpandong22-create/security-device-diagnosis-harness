@@ -14,8 +14,6 @@ Repository 的公开契约是"不暴露 ORM 异常"，因此所有公开仓储�
 
 from __future__ import annotations
 
-from sqlalchemy.exc import SQLAlchemyError
-
 from security_diagnosis_harness.application.errors import RepositoryPersistenceError
 
 
@@ -28,9 +26,4 @@ def translate_persistence_error(entity: str, error: BaseException) -> Repository
     return RepositoryPersistenceError(entity, type(error).__name__)
 
 
-def is_sqlalchemy_error(error: BaseException) -> bool:
-    """是否为需要映射的 ORM / DBAPI 异常。"""
-    return isinstance(error, SQLAlchemyError)
-
-
-__all__ = ["is_sqlalchemy_error", "translate_persistence_error"]
+__all__ = ["translate_persistence_error"]

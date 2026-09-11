@@ -73,7 +73,11 @@ class SqlAlchemyDiagnosisRepository:
                 session.commit()
             except IntegrityError as exc:
                 session.rollback()
-                if session.get(DiagnosisCaseRow, case.diagnosis_id) is not None:
+                try:
+                    exists = session.get(DiagnosisCaseRow, case.diagnosis_id) is not None
+                except SQLAlchemyError as lookup_exc:
+                    raise translate_persistence_error(_ENTITY, lookup_exc) from lookup_exc
+                if exists:
                     raise DiagnosisAlreadyExistsError(case.diagnosis_id) from exc
                 raise RepositoryPersistenceError(_ENTITY, "integrity") from exc
             except SQLAlchemyError as exc:
@@ -119,7 +123,11 @@ class SqlAlchemyDiagnosisRepository:
 
             if rowcount != 1:
                 session.rollback()
-                if session.get(DiagnosisCaseRow, case.diagnosis_id) is None:
+                try:
+                    exists = session.get(DiagnosisCaseRow, case.diagnosis_id) is not None
+                except SQLAlchemyError as exc:
+                    raise translate_persistence_error(_ENTITY, exc) from exc
+                if not exists:
                     raise DiagnosisNotFoundError(case.diagnosis_id)
                 raise ConcurrentUpdateError(_ENTITY, case.diagnosis_id, case.version)
 

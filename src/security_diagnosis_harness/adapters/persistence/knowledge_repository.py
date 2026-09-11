@@ -76,7 +76,13 @@ class SqlAlchemyKnowledgeRepository:
                 # 回滚后确认目标 ID 是否真的已存在，避免把 NOT NULL /
                 # CHECK 等其它完整性错误误报成「ID 已存在」。
                 session.rollback()
-                if session.get(KnowledgeCandidateRow, candidate.knowledge_id) is not None:
+                try:
+                    exists = (
+                        session.get(KnowledgeCandidateRow, candidate.knowledge_id) is not None
+                    )
+                except SQLAlchemyError as lookup_exc:
+                    raise translate_persistence_error(_ENTITY, lookup_exc) from lookup_exc
+                if exists:
                     raise KnowledgeAlreadyExistsError(candidate.knowledge_id) from exc
                 raise RepositoryPersistenceError(_ENTITY, "integrity") from exc
             except SQLAlchemyError as exc:
@@ -110,11 +116,17 @@ class SqlAlchemyKnowledgeRepository:
             except SQLAlchemyError as exc:
                 # execute 阶段的 ORM 异常同样必须 rollback + 映射，不得外泄。
                 session.rollback()
-                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
+                raise translate_persistence_error(_ENTITY, exc) from exc
 
             if rowcount != 1:
                 session.rollback()
-                if session.get(KnowledgeCandidateRow, candidate.knowledge_id) is None:
+                try:
+                    exists = (
+                        session.get(KnowledgeCandidateRow, candidate.knowledge_id) is not None
+                    )
+                except SQLAlchemyError as exc:
+                    raise translate_persistence_error(_ENTITY, exc) from exc
+                if not exists:
                     raise KnowledgeNotFoundError(candidate.knowledge_id)
                 raise ConcurrentUpdateError(_ENTITY, candidate.knowledge_id, candidate.version)
 

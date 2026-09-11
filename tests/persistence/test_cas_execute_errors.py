@@ -44,11 +44,13 @@ class _FakeSession:
         rowcount: int = 1,
         execute_error: Exception | None = None,
         commit_error: Exception | None = None,
+        get_error: Exception | None = None,
     ) -> None:
         self._row_exists = row_exists
         self._rowcount = rowcount
         self._execute_error = execute_error
         self._commit_error = commit_error
+        self._get_error = get_error
         self.rolled_back = False
         self.closed = False
 
@@ -56,6 +58,8 @@ class _FakeSession:
         return None
 
     def get(self, _model, _pk):
+        if self._get_error is not None:
+            raise self._get_error
         return object() if self._row_exists else None
 
     def execute(self, _statement, _parameters=None) -> _Result:
@@ -172,6 +176,46 @@ def test_knowledge_execute_error_does_not_leak_orm_exception():
         repository.update(persisted)
 
     assert not isinstance(excinfo.value, OperationalError)
+
+
+# ------------------------------------------------------- 冲突分类查询异常
+@pytest.mark.parametrize(
+    ("repository_type", "aggregate"),
+    [
+        (SqlAlchemyDiagnosisRepository, build_confirmed_case),
+        (SqlAlchemyKnowledgeRepository, build_knowledge_candidate),
+    ],
+)
+def test_save_classification_lookup_error_is_mapped(repository_type, aggregate):
+    """INSERT 冲突后的分类查询失败时，ORM 异常不能从仓储边界泄漏。"""
+    session = _FakeSession(commit_error=_integrity(), get_error=_operational())
+    repository = repository_type(_factory(session))
+
+    with pytest.raises(RepositoryPersistenceError) as excinfo:
+        repository.save(aggregate())
+
+    assert session.rolled_back is True
+    assert not isinstance(excinfo.value, SQLAlchemyError)
+
+
+@pytest.mark.parametrize(
+    ("repository_type", "aggregate"),
+    [
+        (SqlAlchemyDiagnosisRepository, build_confirmed_case),
+        (SqlAlchemyKnowledgeRepository, build_knowledge_candidate),
+    ],
+)
+def test_cas_classification_lookup_error_is_mapped(repository_type, aggregate):
+    """CAS 未命中后的分类查询失败时，必须返回统一持久化错误。"""
+    session = _FakeSession(rowcount=0, get_error=_operational())
+    repository = repository_type(_factory(session))
+    persisted = aggregate().model_copy(update={"version": 1})
+
+    with pytest.raises(RepositoryPersistenceError) as excinfo:
+        repository.update(persisted)
+
+    assert session.rolled_back is True
+    assert not isinstance(excinfo.value, SQLAlchemyError)
 
 
 # ---------------------------------------------------------------- 分类不回退
