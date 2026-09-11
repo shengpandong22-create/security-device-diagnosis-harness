@@ -1,0 +1,16 @@
+{
+  "cases": [
+    {"case_id":"camera-exact","fault_type":"camera_black_screen","query":"设备离线 网络不可达","expected_label":"device_offline_or_network_unreachable","category":"exact"},
+    {"case_id":"camera-semantic","fault_type":"camera_black_screen","query":"前端看不到该点位，探活请求全部失败","expected_label":"device_offline_or_network_unreachable","category":"semantic"},
+    {"case_id":"camera-stream","fault_type":"camera_black_screen","query":"摄像机在线但是没有视频流输出","expected_label":"stream_publish_or_encoder_issue","category":"colloquial"},
+    {"case_id":"record-plan","fault_type":"recording_missing","query":"录像计划被禁用","expected_label":"recording_plan_disabled","category":"exact"},
+    {"case_id":"record-storage","fault_type":"recording_missing","query":"录像写不进去，硬盘占用达到百分百","expected_label":"storage_capacity_or_pool_issue","category":"semantic"},
+    {"case_id":"record-index","fault_type":"recording_missing","query":"文件还在但时间轴检索不到回放","expected_label":"playback_index_or_file_issue","category":"colloquial"},
+    {"case_id":"access-permission","fault_type":"access_card_failed","query":"人员没有目标门权限","expected_label":"permission_not_granted","category":"exact"},
+    {"case_id":"access-controller","fault_type":"access_card_failed","query":"读卡后毫无响应","expected_label":"controller_offline_or_no_response","category":"semantic"},
+    {"case_id":"access-window","fault_type":"access_card_failed","query":"白天能进晚上刷卡却被拒绝","expected_label":"access_time_window_denied","category":"colloquial"},
+    {"case_id":"alarm-sensitive","fault_type":"alarm_false_positive","query":"报警规则灵敏度过高","expected_label":"alarm_rule_too_sensitive","category":"exact"},
+    {"case_id":"alarm-weather","fault_type":"alarm_false_positive","query":"暴雨期间频繁误触发","expected_label":"environment_interference","category":"semantic"},
+    {"case_id":"alarm-duplicate","fault_type":"alarm_false_positive","query":"短时间同一事件连续弹出很多告警","expected_label":"duplicate_alarm_burst","category":"colloquial"}
+  ]
+}
