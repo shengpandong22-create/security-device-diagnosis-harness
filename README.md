@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B/5C、Phase 6A 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B/5C、Phase 6A、Phase 6B-1 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -32,7 +32,8 @@
 | Phase 5B | confirmed 诊断生成知识候选 | 已完成 |
 | Phase 5C | 知识治理、BGE 与混合检索评测 | 已完成 |
 | Phase 6A | SQLite 持久化基座（Repository 与迁移） | 已完成 |
-| Phase 6B | API 装配切换与重启恢复 | 未开始 |
+| Phase 6B-1 | 正式运行装配（SQLite）与真实重启恢复 | 已完成 |
+| Phase 6B-2 | 乐观锁与并发更新 | 未开始 |
 | Phase 6C | 审计、一致性与备份恢复验收 | 未开始 |
 
 Phase 0A 交付范围：
@@ -298,8 +299,52 @@ Phase 6A 交付范围（SQLite 持久化基座）：
 - `application/errors.py`：统一仓储异常（`*NotFoundError` / `*AlreadyExistsError` /
   `RepositoryPersistenceError`），内存与 SQLite 实现对称，保留旧导入路径兼容；
 - `migrations/` + `alembic.ini`：Alembic `0001` 迁移，支持 `upgrade head` / `downgrade base` / 再 `upgrade head`；
-- 内存仓储保留且与 SQLite 仓储行为一致；`KnowledgeRepository` 检索契约不变；
-- 默认 API Container 仍使用内存实现，切换留给 Phase 6B。
+- 内存仓储保留且与 SQLite 仓储行为一致；`KnowledgeRepository` 检索契约不变。
+
+Phase 6B-1 交付范围（正式运行装配与真实重启恢复）：
+
+- `config.py`：`RuntimeSettings` 运行配置（`repository_mode` / `database_url` /
+  `database_echo` / `auto_migrate`），优先级为「显式参数 > 环境变量 > 安全默认」，
+  只接受本地 SQLite URL，非法值抛 `RuntimeConfigurationError`，
+  且 `repr` / 异常信息不泄漏完整 URL 与凭证；
+- `runtime.py`：`upgrade_database(url)` 程序化执行 Alembic `upgrade head`
+  （不使用 `create_all`，不依赖调用者 cwd）；`RuntimeContainer` 独占 Engine 生命周期，
+  `close()` 可重复调用并 dispose Engine，支持 context manager；
+- `scripts/run_api.py`：**正式本地 SQLite 运行入口**（读配置 → 迁移 → 启动 uvicorn →
+  退出时 `close()`），默认监听 `127.0.0.1:8000`；
+- `scripts/demo_phase6_persistence_restart.py`：真实文件型 SQLite 重启恢复 Demo；
+- `scripts/probe_import_side_effects.py`：子进程 import 副作用探针；
+- `GET /health` 新增 `repository_mode` / `database_ready`（带兼容默认值，不泄漏路径与 URL）；
+- API 异常映射修正：NotFound → 404、AlreadyExists → 409、
+  `RepositoryPersistenceError` → 503 `repository_unavailable`（安全文案）。
+
+### 运行入口区分（重要）
+
+| 入口 | 用途 | 仓储 | 副作用 |
+|---|---|---|---|
+| `create_app()` / 模块级 `api.app.app` | 应用工厂与既有测试 | **内存装配** | 无 |
+| `build_container()` / `build_phase1~4_container()` | 评测与 demo | 内存 + FakeLLM | 无 |
+| `scripts/run_api.py` | **正式本地运行** | SQLite | 建目录 / 迁移 / 启服务 |
+
+`create_app()` 与 `build_container()` **不是** SQLite 入口：它们保持安全的内存/测试装配，
+导入不建目录、不建数据库、不跑迁移。只有 `scripts/run_api.py` 是正式 SQLite 入口。
+
+```bash
+# 正式本地运行（默认 SQLite + 自动迁移）
+uv run python scripts/run_api.py
+
+# 真实重启恢复 Demo
+uv run python scripts/demo_phase6_persistence_restart.py
+```
+
+可用环境变量：
+
+```text
+SECURITY_DIAGNOSIS_REPOSITORY=sqlite
+SECURITY_DIAGNOSIS_DB_URL=sqlite:///./data/security-diagnosis.db
+SECURITY_DIAGNOSIS_DB_ECHO=false
+SECURITY_DIAGNOSIS_AUTO_MIGRATE=true
+```
 
 ## 快速开始
 
@@ -310,11 +355,15 @@ uv run pytest
 uv run python scripts/run_api.py
 ```
 
-启动后访问 <http://127.0.0.1:8000/health>，返回统一信封：
+`uv run python scripts/run_api.py` 是**正式本地 SQLite 运行入口**，启动后访问
+<http://127.0.0.1:8000/health>，返回统一信封：
 
 ```json
-{"code": "ok", "message": "ok", "data": {"status": "ok", "service": "security-diagnosis-harness", "version": "0.1.0", "phase": "0A"}}
+{"code": "ok", "message": "ok", "data": {"status": "ok", "service": "security-diagnosis-harness", "version": "0.1.0", "phase": "6B", "repository_mode": "sqlite", "database_ready": true}}
 ```
+
+应用工厂 `create_app()` 与模块级 `api.app.app` 保持**内存装配**，
+导入它们不会建目录、建数据库或执行迁移。
 
 ## 目录结构
 
@@ -408,6 +457,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [Phase 4 验收标准](./docs/04-validation/Phase%204%20验收标准.md)
 - [Phase 5 验收标准](./docs/04-validation/Phase%205%20验收标准.md)
 - [Phase 6A 验收标准](./docs/04-validation/Phase%206A%20验收标准.md)
+- [Phase 6B-1 验收标准](./docs/04-validation/Phase%206B-1%20验收标准.md)
 
 ## 最小闭环路线
 
