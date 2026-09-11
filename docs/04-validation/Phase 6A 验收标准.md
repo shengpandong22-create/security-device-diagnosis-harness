@@ -156,3 +156,53 @@
 - [x] `DiagnosisRepository` docstring 修正为「调用方本地修改**不会**隐式修改数据库」；
 - [x] 内存与 SQLite `list()` 排序统一为 `created_at ASC, diagnosis_id ASC`；
 - [x] `count()` 改用 SQL `COUNT` 聚合，不再加载全部 ID。
+
+## 11. 嵌套聚合深层规范化收尾（第二轮审计）
+
+### 11.1 构造后修改绕过漏洞
+
+- [x] 根因：Pydantic 允许构造后就地修改字段，不再触发 `model_validator`，
+      而 `case_to_columns` 只对 `description` 做边界脱敏，嵌套子结构直接 `model_dump`；
+- [x] 新增 `mapping.sanitize_case_for_persistence(case)` /
+      `sanitize_knowledge_for_persistence(candidate)`：
+      用 `model_dump(mode="python")` 取独立数据 → 重新 `model_validate`
+      → 嵌套 Evidence / Conclusion / Review validators 全部重新执行；
+- [x] `case_to_columns` / `knowledge_to_columns` 只序列化安全副本；
+- [x] **不修改调用方原对象**（返回值为已规范化副本）；
+- [x] 不再存在「原始对象直接 model_dump 入库」的路径。
+
+### 11.2 Evidence hash 修复
+
+- [x] `DiagnosisEvidence` **每次** Domain 校验都基于最终脱敏内容重算 `content_hash`
+      （不再「非空就沿用」）；
+- [x] 对象构造后被修改时，持久化重算得到新 hash；
+- [x] 数据库中的 `content_hash` 始终对应当前持久化的脱敏内容；
+- [x] 不出现「payload 已变化但 hash 仍是旧值」。
+
+### 11.3 安防敏感键修复
+
+- [x] `is_sensitive_key()` 统一纳入安防标识键名
+      （card_no / card_number / card_id / person_id / id_card / face_id /
+      face_feature / face_template / fingerprint / finger_template /
+      license_plate / phone / mobile / pin）；
+- [x] 使用带边界的完整键名匹配，`pin` 不再误伤 `spindle_speed` / `pinned`；
+- [x] `token` 等既有子串语义保持不变；
+- [x] 自由文本「设备 PIN 配置异常」不会被整句抹除（仅内联赋值形式脱敏）。
+
+### 11.4 IntegrityError 精细分类
+
+- [x] `IntegrityError` 回滚后**确认目标 ID 是否已存在**：
+      存在 → `*AlreadyExistsError`；不存在 → `RepositoryPersistenceError`；
+- [x] 不再把 NOT NULL / CHECK 等完整性错误误报为「ID 已存在」；
+- [x] Diagnosis 与 Knowledge 均已覆盖；两者均执行 `rollback()` 且不泄漏底层异常。
+
+### 11.5 收尾反例验证
+
+真实 SQLite 反例（构造后注入 `payload["password"]`）输出：
+
+```text
+MUTATED_SECRET_IN_DATABASE: False
+REDACTION_MARKER_PRESENT: True
+HASH_MATCHES_PERSISTED_CONTENT: True
+CALLER_OBJECT_UNCHANGED: True
+```

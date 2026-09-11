@@ -281,16 +281,19 @@ Phase 6A 交付范围（SQLite 持久化基座）：
 
 - `ports/diagnosis_repository.py`：诊断仓储 Port（`save` / `get` / `update` / `list` / `exists`），
   应用服务改为依赖 Port 而非具体内存实现；
-- `domain/redaction.py`：**唯一**自由文本脱敏入口（凭证键名、内联凭证、Bearer、URL 凭证、
-  安防敏感标识）；Domain 构造期即脱敏，Evidence 先脱敏再算 `content_hash`；
+- `domain/redaction.py`：**唯一**脱敏入口（凭证键名、内联凭证、Bearer、URL 凭证、
+  安防敏感标识键名，含带边界匹配避免 `pin` 误伤 `spindle`）；
+  Domain 构造期即脱敏，Evidence 每次校验都基于最终脱敏内容重算 `content_hash`；
 - `adapters/persistence/database.py`：SQLite Engine / Session 工厂与 URL 解析
   （显式参数 > `SECURITY_DIAGNOSIS_DB_URL` > 默认 `sqlite:///./data/security-diagnosis.db`）；
 - `adapters/persistence/models.py`：ORM 模型（`diagnosis_cases` / `knowledge_candidates`），
   复杂子结构以 JSON 列保存，仅存在于 adapters 层；
-- `adapters/persistence/mapping.py`：Domain ↔ ORM 双向转换，读回时重新构造真正的 Domain 对象，
-  写入前做边界安全断言；
+- `adapters/persistence/mapping.py`：Domain ↔ ORM 双向转换，读回时重新构造真正的 Domain 对象；
+  写入前对整个聚合做**深层安全规范化**（重新 `model_validate`，让嵌套 validators 再次执行，
+  覆盖构造后修改绕过 validator 的场景），且不修改调用方原对象；
 - `adapters/persistence/diagnosis_repository.py`、`knowledge_repository.py`：SQLite 仓储实现，
-  `IntegrityError` 映射为 `*AlreadyExistsError`、其它 `SQLAlchemyError` 映射为 `RepositoryPersistenceError`，
+  `IntegrityError` 回滚后按「目标 ID 是否存在」区分 `*AlreadyExistsError` 与
+  `RepositoryPersistenceError`，其它 `SQLAlchemyError` 亦映射为 `RepositoryPersistenceError`，
   统一显式 `rollback()`，不泄漏 ORM 异常；
 - `application/errors.py`：统一仓储异常（`*NotFoundError` / `*AlreadyExistsError` /
   `RepositoryPersistenceError`），内存与 SQLite 实现对称，保留旧导入路径兼容；
