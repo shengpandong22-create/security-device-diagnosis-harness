@@ -85,6 +85,11 @@ def _redact_text(value: str) -> tuple[str, bool]:
     return cleaned, cleaned != value
 
 
+def redact_knowledge_text(value: str) -> tuple[str, bool]:
+    """脱敏即将进入知识检索或向量服务的自由文本。"""
+    return _redact_text(value)
+
+
 def _redact_value(value: Any) -> tuple[Any, bool]:
     if isinstance(value, str):
         return _redact_text(value)

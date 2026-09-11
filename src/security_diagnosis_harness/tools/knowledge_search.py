@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.evidence import EvidenceSource, EvidenceType, Reliability
+from security_diagnosis_harness.ports.knowledge_repository import KnowledgeRetriever
 from security_diagnosis_harness.tools.contracts import (
     BaseTool,
     ToolEvidenceDraft,
@@ -86,8 +87,13 @@ class KnowledgeSearchTool(BaseTool):
     required_permissions = frozenset({ToolPermission.KNOWLEDGE_READ})
     input_model = KnowledgeSearchInput
 
-    def __init__(self, sops: list[dict[str, object]] | None = None) -> None:
+    def __init__(
+        self,
+        sops: list[dict[str, object]] | None = None,
+        retriever: KnowledgeRetriever | None = None,
+    ) -> None:
         self._sops = sops if sops is not None else list(DEFAULT_SOPS)
+        self._retriever = retriever
 
     def _execute(
         self,
@@ -98,7 +104,25 @@ class KnowledgeSearchTool(BaseTool):
         keyword = arguments.query.strip().lower()
 
         matched: list[dict[str, object]] = []
+        if self._retriever is not None:
+            candidates = self._retriever.search_confirmed(
+                arguments.query, context.fault_type, arguments.limit
+            )
+            matched.extend(
+                {
+                    "sop_id": candidate.knowledge_id,
+                    "title": candidate.title,
+                    "summary": candidate.summary,
+                    "checks": list(candidate.troubleshooting_steps),
+                    "candidate_label": candidate.candidate_label,
+                    "source_diagnosis_id": candidate.source_diagnosis_id,
+                    "source_evidence_ids": list(candidate.source_evidence_ids),
+                }
+                for candidate in candidates
+            )
         for sop in self._sops:
+            if len(matched) >= arguments.limit:
+                break
             fault_type = sop.get("fault_type")
             if fault_type is not None and fault_type is not context.fault_type:
                 continue
