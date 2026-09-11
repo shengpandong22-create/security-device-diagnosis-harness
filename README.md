@@ -329,6 +329,36 @@ Phase 6B-1 交付范围（正式运行装配与真实重启恢复）：
 `create_app()` 与 `build_container()` **不是** SQLite 入口：它们保持安全的内存/测试装配，
 导入不建目录、不建数据库、不跑迁移。只有 `scripts/run_api.py` 是正式 SQLite 入口。
 
+### 正式 Runtime 的能力边界（重要）
+
+Phase 6B-1 尚未实现四故障域统一 Strategy Router，因此**正式 Runtime 只装配摄像头黑屏诊断**：
+
+- 支持：`camera_black_screen`；
+- 不支持：`recording_missing` / `access_card_failed` / `alarm_false_positive`
+  （create 与 run 两处都会被拒绝，抛 `UnsupportedFaultTypeError`，API 返回 422
+  `unsupported_fault_type`，且不写入任何 Evidence / Conclusion / Review）；
+- Phase 1～4 的**独立评测 Container**（`build_phase1~4_container()`）仍然分别支持
+  各自故障域，不受该限制影响；
+- 四故障域的**正式运行路由**留给后续单独阶段实现；
+  不会通过扩大工具 allowlist 来假装支持。
+
+### Domain 不变量（跨故障域护栏）
+
+无论使用哪个 Runtime / LLM / 工具，都必须满足：
+
+```text
+conclusion.diagnosis_id == case.diagnosis_id
+conclusion.fault_type   == case.fault_type
+```
+
+由 `SecurityDiagnosisCase.set_conclusion()` 强制，`CitationPolicy.validate()`
+另做一遍防御性校验；违反时抛 `ConclusionFaultTypeMismatch`，且不修改 Case 状态。
+
+### health 语义
+
+`database_ready` 的含义是「**Runtime 数据库组件已成功初始化且 Container 未关闭**」，
+不代表数据库实时可连接、文件仍存在或 SQL 必然成功；真正的数据库探活留给后续阶段。
+
 ```bash
 # 正式本地运行（默认 SQLite + 自动迁移）
 uv run python scripts/run_api.py

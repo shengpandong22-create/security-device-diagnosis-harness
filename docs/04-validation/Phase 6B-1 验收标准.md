@@ -150,7 +150,72 @@ import 副作用探针输出：
 }
 ```
 
-## 9. 明确未实现（留给后续阶段）
+## 9. 收尾修复（跨域护栏与资源生命周期）
+
+### 9.1 P0：跨故障域结论
+
+真实缺陷：正式 RuntimeContainer 只装配摄像头工具与摄像头 responder，但
+`create_diagnosis` 接受所有 `SecurityFaultType`，且 `set_conclusion()` 只校验
+`diagnosis_id` 不校验 `fault_type`，导致录像 Case 可以拿到摄像头结论并进入
+`waiting_for_confirmation`。
+
+修复：
+
+- [x] 新增领域异常 `ConclusionFaultTypeMismatch`（继承 `DomainError`）；
+- [x] `SecurityDiagnosisCase.set_conclusion()` 强制
+      `conclusion.fault_type == case.fault_type`，且**在任何状态变更之前**校验；
+- [x] `CitationPolicy.validate()` 增加同口径的防御性校验
+      （防止调用方绕过 Case 方法直接调用 Policy）；
+- [x] 拒绝时 `case.conclusion` / `status` / `updated_at` 均不发生改变；
+- [x] 错误结论无法进入 `waiting_for_confirmation`，也无法被人工 confirm。
+
+### 9.2 P0：正式 Runtime 能力边界
+
+- [x] `SUPPORTED_RUNTIME_FAULT_TYPES = {CAMERA_BLACK_SCREEN}`，
+      由 `supported_runtime_fault_types()` 暴露；
+- [x] `SecurityDiagnosisApplicationService` 新增可选
+      `supported_fault_types: frozenset[SecurityFaultType] | None = None`
+      （`None` = 不限制，Phase 0～5 评测 Container 语义不变）；
+- [x] `create_diagnosis` 能力闸门在**写库之前**执行；
+- [x] `run_diagnosis` 能力闸门在**状态推进之前**再次执行
+      （防数据库历史遗留的不支持类型）；
+- [x] 拒绝时抛 `UnsupportedFaultTypeError`，不写入 Evidence / Conclusion / Review，
+      不返回 `ok=true`；
+- [x] API 映射 `UnsupportedFaultTypeError → 422`，code = `unsupported_fault_type`；
+- [x] Phase 1～4 独立评测 Container 行为不变（不限制故障类型）；
+- [x] 未通过扩大 allowlist 假装支持四域。
+
+### 9.3 P1：资源生命周期
+
+- [x] 删除 `build_runtime_service()`（会创建 Engine 却只返回 service，丢失 owner）；
+- [x] `runtime.py` 不存在会丢失 Engine owner 的 builder（有 AST 守卫测试）；
+- [x] `migrations/env.py` 的迁移 Engine 在 `try / finally` 中
+      `connectable.dispose()`（成功与失败路径都释放）；
+- [x] `scripts/run_api.py` 的 `build_app()` 在 `create_app` 失败时
+      先 `runtime.close()` 再向上抛；
+- [x] `main()` 在 `finally` 中 `runtime.close()`。
+
+### 9.4 health 语义（准确表述）
+
+`database_ready` 的准确含义是：
+
+> **Runtime 数据库组件已成功初始化且 Container 未关闭。**
+
+它**不**代表：数据库实时可连接、数据库文件仍存在、SQL 查询一定成功，
+也不是完整的 readiness probe。实时数据库探活留给后续阶段。
+
+### 9.5 真实跨域探针
+
+```text
+RECORDING_CASE_ACCEPTED_BY_CAMERA_RUNTIME: False
+CROSS_FAULT_CONCLUSION_ACCEPTED: False
+CITATION_POLICY_ACCEPTED_CROSS_FAULT: False
+CASE_STATE_MUTATED_AFTER_REJECTION: False
+```
+
+（`scripts/probe_cross_fault_guard.py`，真实 SQLite Runtime 执行）
+
+## 10. 明确未实现（留给后续阶段）
 
 - Phase 6B-2 乐观锁 / `version` 字段 / Unit of Work / 多线程并发更新；
 - Knowledge 管理 API；
