@@ -38,6 +38,7 @@ from security_diagnosis_harness.application.recording_diagnosis_rules import (
     RecordingDiagnosisRuleResult,
     infer_recording_missing_label,
 )
+from security_diagnosis_harness.domain.audit import AuditEntityType, AuditEvent
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.citation_policy import (
     DEVICE_FACT_EVIDENCE_TYPES,
@@ -55,6 +56,7 @@ from security_diagnosis_harness.domain.errors import (
 )
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence, EvidenceType
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
+from security_diagnosis_harness.ports.audit_repository import AuditRepository
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
 from security_diagnosis_harness.tools.contracts import ToolEvidenceDraft, ToolExecutionContext
@@ -267,6 +269,7 @@ class SecurityDiagnosisApplicationService:
         citation_policy: CitationPolicy | None = None,
         tool_allowlist: list[str] | None = None,
         supported_fault_types: frozenset[SecurityFaultType] | None = None,
+        audit_repository: AuditRepository | None = None,
     ) -> None:
         self._repository = repository
         self._runner = runner
@@ -277,6 +280,7 @@ class SecurityDiagnosisApplicationService:
         # None 表示不限制（Phase 0～5 独立评测 Container 的既有语义）。
         self._supported_fault_types = supported_fault_types
         self.supported_fault_types = supported_fault_types
+        self._audit_repository = audit_repository
 
     # -------------------------------------------------------------- 能力闸门
     def is_fault_type_supported(self, fault_type: SecurityFaultType) -> bool:
@@ -319,7 +323,15 @@ class SecurityDiagnosisApplicationService:
             reporter=reporter,
             description=description,
         )
-        return self._repository.save(case)
+        saved = self._repository.save(case)
+        self._append_audit(
+            action="diagnosis.created",
+            actor=reporter,
+            before=None,
+            after=saved,
+            summary="创建诊断任务",
+        )
+        return saved
 
     # ------------------------------------------------------------------ 运行
     def run_diagnosis(self, diagnosis_id: str) -> RunDiagnosisResult:
@@ -329,6 +341,7 @@ class SecurityDiagnosisApplicationService:
         -> CitationPolicy -> waiting_for_confirmation。
         """
         case = self._repository.get(diagnosis_id)
+        before = case.model_copy(deep=True)
         if case.status not in RUNNABLE_STATUSES:
             raise InvalidStatusTransition(
                 f"诊断 {case.diagnosis_id} 当前状态 {case.status.value} 不允许启动运行"
@@ -359,6 +372,7 @@ class SecurityDiagnosisApplicationService:
                 result,
                 result.error or "Runner 未产出候选结论",
                 status=SecurityDiagnosisStatus.WAITING_FOR_INPUT,
+                before=before,
             )
 
         draft_conclusion = result.final_conclusion
@@ -373,6 +387,7 @@ class SecurityDiagnosisApplicationService:
                 result,
                 "没有任何可用 Evidence，无法生成受控结论",
                 status=SecurityDiagnosisStatus.INCONCLUSIVE,
+                before=before,
             )
 
         conclusion = DiagnosisConclusion(
@@ -395,12 +410,21 @@ class SecurityDiagnosisApplicationService:
                 result,
                 f"结论未通过 Citation Policy: {exc}",
                 status=SecurityDiagnosisStatus.INCONCLUSIVE,
+                before=before,
             )
 
         case.set_conclusion(conclusion)
         case.transition_to(SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION)
         # update() 返回最新持久化副本（version 已递增），后续逻辑必须用它。
         case = self._repository.update(case)
+
+        self._append_audit(
+            action="diagnosis.run",
+            actor="agent",
+            before=before,
+            after=case,
+            summary="诊断运行完成并产出候选结论",
+        )
 
         insight = self.infer_candidate_label(case)
 
@@ -460,6 +484,7 @@ class SecurityDiagnosisApplicationService:
     ) -> ReviewResult:
         """人工审核。confirmed 只能由这里产生。"""
         case = self._repository.get(diagnosis_id)
+        before = case.model_copy(deep=True)
         review = HumanReview(
             diagnosis_id=case.diagnosis_id,
             action=action,
@@ -468,6 +493,14 @@ class SecurityDiagnosisApplicationService:
         )
         case.apply_human_review(review)
         case = self._repository.update(case)
+
+        self._append_audit(
+            action=f"diagnosis.review.{action.value}",
+            actor=reviewer,
+            before=before,
+            after=case,
+            summary="人工审核诊断结论",
+        )
 
         return ReviewResult(
             diagnosis_id=case.diagnosis_id,
@@ -493,10 +526,18 @@ class SecurityDiagnosisApplicationService:
         error: str,
         *,
         status: SecurityDiagnosisStatus,
+        before: SecurityDiagnosisCase,
     ) -> RunDiagnosisResult:
         """受控失败：不伪造 Evidence，只推进状态并记录错误。"""
         case.transition_to(status)
         case = self._repository.update(case)
+        self._append_audit(
+            action="diagnosis.run",
+            actor="agent",
+            before=before,
+            after=case,
+            summary=f"诊断运行受控结束: {error}",
+        )
         return RunDiagnosisResult(
             diagnosis_id=case.diagnosis_id,
             ok=False,
@@ -506,6 +547,33 @@ class SecurityDiagnosisApplicationService:
             rounds=result.rounds,
             tool_calls=result.tool_calls,
             error=error,
+        )
+
+    def _append_audit(
+        self,
+        *,
+        action: str,
+        actor: str,
+        before: SecurityDiagnosisCase | None,
+        after: SecurityDiagnosisCase,
+        summary: str,
+    ) -> None:
+        """在业务写入成功后追加安全审计摘要；失败必须显式向上传播。"""
+        if self._audit_repository is None:
+            return
+        self._audit_repository.append(
+            AuditEvent(
+                entity_type=AuditEntityType.DIAGNOSIS,
+                entity_id=after.diagnosis_id,
+                action=action,
+                actor=actor,
+                previous_state=before.status.value if before else None,
+                current_state=after.status.value,
+                previous_version=before.version if before else None,
+                current_version=after.version,
+                summary=summary,
+                metadata={"fault_type": after.fault_type.value},
+            )
         )
 
 

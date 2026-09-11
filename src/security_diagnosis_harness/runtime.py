@@ -24,8 +24,15 @@ from alembic.config import Config
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from security_diagnosis_harness.adapters.audit_in_memory import InMemoryAuditRepository
 from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
+from security_diagnosis_harness.adapters.knowledge.in_memory import (
+    InMemoryKnowledgeRepository,
+)
 from security_diagnosis_harness.adapters.llm.fake import FakeLLM
+from security_diagnosis_harness.adapters.persistence.audit_repository import (
+    SqlAlchemyAuditRepository,
+)
 from security_diagnosis_harness.adapters.persistence.database import (
     build_engine,
     build_session_factory,
@@ -34,9 +41,19 @@ from security_diagnosis_harness.adapters.persistence.database import (
 from security_diagnosis_harness.adapters.persistence.diagnosis_repository import (
     SqlAlchemyDiagnosisRepository,
 )
+from security_diagnosis_harness.adapters.persistence.knowledge_repository import (
+    SqlAlchemyKnowledgeRepository,
+)
 from security_diagnosis_harness.agent.runner import ToolLoopBudget, ToolLoopRunner
+from security_diagnosis_harness.application.consistency import ConsistencyScanner
 from security_diagnosis_harness.application.diagnoses import (
     SecurityDiagnosisApplicationService,
+)
+from security_diagnosis_harness.application.knowledge_candidates import (
+    KnowledgeCandidateApplicationService,
+)
+from security_diagnosis_harness.application.knowledge_governance import (
+    KnowledgeGovernanceApplicationService,
 )
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 from security_diagnosis_harness.bootstrap.container import (
@@ -51,7 +68,9 @@ from security_diagnosis_harness.config import (
 )
 from security_diagnosis_harness.domain.citation_policy import CitationPolicy
 from security_diagnosis_harness.domain.enums import SecurityFaultType
+from security_diagnosis_harness.ports.audit_repository import AuditRepository
 from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
+from security_diagnosis_harness.ports.knowledge_repository import KnowledgeRepository
 from security_diagnosis_harness.tools.device_channel import DeviceChannelTool
 from security_diagnosis_harness.tools.device_stream import DeviceStreamTool
 from security_diagnosis_harness.tools.platform_pull import PlatformPullStatusTool
@@ -120,6 +139,10 @@ class RuntimeContainer:
     gateway: StaticDeviceGateway
     llm: FakeLLM
     citation_policy: CitationPolicy
+    audit_repository: AuditRepository
+    knowledge_repository: KnowledgeRepository
+    knowledge_service: KnowledgeGovernanceApplicationService
+    consistency_scanner: ConsistencyScanner
     _closed: bool = False
 
     # ------------------------------------------------------------------ 生命周期
@@ -183,6 +206,8 @@ def build_runtime_container(
     engine: Engine | None = None
     session_factory: sessionmaker[Session] | None = None
     repository: DiagnosisRepository
+    audit_repository: AuditRepository
+    knowledge_repository: KnowledgeRepository
 
     if resolved.repository_mode is RepositoryMode.SQLITE:
         try:
@@ -191,6 +216,8 @@ def build_runtime_container(
             engine = build_engine(resolved.database_url, echo=resolved.database_echo)
             session_factory = build_session_factory(engine)
             repository = SqlAlchemyDiagnosisRepository(session_factory)
+            audit_repository = SqlAlchemyAuditRepository(session_factory)
+            knowledge_repository = SqlAlchemyKnowledgeRepository(session_factory)
         except Exception:
             # 迁移 / 建 Engine 失败时必须释放已创建资源，且不返回容器。
             if engine is not None:
@@ -198,6 +225,8 @@ def build_runtime_container(
             raise
     else:
         repository = InMemoryDiagnosisRepository()
+        audit_repository = InMemoryAuditRepository()
+        knowledge_repository = InMemoryKnowledgeRepository()
 
     service = SecurityDiagnosisApplicationService(
         repository=repository,
@@ -207,7 +236,14 @@ def build_runtime_container(
         citation_policy=citation_policy,
         # 显式能力约束：正式 Runtime 只支持已装配的故障类型。
         supported_fault_types=SUPPORTED_RUNTIME_FAULT_TYPES,
+        audit_repository=audit_repository,
     )
+    knowledge_service = KnowledgeGovernanceApplicationService(
+        KnowledgeCandidateApplicationService(service),
+        knowledge_repository,
+        audit_repository,
+    )
+    consistency_scanner = ConsistencyScanner(repository, knowledge_repository)
     return RuntimeContainer(
         settings=resolved,
         service=service,
@@ -219,6 +255,10 @@ def build_runtime_container(
         gateway=gateway,
         llm=llm,
         citation_policy=citation_policy,
+        audit_repository=audit_repository,
+        knowledge_repository=knowledge_repository,
+        knowledge_service=knowledge_service,
+        consistency_scanner=consistency_scanner,
     )
 
 

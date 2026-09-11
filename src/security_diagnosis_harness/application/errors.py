@@ -37,6 +37,14 @@ class KnowledgeAlreadyExistsError(ApplicationError):
         self.knowledge_id = knowledge_id
 
 
+class AuditEventNotFoundError(ApplicationError):
+    """审计事件不存在。"""
+
+    def __init__(self, event_id: str) -> None:
+        super().__init__(f"审计事件 {event_id} 不存在")
+        self.event_id = event_id
+
+
 class ConcurrentUpdateError(ApplicationError):
     """乐观锁冲突：陈旧副本试图覆盖较新的持久化状态。
 

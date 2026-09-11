@@ -81,4 +81,25 @@ class KnowledgeCandidateRow(Base):
     )
 
 
-__all__ = ["Base", "DiagnosisCaseRow", "KnowledgeCandidateRow"]
+class AuditEventRow(Base):
+    """只追加、不更新和删除的审计事件。"""
+
+    __tablename__ = "audit_events"
+    event_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(80), nullable=False)
+    previous_state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    previous_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+__all__ = ["AuditEventRow", "Base", "DiagnosisCaseRow", "KnowledgeCandidateRow"]

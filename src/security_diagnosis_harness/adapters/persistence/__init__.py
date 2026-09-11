@@ -7,6 +7,10 @@
 - `Base`：供 Alembic 迁移与 metadata 一致性校验使用。
 """
 
+from security_diagnosis_harness.adapters.persistence.audit_repository import (
+    AuditEventNotFoundError,
+    SqlAlchemyAuditRepository,
+)
 from security_diagnosis_harness.adapters.persistence.database import (
     DATABASE_URL_ENV_VAR,
     DEFAULT_DATABASE_URL,
@@ -23,6 +27,7 @@ from security_diagnosis_harness.adapters.persistence.knowledge_repository import
     SqlAlchemyKnowledgeRepository,
 )
 from security_diagnosis_harness.adapters.persistence.models import (
+    AuditEventRow,
     Base,
     DiagnosisCaseRow,
     KnowledgeCandidateRow,
@@ -32,9 +37,12 @@ __all__ = [
     "DATABASE_URL_ENV_VAR",
     "DEFAULT_DATABASE_URL",
     "Base",
+    "AuditEventRow",
+    "AuditEventNotFoundError",
     "DiagnosisCaseRow",
     "KnowledgeCandidateRow",
     "SqlAlchemyDiagnosisRepository",
+    "SqlAlchemyAuditRepository",
     "SqlAlchemyKnowledgeRepository",
     "build_database",
     "build_engine",

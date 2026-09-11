@@ -14,6 +14,12 @@ from security_diagnosis_harness.application.camera_diagnosis_rules import (
     extract_camera_facts,
     infer_camera_black_screen_label,
 )
+from security_diagnosis_harness.application.consistency import (
+    ConsistencyFinding,
+    ConsistencyReport,
+    ConsistencyScanner,
+    FindingSeverity,
+)
 from security_diagnosis_harness.application.diagnoses import (
     CitationRepair,
     RunDiagnosisResult,
@@ -29,6 +35,9 @@ from security_diagnosis_harness.application.errors import (
 )
 from security_diagnosis_harness.application.knowledge_candidates import (
     KnowledgeCandidateApplicationService,
+)
+from security_diagnosis_harness.application.knowledge_governance import (
+    KnowledgeGovernanceApplicationService,
 )
 from security_diagnosis_harness.application.reports import render_markdown_report
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
@@ -46,6 +55,11 @@ __all__ = [
     "InMemoryDiagnosisRepository",
     "KnowledgeCandidateApplicationService",
     "KnowledgeCandidateGenerationError",
+    "KnowledgeGovernanceApplicationService",
+    "ConsistencyFinding",
+    "ConsistencyReport",
+    "ConsistencyScanner",
+    "FindingSeverity",
     "RunDiagnosisResult",
     "SecurityDiagnosisApplicationService",
     "device_fact_evidence_ids",
