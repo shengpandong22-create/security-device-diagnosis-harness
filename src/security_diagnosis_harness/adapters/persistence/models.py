@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, Integer, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -39,6 +39,10 @@ class DiagnosisCaseRow(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # 乐观锁列：server_default 只为兼容历史行；业务逻辑必须显式写入版本。
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
 
     evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     conclusion: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
@@ -61,6 +65,9 @@ class KnowledgeCandidateRow(Base):
     source_conclusion_id: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1"), default=1
+    )
 
     symptoms: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     troubleshooting_steps: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)

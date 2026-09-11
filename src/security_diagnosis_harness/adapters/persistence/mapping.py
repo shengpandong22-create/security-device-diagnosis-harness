@@ -69,6 +69,7 @@ def case_to_columns(case: SecurityDiagnosisCase) -> dict[str, Any]:
         "status": safe.status.value,
         "created_at": ensure_aware(safe.created_at),
         "updated_at": ensure_aware(safe.updated_at),
+        "version": safe.version,
         "evidence": [item.model_dump(mode="json") for item in safe.evidence],
         "conclusion": (
             safe.conclusion.model_dump(mode="json") if safe.conclusion is not None else None
@@ -96,6 +97,7 @@ def columns_to_case(row: Any) -> SecurityDiagnosisCase:
         evidence=evidence,
         conclusion=conclusion,
         reviews=reviews,
+        version=row.version,
     )
 
 
@@ -114,6 +116,7 @@ def knowledge_to_columns(candidate: KnowledgeCandidate) -> dict[str, Any]:
         "source_conclusion_id": safe.source_conclusion_id,
         "created_at": ensure_aware(safe.created_at),
         "updated_at": ensure_aware(safe.updated_at),
+        "version": safe.version,
         "symptoms": list(safe.symptoms),
         "troubleshooting_steps": list(safe.troubleshooting_steps),
         "excluded_causes": list(safe.excluded_causes),
@@ -148,6 +151,7 @@ def columns_to_knowledge(row: Any) -> KnowledgeCandidate:
         metadata=dict(row.metadata_json or {}),
         created_at=ensure_aware(row.created_at),
         updated_at=ensure_aware(row.updated_at),
+        version=row.version,
     )
 
 

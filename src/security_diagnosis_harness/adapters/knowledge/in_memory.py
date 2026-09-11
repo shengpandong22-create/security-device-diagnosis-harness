@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from threading import RLock
 
 from security_diagnosis_harness.application.errors import (
+    ConcurrentUpdateError,
     KnowledgeAlreadyExistsError,
     KnowledgeNotFoundError,
 )
@@ -22,30 +24,57 @@ from security_diagnosis_harness.domain.knowledge_retrieval import (
 # 此处保留同名导出，历史调用者无需改动。
 __all__ = ["InMemoryKnowledgeRepository", "KnowledgeNotFoundError"]
 
+_ENTITY = "知识候选"
+
 
 class InMemoryKnowledgeRepository:
     """通过深拷贝隔离调用方，并在检索边界强制状态治理。"""
 
     def __init__(self) -> None:
         self._items: dict[str, KnowledgeCandidate] = {}
+        self._lock = RLock()
 
     def save(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
-        if candidate.knowledge_id in self._items:
-            raise KnowledgeAlreadyExistsError(candidate.knowledge_id)
-        self._items[candidate.knowledge_id] = deepcopy(candidate)
-        return deepcopy(candidate)
+        """新增知识候选；只接受全新聚合（`version == 0`），写入后版本为 1。"""
+        if candidate.version != 0:
+            raise ValueError(
+                f"save() 只接受全新聚合（version=0），当前 {candidate.knowledge_id} "
+                f"的 version={candidate.version}"
+            )
+        with self._lock:
+            if candidate.knowledge_id in self._items:
+                raise KnowledgeAlreadyExistsError(candidate.knowledge_id)
+            persisted = deepcopy(candidate)
+            persisted.version = 1
+            self._items[candidate.knowledge_id] = persisted
+            return deepcopy(persisted)
 
     def get(self, knowledge_id: str) -> KnowledgeCandidate:
-        try:
-            return deepcopy(self._items[knowledge_id])
-        except KeyError as exc:
-            raise KnowledgeNotFoundError(knowledge_id) from exc
+        with self._lock:
+            item = self._items.get(knowledge_id)
+            if item is None:
+                raise KnowledgeNotFoundError(knowledge_id)
+            return deepcopy(item)
 
     def update(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
-        if candidate.knowledge_id not in self._items:
-            raise KnowledgeNotFoundError(candidate.knowledge_id)
-        self._items[candidate.knowledge_id] = deepcopy(candidate)
-        return deepcopy(candidate)
+        """CAS 更新：版本不一致时抛 `ConcurrentUpdateError`。"""
+        if candidate.version <= 0:
+            raise ValueError(
+                f"update() 不接受未保存聚合（version>=1），当前 "
+                f"{candidate.knowledge_id} 的 version={candidate.version}"
+            )
+        with self._lock:
+            current = self._items.get(candidate.knowledge_id)
+            if current is None:
+                raise KnowledgeNotFoundError(candidate.knowledge_id)
+            if current.version != candidate.version:
+                raise ConcurrentUpdateError(
+                    _ENTITY, candidate.knowledge_id, candidate.version
+                )
+            persisted = deepcopy(candidate)
+            persisted.version = candidate.version + 1
+            self._items[candidate.knowledge_id] = persisted
+            return deepcopy(persisted)
 
     def list_all(self) -> list[KnowledgeCandidate]:
         return [deepcopy(item) for item in self._items.values()]

@@ -168,6 +168,8 @@ class KnowledgeCandidate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    # 乐观锁版本号：语义与 SecurityDiagnosisCase.version 一致。
+    version: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _validate_and_redact(self) -> KnowledgeCandidate:

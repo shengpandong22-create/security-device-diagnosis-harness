@@ -87,6 +87,9 @@ class SecurityDiagnosisCase(BaseModel):
     evidence: list[DiagnosisEvidence] = Field(default_factory=list)
     conclusion: DiagnosisConclusion | None = None
     reviews: list[HumanReview] = Field(default_factory=list)
+    # 乐观锁版本号：只代表**成功持久化次数**，不由 Domain 状态变化自动递增。
+    # 新建聚合为 0；首次 save 后持久化为 1；每次 update 成功后 +1。
+    version: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _redact_description(self) -> SecurityDiagnosisCase:
