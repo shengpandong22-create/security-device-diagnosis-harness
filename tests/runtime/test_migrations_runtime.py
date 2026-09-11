@@ -12,6 +12,7 @@ import warnings
 from pathlib import Path
 
 import pytest
+from alembic import command
 from sqlalchemy import create_engine, inspect, text
 
 from security_diagnosis_harness.adapters.persistence.database import (
@@ -182,33 +183,176 @@ def test_version_columns_exist_after_migration(tmp_path: Path):
         engine.dispose()
 
 
-def test_legacy_rows_get_version_one(tmp_path: Path):
-    """旧数据升级到 0002 时 version 应为 1。"""
-    url = _url(tmp_path)
-    upgrade_database(url)
+def _alembic_config(url: str):
+    from alembic.config import Config
 
+    config = Config(str(REPO_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(REPO_ROOT / "migrations"))
+    config.set_main_option("sqlalchemy.url", url)
+    return config
+
+
+def _columns_of(url: str, table: str) -> set[str]:
+    engine = create_engine(url, future=True)
+    try:
+        return {column["name"] for column in inspect(engine).get_columns(table)}
+    finally:
+        engine.dispose()
+
+
+def _insert_legacy_rows(url: str) -> None:
+    """按 **0001 schema**（无 version 列）插入历史数据。"""
     engine = create_engine(url, future=True)
     try:
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "INSERT INTO diagnosis_cases "
-                    "(diagnosis_id, fault_type, device_id, reporter, description,"
-                    " status, created_at, updated_at, evidence, conclusion, reviews)"
-                    " VALUES (:id, 'camera_black_screen', 'cam-1', 'r', 'd',"
-                    " 'created', '2026-01-01 00:00:00', '2026-01-01 00:00:00',"
-                    " '[]', NULL, '[]')"
-                ),
-                {"id": "diag-legacy"},
+                    "INSERT INTO diagnosis_cases ("
+                    " diagnosis_id, fault_type, device_id, reporter, description,"
+                    " status, created_at, updated_at, evidence, conclusion, reviews"
+                    ") VALUES ("
+                    " 'diag-legacy', 'camera_black_screen', 'cam-1', 'legacy-reporter',"
+                    " 'legacy description', 'created',"
+                    " '2026-01-01 00:00:00', '2026-01-01 00:00:00',"
+                    " '[]', NULL, '[]'"
+                    ")"
+                )
             )
-            stored = connection.execute(
-                text("SELECT version FROM diagnosis_cases WHERE diagnosis_id = :id"),
-                {"id": "diag-legacy"},
+            connection.execute(
+                text(
+                    "INSERT INTO knowledge_candidates ("
+                    " knowledge_id, fault_type, candidate_label, title, summary,"
+                    " root_cause, status, source_diagnosis_id, source_conclusion_id,"
+                    " created_at, updated_at, symptoms, troubleshooting_steps,"
+                    " excluded_causes, source_evidence_ids, reviews, source,"
+                    " redacted, metadata"
+                    ") VALUES ("
+                    " 'knw-legacy', 'camera_black_screen', 'legacy_label',"
+                    " 'legacy title', 'legacy summary', 'legacy root cause',"
+                    " 'confirmed', 'diag-legacy', 'con-legacy',"
+                    " '2026-01-01 00:00:00', '2026-01-01 00:00:00',"
+                    " '[\"s\"]', '[\"step\"]', '[]', '[\"evd-1\"]', '[]',"
+                    " 'manual_seed', 0, '{}'"
+                    ")"
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def _row_count(url: str, table: str) -> int:
+    engine = create_engine(url, future=True)
+    try:
+        with engine.connect() as connection:
+            return int(
+                connection.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+            )
+    finally:
+        engine.dispose()
+
+
+def test_legacy_rows_upgrade_0001_to_0002_preserves_data(tmp_path: Path):
+    """真实历史迁移：0001 建表 → 插历史数据 → 升级 0002 → 降级 0001 → 再升级 0002。"""
+    url = _url(tmp_path)
+    config = _alembic_config(url)
+
+    # 1) 明确只升级到 0001（不是 head）
+    command.upgrade(config, "0001")
+    assert _columns_of(url, "diagnosis_cases").isdisjoint({"version"})
+    assert _columns_of(url, "knowledge_candidates").isdisjoint({"version"})
+
+    # 2) 插入符合 0001 schema 的历史数据
+    _insert_legacy_rows(url)
+    assert _row_count(url, "diagnosis_cases") == 1
+    assert _row_count(url, "knowledge_candidates") == 1
+
+    # 3) 升级到 0002
+    command.upgrade(config, "0002")
+
+    for table in ("diagnosis_cases", "knowledge_candidates"):
+        assert "version" in _columns_of(url, table), f"{table} 缺少 version 列"
+
+    engine = create_engine(url, future=True)
+    try:
+        with engine.connect() as connection:
+            case_row = connection.execute(
+                text(
+                    "SELECT device_id, reporter, description, version"
+                    " FROM diagnosis_cases WHERE diagnosis_id = 'diag-legacy'"
+                )
+            ).one()
+            knowledge_row = connection.execute(
+                text(
+                    "SELECT title, summary, status, version"
+                    " FROM knowledge_candidates WHERE knowledge_id = 'knw-legacy'"
+                )
+            ).one()
+            version_num = connection.execute(
+                text("SELECT version_num FROM alembic_version")
             ).scalar()
     finally:
         engine.dispose()
 
-    assert stored == 1
+    # 原字段保持不变 + version = 1
+    assert case_row.device_id == "cam-1"
+    assert case_row.reporter == "legacy-reporter"
+    assert case_row.description == "legacy description"
+    assert case_row.version == 1
+
+    assert knowledge_row.title == "legacy title"
+    assert knowledge_row.summary == "legacy summary"
+    assert knowledge_row.status == "confirmed"
+    assert knowledge_row.version == 1
+
+    assert version_num == "0002"
+
+    # 4) downgrade 0001：数据保留，version 列移除
+    command.downgrade(config, "0001")
+
+    assert "version" not in _columns_of(url, "diagnosis_cases")
+    assert "version" not in _columns_of(url, "knowledge_candidates")
+    assert _row_count(url, "diagnosis_cases") == 1
+    assert _row_count(url, "knowledge_candidates") == 1
+
+    engine = create_engine(url, future=True)
+    try:
+        with engine.connect() as connection:
+            survived = connection.execute(
+                text(
+                    "SELECT description FROM diagnosis_cases"
+                    " WHERE diagnosis_id = 'diag-legacy'"
+                )
+            ).scalar()
+    finally:
+        engine.dispose()
+    assert survived == "legacy description"
+
+    # 5) 再升级 0002：数据仍在，version 恢复为 1
+    command.upgrade(config, "0002")
+
+    assert _row_count(url, "diagnosis_cases") == 1
+    assert _row_count(url, "knowledge_candidates") == 1
+
+    engine = create_engine(url, future=True)
+    try:
+        with engine.connect() as connection:
+            restored = connection.execute(
+                text(
+                    "SELECT version FROM diagnosis_cases"
+                    " WHERE diagnosis_id = 'diag-legacy'"
+                )
+            ).scalar()
+            restored_knowledge = connection.execute(
+                text(
+                    "SELECT version FROM knowledge_candidates"
+                    " WHERE knowledge_id = 'knw-legacy'"
+                )
+            ).scalar()
+    finally:
+        engine.dispose()
+
+    assert restored == 1
+    assert restored_knowledge == 1
 
 
 def test_downgrade_to_base_removes_version_columns(tmp_path: Path):
