@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.knowledge import KnowledgeCandidate
 
 
+@runtime_checkable
 class KnowledgeRepository(Protocol):
     """保存完整生命周期，但诊断检索只暴露 confirmed knowledge。"""
 
