@@ -33,6 +33,7 @@
 - [Phase 2 验收标准（含 Phase 2C 录像缺失规则 / 报告 / 评测）](./04-validation/Phase%202%20验收标准.md)
 - [Phase 6A 验收标准（SQLite 持久化基座）](./04-validation/Phase%206A%20验收标准.md)
 - [Phase 6B-1 验收标准（正式运行装配与真实重启恢复）](./04-validation/Phase%206B-1%20验收标准.md)
+- [Phase 6B-2 验收标准（乐观锁与并发状态更新保护）](./04-validation/Phase%206B-2%20验收标准.md)
 - [Phase 3 验收标准](./04-validation/Phase%203%20验收标准.md)
 - [Phase 4 验收标准](./04-validation/Phase%204%20验收标准.md)
 - [Phase 5 验收标准](./04-validation/Phase%205%20验收标准.md)

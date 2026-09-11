@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B/5C、Phase 6A、Phase 6B-1 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B/5C、Phase 6A、Phase 6B-1、Phase 6B-2 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -33,7 +33,7 @@
 | Phase 5C | 知识治理、BGE 与混合检索评测 | 已完成 |
 | Phase 6A | SQLite 持久化基座（Repository 与迁移） | 已完成 |
 | Phase 6B-1 | 正式运行装配（SQLite）与真实重启恢复 | 已完成 |
-| Phase 6B-2 | 乐观锁与并发更新 | 未开始 |
+| Phase 6B-2 | 乐观锁与并发状态更新保护 | 已完成 |
 | Phase 6C | 审计、一致性与备份恢复验收 | 未开始 |
 
 Phase 0A 交付范围：
@@ -359,6 +359,51 @@ conclusion.fault_type   == case.fault_type
 `database_ready` 的含义是「**Runtime 数据库组件已成功初始化且 Container 未关闭**」，
 不代表数据库实时可连接、文件仍存在或 SQL 必然成功；真正的数据库探活留给后续阶段。
 
+### 乐观锁（Phase 6B-2）
+
+诊断（DiagnosisCase）与知识候选（KnowledgeCandidate）均带 `version` 字段，
+由 Repository 用 CAS（compare-and-swap）保护，避免丢失更新：
+
+```text
+读取 version=N
+  → 修改副本
+  → UPDATE ... WHERE id = ? AND version = N       （rowcount==1 → version=N+1）
+  → rowcount==0：
+       ID 不存在 → NotFound
+       ID 存在   → ConcurrentUpdateError（陈旧副本不得覆盖较新状态）
+```
+
+要点：
+
+- 新建聚合 `version=0`；首次 `save()` 后为 `1`；每次 `update()` 成功后 `+1`；
+- `version` 只代表**成功持久化次数**，普通 Domain 状态变化不会自增；
+- 内存 Adapter 使用 `RLock` 实现同一语义，SQLite 使用 CAS UPDATE；
+- 冲突时 `ConcurrentUpdateError`，API 映射为 **409** `concurrent_update`，
+  消息为「诊断已被其他请求更新，请刷新后重试」，不暴露版本号；
+- **不自动重试** Agent / Tool / HumanReview，冲突必须由调用方重新读取后再操作；
+- API 创建请求不接受 `version` 输入；
+- 本阶段是**乐观锁冲突检测**，不是悲观锁、长事务或分布式锁，
+  也不锁住 LLM / Tool 执行过程。
+
+真实并发探针：
+
+```bash
+uv run python scripts/demo_phase6_optimistic_lock.py
+```
+
+```text
+STALE_UPDATE_REJECTED: True
+WINNER_VERSION: 2
+WINNER_DATA_PRESERVED: True
+LOSER_DATA_ABSENT: True
+AUTOMATIC_AGENT_RETRY: False
+AUTOMATIC_REVIEW_RETRY: False
+```
+
+迁移：`migrations/versions/0002_add_aggregate_versions.py` 为两张表各加
+`version INTEGER NOT NULL DEFAULT 1`，旧数据升级后为 `1`；
+`upgrade head` / `downgrade base` / 再 `upgrade head` 均可逆。
+
 ```bash
 # 正式本地运行（默认 SQLite + 自动迁移）
 uv run python scripts/run_api.py
@@ -488,6 +533,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [Phase 5 验收标准](./docs/04-validation/Phase%205%20验收标准.md)
 - [Phase 6A 验收标准](./docs/04-validation/Phase%206A%20验收标准.md)
 - [Phase 6B-1 验收标准](./docs/04-validation/Phase%206B-1%20验收标准.md)
+- [Phase 6B-2 验收标准](./docs/04-validation/Phase%206B-2%20验收标准.md)
 
 ## 最小闭环路线
 
