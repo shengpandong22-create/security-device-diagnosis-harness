@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B/5C 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B/5C、Phase 6A 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -31,6 +31,9 @@
 | Phase 5A | 知识候选领域模型 | 已完成 |
 | Phase 5B | confirmed 诊断生成知识候选 | 已完成 |
 | Phase 5C | 知识治理、BGE 与混合检索评测 | 已完成 |
+| Phase 6A | SQLite 持久化基座（Repository 与迁移） | 已完成 |
+| Phase 6B | API 装配切换与重启恢复 | 未开始 |
+| Phase 6C | 审计、一致性与备份恢复验收 | 未开始 |
 
 Phase 0A 交付范围：
 
@@ -274,6 +277,20 @@ Phase 5C 交付范围（知识检索与 RAG）：
 - `scripts/demo_phase5_knowledge_loop.py` 串联诊断确认、知识候选生成、知识人工确认、
   Repository、Hybrid Retriever 与 `knowledge_sop` Evidence，形成可运行完整闭环。
 
+Phase 6A 交付范围（SQLite 持久化基座）：
+
+- `ports/diagnosis_repository.py`：诊断仓储 Port（`save` / `get` / `update` / `list` / `exists`），
+  应用服务改为依赖 Port 而非具体内存实现；
+- `adapters/persistence/database.py`：SQLite Engine / Session 工厂与 URL 解析
+  （显式参数 > `SECURITY_DIAGNOSIS_DB_URL` > 默认 `sqlite:///./data/security-diagnosis.db`）；
+- `adapters/persistence/models.py`：ORM 模型（`diagnosis_cases` / `knowledge_candidates`），
+  复杂子结构以 JSON 列保存，仅存在于 adapters 层；
+- `adapters/persistence/mapping.py`：Domain ↔ ORM 双向转换，读回时重新构造真正的 Domain 对象；
+- `adapters/persistence/diagnosis_repository.py`、`knowledge_repository.py`：SQLite 仓储实现；
+- `migrations/` + `alembic.ini`：Alembic `0001` 迁移，支持 `upgrade head` / `downgrade base` / 再 `upgrade head`；
+- 内存仓储保留且与 SQLite 仓储行为一致；`KnowledgeRepository` 检索契约不变；
+- 默认 API Container 仍使用内存实现，切换留给 Phase 6B。
+
 ## 快速开始
 
 ```bash
@@ -380,6 +397,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 - [Phase 3 验收标准](./docs/04-validation/Phase%203%20验收标准.md)
 - [Phase 4 验收标准](./docs/04-validation/Phase%204%20验收标准.md)
 - [Phase 5 验收标准](./docs/04-validation/Phase%205%20验收标准.md)
+- [Phase 6A 验收标准](./docs/04-validation/Phase%206A%20验收标准.md)
 
 ## 最小闭环路线
 
