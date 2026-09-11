@@ -17,6 +17,9 @@ from sqlalchemy import Engine, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from security_diagnosis_harness.adapters.persistence.errors import (
+    translate_persistence_error,
+)
 from security_diagnosis_harness.adapters.persistence.mapping import (
     case_to_columns,
     columns_to_case,
@@ -75,7 +78,7 @@ class SqlAlchemyDiagnosisRepository:
                 raise RepositoryPersistenceError(_ENTITY, "integrity") from exc
             except SQLAlchemyError as exc:
                 session.rollback()
-                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
+                raise translate_persistence_error(_ENTITY, exc) from exc
         return self.get(case.diagnosis_id)
 
     def update(self, case: SecurityDiagnosisCase) -> SecurityDiagnosisCase:
@@ -99,49 +102,72 @@ class SqlAlchemyDiagnosisRepository:
         columns["version"] = case.version + 1
 
         with self._session_factory() as session:
-            result = session.execute(
-                update(DiagnosisCaseRow)
-                .where(
-                    DiagnosisCaseRow.diagnosis_id == case.diagnosis_id,
-                    DiagnosisCaseRow.version == case.version,
+            try:
+                result = session.execute(
+                    update(DiagnosisCaseRow)
+                    .where(
+                        DiagnosisCaseRow.diagnosis_id == case.diagnosis_id,
+                        DiagnosisCaseRow.version == case.version,
+                    )
+                    .values(**columns)
                 )
-                .values(**columns)
-            )
-            if result.rowcount != 1:
+                rowcount = result.rowcount
+            except SQLAlchemyError as exc:
+                # execute 阶段的 ORM 异常同样必须 rollback + 映射，不得外泄。
+                session.rollback()
+                raise translate_persistence_error(_ENTITY, exc) from exc
+
+            if rowcount != 1:
                 session.rollback()
                 if session.get(DiagnosisCaseRow, case.diagnosis_id) is None:
                     raise DiagnosisNotFoundError(case.diagnosis_id)
                 raise ConcurrentUpdateError(_ENTITY, case.diagnosis_id, case.version)
+
             try:
                 session.commit()
             except SQLAlchemyError as exc:
                 session.rollback()
-                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
+                raise translate_persistence_error(_ENTITY, exc) from exc
         return self.get(case.diagnosis_id)
 
     # ------------------------------------------------------------------ 读
     def get(self, diagnosis_id: str) -> SecurityDiagnosisCase:
-        with self._session_factory() as session:
-            row = session.get(DiagnosisCaseRow, diagnosis_id)
-            if row is None:
-                raise DiagnosisNotFoundError(diagnosis_id)
-            return columns_to_case(row)
+        try:
+            with self._session_factory() as session:
+                row = session.get(DiagnosisCaseRow, diagnosis_id)
+                if row is None:
+                    raise DiagnosisNotFoundError(diagnosis_id)
+                return columns_to_case(row)
+        except SQLAlchemyError as exc:
+            raise translate_persistence_error(_ENTITY, exc) from exc
 
     def list(self) -> list[SecurityDiagnosisCase]:
         statement = select(DiagnosisCaseRow).order_by(
             DiagnosisCaseRow.created_at, DiagnosisCaseRow.diagnosis_id
         )
-        with self._session_factory() as session:
-            return [columns_to_case(row) for row in session.scalars(statement)]
+        try:
+            with self._session_factory() as session:
+                return [columns_to_case(row) for row in session.scalars(statement)]
+        except SQLAlchemyError as exc:
+            raise translate_persistence_error(_ENTITY, exc) from exc
 
     def exists(self, diagnosis_id: str) -> bool:
-        with self._session_factory() as session:
-            return session.get(DiagnosisCaseRow, diagnosis_id) is not None
+        try:
+            with self._session_factory() as session:
+                return session.get(DiagnosisCaseRow, diagnosis_id) is not None
+        except SQLAlchemyError as exc:
+            raise translate_persistence_error(_ENTITY, exc) from exc
 
     def count(self) -> int:
         """用 SQL COUNT 统计，不加载全部主键。"""
-        with self._session_factory() as session:
-            return int(session.scalar(select(func.count()).select_from(DiagnosisCaseRow)) or 0)
+        try:
+            with self._session_factory() as session:
+                total = session.scalar(
+                    select(func.count()).select_from(DiagnosisCaseRow)
+                )
+                return int(total or 0)
+        except SQLAlchemyError as exc:
+            raise translate_persistence_error(_ENTITY, exc) from exc
 
 
 __all__ = ["SqlAlchemyDiagnosisRepository"]

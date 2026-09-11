@@ -20,6 +20,9 @@ from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from security_diagnosis_harness.adapters.persistence.errors import (
+    translate_persistence_error,
+)
 from security_diagnosis_harness.adapters.persistence.mapping import (
     columns_to_knowledge,
     knowledge_to_columns,
@@ -78,7 +81,7 @@ class SqlAlchemyKnowledgeRepository:
                 raise RepositoryPersistenceError(_ENTITY, "integrity") from exc
             except SQLAlchemyError as exc:
                 session.rollback()
-                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
+                raise translate_persistence_error(_ENTITY, exc) from exc
         return self.get(candidate.knowledge_id)
 
     def update(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
@@ -94,40 +97,54 @@ class SqlAlchemyKnowledgeRepository:
         columns["version"] = candidate.version + 1
 
         with self._session_factory() as session:
-            result = session.execute(
-                update(KnowledgeCandidateRow)
-                .where(
-                    KnowledgeCandidateRow.knowledge_id == candidate.knowledge_id,
-                    KnowledgeCandidateRow.version == candidate.version,
+            try:
+                result = session.execute(
+                    update(KnowledgeCandidateRow)
+                    .where(
+                        KnowledgeCandidateRow.knowledge_id == candidate.knowledge_id,
+                        KnowledgeCandidateRow.version == candidate.version,
+                    )
+                    .values(**columns)
                 )
-                .values(**columns)
-            )
-            if result.rowcount != 1:
+                rowcount = result.rowcount
+            except SQLAlchemyError as exc:
+                # execute 阶段的 ORM 异常同样必须 rollback + 映射，不得外泄。
+                session.rollback()
+                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
+
+            if rowcount != 1:
                 session.rollback()
                 if session.get(KnowledgeCandidateRow, candidate.knowledge_id) is None:
                     raise KnowledgeNotFoundError(candidate.knowledge_id)
                 raise ConcurrentUpdateError(_ENTITY, candidate.knowledge_id, candidate.version)
+
             try:
                 session.commit()
             except SQLAlchemyError as exc:
                 session.rollback()
-                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
+                raise translate_persistence_error(_ENTITY, exc) from exc
         return self.get(candidate.knowledge_id)
 
     # ------------------------------------------------------------------ 读
     def get(self, knowledge_id: str) -> KnowledgeCandidate:
-        with self._session_factory() as session:
-            row = session.get(KnowledgeCandidateRow, knowledge_id)
-            if row is None:
-                raise KnowledgeNotFoundError(knowledge_id)
-            return columns_to_knowledge(row)
+        try:
+            with self._session_factory() as session:
+                row = session.get(KnowledgeCandidateRow, knowledge_id)
+                if row is None:
+                    raise KnowledgeNotFoundError(knowledge_id)
+                return columns_to_knowledge(row)
+        except SQLAlchemyError as exc:
+            raise translate_persistence_error(_ENTITY, exc) from exc
 
     def list_all(self) -> list[KnowledgeCandidate]:
         statement = select(KnowledgeCandidateRow).order_by(
             KnowledgeCandidateRow.created_at, KnowledgeCandidateRow.knowledge_id
         )
-        with self._session_factory() as session:
-            return [columns_to_knowledge(row) for row in session.scalars(statement)]
+        try:
+            with self._session_factory() as session:
+                return [columns_to_knowledge(row) for row in session.scalars(statement)]
+        except SQLAlchemyError as exc:
+            raise translate_persistence_error(_ENTITY, exc) from exc
 
     def search_confirmed(
         self,
@@ -141,8 +158,11 @@ class SqlAlchemyKnowledgeRepository:
             .where(KnowledgeCandidateRow.status == KnowledgeCandidateStatus.CONFIRMED.value)
             .where(KnowledgeCandidateRow.fault_type == fault_type.value)
         )
-        with self._session_factory() as session:
-            rows = list(session.scalars(statement))
+        try:
+            with self._session_factory() as session:
+                rows = list(session.scalars(statement))
+        except SQLAlchemyError as exc:
+            raise translate_persistence_error(_ENTITY, exc) from exc
 
         ranked: list[tuple[int, KnowledgeCandidate]] = []
         for row in rows:
