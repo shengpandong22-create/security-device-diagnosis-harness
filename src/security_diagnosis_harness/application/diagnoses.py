@@ -37,7 +37,6 @@ from security_diagnosis_harness.application.recording_diagnosis_rules import (
     RecordingDiagnosisRuleResult,
     infer_recording_missing_label,
 )
-from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.citation_policy import (
     DEVICE_FACT_EVIDENCE_TYPES,
@@ -56,6 +55,7 @@ from security_diagnosis_harness.domain.errors import (
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence, EvidenceType
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
+from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
 from security_diagnosis_harness.tools.contracts import ToolEvidenceDraft, ToolExecutionContext
 from security_diagnosis_harness.tools.registry import ToolRegistry, default_permissions
 
@@ -259,7 +259,7 @@ class SecurityDiagnosisApplicationService:
 
     def __init__(
         self,
-        repository: InMemoryDiagnosisRepository,
+        repository: DiagnosisRepository,
         runner: ToolLoopRunner,
         registry: ToolRegistry,
         gateway: DeviceGateway,

@@ -6,6 +6,7 @@ from security_diagnosis_harness.ports.device_gateway import (
     DeviceGatewayError,
     DeviceNotFoundError,
 )
+from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
 from security_diagnosis_harness.ports.llm import (
     ChatMessage,
     ChatRole,
@@ -25,6 +26,7 @@ __all__ = [
     "DeviceGatewayDataError",
     "DeviceGatewayError",
     "DeviceNotFoundError",
+    "DiagnosisRepository",
     "FinishReason",
     "LLMClient",
     "LLMRequest",
