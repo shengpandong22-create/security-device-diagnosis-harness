@@ -22,7 +22,13 @@ class ApiResponse[T](BaseModel):
 
 
 class HealthData(BaseModel):
-    """健康检查载荷。"""
+    """健康检查载荷。
+
+    Phase 6B-1 新增 `repository_mode` / `database_ready`，
+    均带兼容默认值，避免破坏既有调用方。
+
+    安全约束：不返回 database_url、绝对路径、Engine、Session 或凭证。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -30,6 +36,8 @@ class HealthData(BaseModel):
     service: str = "security-diagnosis-harness"
     version: str
     phase: str = "0C"
+    repository_mode: str = "memory"
+    database_ready: bool = True
 
 
 class CreateDiagnosisRequest(BaseModel):
