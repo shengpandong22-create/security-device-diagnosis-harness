@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from security_diagnosis_harness.domain.common import content_hash, new_id, utc_now
+from security_diagnosis_harness.domain.redaction import redact_mapping, redact_text
 
 
 class EvidenceType(StrEnum):
@@ -85,7 +86,26 @@ class DiagnosisEvidence(BaseModel):
     content_hash: str = ""
 
     @model_validator(mode="after")
-    def _ensure_content_hash(self) -> DiagnosisEvidence:
+    def _redact_then_hash(self) -> DiagnosisEvidence:
+        """先脱敏，再计算 content_hash。
+
+        顺序不可颠倒：`content_hash` 必须基于脱敏后的内容，
+        否则等值去重与审计都会与明文绑定。
+        """
+        changed = False
+        cleaned_summary, summary_changed = redact_text(self.summary)
+        if summary_changed:
+            self.summary = cleaned_summary
+            changed = True
+
+        cleaned_payload, payload_changed = redact_mapping(self.payload)
+        if payload_changed:
+            self.payload = cleaned_payload
+            changed = True
+
+        if changed:
+            self.redacted = True
+
         if not self.content_hash:
             self.content_hash = content_hash(
                 {

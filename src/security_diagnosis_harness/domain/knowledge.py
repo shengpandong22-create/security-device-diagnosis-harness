@@ -10,7 +10,6 @@ Phase 5A 只定义知识沉淀的领域边界，不接数据库、不改工具�
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
@@ -29,21 +28,11 @@ from security_diagnosis_harness.domain.errors import (
     EvidenceDiagnosisMismatch,
     KnowledgeReviewNotAllowed,
 )
+from security_diagnosis_harness.domain.redaction import redact_text
 
 TEXT_MAX_LENGTH = 1_000
 TITLE_MAX_LENGTH = 120
 LIST_ITEM_MAX_LENGTH = 500
-
-_SENSITIVE_TEXT_PATTERN = re.compile(
-    r"https?://\S+"
-    r"|AKIA[0-9A-Z]{16}"
-    r"|sk-[A-Za-z0-9_-]{12,}"
-    r"|Bearer\s+[A-Za-z0-9._-]+"
-    r"|(?:password|passwd|pwd|token|secret)\s*[:=]\s*\S+"
-    r"|(?:card[_-]?(?:no|number|id)|person[_-]?id|id[_-]?card"
-    r"|face[_-]?id|license[_-]?plate)\s*[:=]\s*\S+",
-    re.IGNORECASE,
-)
 
 
 class KnowledgeCandidateStatus(StrEnum):
@@ -81,18 +70,18 @@ def is_knowledge_sensitive_key(key: str) -> bool:
 
 
 def _redact_text(value: str) -> tuple[str, bool]:
-    cleaned = _SENSITIVE_TEXT_PATTERN.sub(REDACTED_VALUE, value)
-    return cleaned, cleaned != value
+    """知识领域文本脱敏，复用统一领域脱敏模块。"""
+    return redact_text(value)
 
 
 def redact_knowledge_text(value: str) -> tuple[str, bool]:
     """脱敏即将进入知识检索或向量服务的自由文本。"""
-    return _redact_text(value)
+    return redact_text(value)
 
 
 def _redact_value(value: Any) -> tuple[Any, bool]:
     if isinstance(value, str):
-        return _redact_text(value)
+        return redact_text(value)
     if isinstance(value, list):
         changed = False
         items: list[Any] = []
@@ -106,9 +95,9 @@ def _redact_value(value: Any) -> tuple[Any, bool]:
     return value, False
 
 
-def redact_knowledge_sensitive_values(values: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """递归脱敏知识候选中的敏感键和值。"""
-    redacted: dict[str, Any] = {}
+def _redact_keyed_mapping(values: dict[Any, Any]) -> tuple[dict[Any, Any], bool]:
+    """按知识域键名规则脱敏一层映射，值再递归交给统一脱敏模块。"""
+    redacted: dict[Any, Any] = {}
     changed = False
     for key, value in values.items():
         if value in (None, ""):
@@ -121,6 +110,15 @@ def redact_knowledge_sensitive_values(values: dict[str, Any]) -> tuple[dict[str,
             redacted[key] = cleaned
             changed = changed or item_changed
     return redacted, changed
+
+
+def redact_knowledge_sensitive_values(values: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """递归脱敏知识候选中的敏感键和值。
+
+    - 键名规则在知识域额外叠加门禁 / 报警领域的敏感键（卡号 / 人员 ID / 车牌 / 手机号等）；
+    - 值规则复用统一领域脱敏模块（含内联凭证与 URL 凭证），不另立第二套正则。
+    """
+    return _redact_keyed_mapping(values)
 
 
 class KnowledgeReview(BaseModel):

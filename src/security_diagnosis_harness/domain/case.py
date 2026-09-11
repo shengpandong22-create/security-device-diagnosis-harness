@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from security_diagnosis_harness.domain.common import new_id, utc_now
 from security_diagnosis_harness.domain.conclusion import DiagnosisConclusion
@@ -19,6 +19,7 @@ from security_diagnosis_harness.domain.errors import (
     UnknownEvidenceReference,
 )
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence
+from security_diagnosis_harness.domain.redaction import redact_text
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 
 # 终态：不允许再发生任何状态变化。
@@ -85,6 +86,13 @@ class SecurityDiagnosisCase(BaseModel):
     evidence: list[DiagnosisEvidence] = Field(default_factory=list)
     conclusion: DiagnosisConclusion | None = None
     reviews: list[HumanReview] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _redact_description(self) -> SecurityDiagnosisCase:
+        """描述属于自由文本，进入领域对象前先做统一脱敏。"""
+        cleaned, _ = redact_text(self.description)
+        self.description = cleaned
+        return self
 
     # ------------------------------------------------------------------ 状态
     def can_transition_to(self, target: SecurityDiagnosisStatus) -> bool:

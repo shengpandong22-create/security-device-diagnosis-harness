@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
@@ -13,31 +12,34 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from security_diagnosis_harness.domain.common import new_id, utc_now
-
-REDACTED_VALUE = "***REDACTED***"
-
-_SENSITIVE_KEY_PATTERN = re.compile(
-    r"password|passwd|pwd|token|secret|credential|access[_-]?key|private[_-]?key",
-    re.IGNORECASE,
+from security_diagnosis_harness.domain.redaction import (
+    REDACTED_VALUE,
+    is_sensitive_key,
+    redact_mapping,
 )
 
-
-def is_sensitive_key(key: str) -> bool:
-    """判断配置键名是否属于凭证类敏感字段。"""
-    return _SENSITIVE_KEY_PATTERN.search(key) is not None
+__all__ = [
+    "REDACTED_VALUE",
+    "AlarmSeverity",
+    "Device",
+    "DeviceAlarmEvent",
+    "DeviceConfigSnapshot",
+    "DeviceSnapshot",
+    "DeviceType",
+    "RecordingStatus",
+    "StreamStatus",
+    "is_sensitive_key",
+    "redact_sensitive_values",
+]
 
 
 def redact_sensitive_values(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """把配置中的凭证类字段替换为占位符，返回 (配置, 是否发生脱敏)。"""
-    redacted: dict[str, Any] = {}
-    changed = False
-    for key, value in config.items():
-        if is_sensitive_key(str(key)) and value not in (None, ""):
-            redacted[key] = REDACTED_VALUE
-            changed = True
-        else:
-            redacted[key] = value
-    return redacted, changed
+    """把配置中的凭证类字段替换为占位符，返回 (配置, 是否发生脱敏)。
+
+    复用统一领域脱敏模块；键名命中敏感模式时整体替换，
+    其余值递归处理（含嵌套 dict / list 与内联凭证文本）。
+    """
+    return redact_mapping(config)
 
 
 class DeviceType(StrEnum):

@@ -19,6 +19,7 @@ from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.conclusion import DiagnosisConclusion
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence
 from security_diagnosis_harness.domain.knowledge import KnowledgeCandidate, KnowledgeReview
+from security_diagnosis_harness.domain.redaction import redact_text
 from security_diagnosis_harness.domain.review import HumanReview
 
 
@@ -29,6 +30,17 @@ def ensure_aware(value: datetime) -> datetime:
     return value
 
 
+def assert_redacted(value: str) -> str:
+    """持久化边界的安全断言：写入前再过一次统一脱敏。
+
+    这不是"第二套规则"，而是复用 Domain 同一个脱敏函数的兜底：
+    Pydantic 允许在构造后直接赋值绕过 validator，本函数保证这种
+    "事后赋值"也不会把明文写进数据库。
+    """
+    cleaned, _ = redact_text(value)
+    return cleaned
+
+
 def case_to_columns(case: SecurityDiagnosisCase) -> dict[str, Any]:
     """把诊断聚合拆成 ORM 列字典。"""
     return {
@@ -36,7 +48,7 @@ def case_to_columns(case: SecurityDiagnosisCase) -> dict[str, Any]:
         "fault_type": case.fault_type.value,
         "device_id": case.device_id,
         "reporter": case.reporter,
-        "description": case.description,
+        "description": assert_redacted(case.description),
         "status": case.status.value,
         "created_at": ensure_aware(case.created_at),
         "updated_at": ensure_aware(case.updated_at),
@@ -76,9 +88,9 @@ def knowledge_to_columns(candidate: KnowledgeCandidate) -> dict[str, Any]:
         "knowledge_id": candidate.knowledge_id,
         "fault_type": candidate.fault_type.value,
         "candidate_label": candidate.candidate_label,
-        "title": candidate.title,
-        "summary": candidate.summary,
-        "root_cause": candidate.root_cause,
+        "title": assert_redacted(candidate.title),
+        "summary": assert_redacted(candidate.summary),
+        "root_cause": assert_redacted(candidate.root_cause),
         "status": candidate.status.value,
         "source_diagnosis_id": candidate.source_diagnosis_id,
         "source_conclusion_id": candidate.source_conclusion_id,
@@ -122,6 +134,7 @@ def columns_to_knowledge(row: Any) -> KnowledgeCandidate:
 
 
 __all__ = [
+    "assert_redacted",
     "case_to_columns",
     "columns_to_case",
     "columns_to_knowledge",

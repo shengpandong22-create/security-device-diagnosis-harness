@@ -8,9 +8,10 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from security_diagnosis_harness.domain.common import new_id, utc_now
+from security_diagnosis_harness.domain.redaction import redact_text
 
 
 class HumanReviewAction(StrEnum):
@@ -32,6 +33,12 @@ class HumanReview(BaseModel):
     reviewer: str = Field(min_length=1)
     comment: str = ""
     reviewed_at: datetime = Field(default_factory=utc_now)
+
+    @model_validator(mode="after")
+    def _redact_comment(self) -> HumanReview:
+        """审核意见是自由文本，进入领域对象前先脱敏。"""
+        self.comment, _ = redact_text(self.comment)
+        return self
 
     def belongs_to(self, diagnosis_id: str) -> bool:
         return self.diagnosis_id == diagnosis_id
