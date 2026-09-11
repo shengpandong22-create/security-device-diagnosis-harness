@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B/5C、Phase 6A、Phase 6B-1、Phase 6B-2 已完成。
+- 当前阶段：Phase 0～6 已完成；Phase 7 评测驱动演进已完成规格设计，尚未实施。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -34,7 +34,18 @@
 | Phase 6A | SQLite 持久化基座（Repository 与迁移） | 已完成 |
 | Phase 6B-1 | 正式运行装配（SQLite）与真实重启恢复 | 已完成 |
 | Phase 6B-2 | 乐观锁与并发状态更新保护 | 已完成 |
-| Phase 6C | 审计、一致性与备份恢复验收 | 规格已冻结，待分段实施 |
+| Phase 6C | 审计、一致性与备份恢复验收 | 已完成 |
+| Phase 7 | 分层数据集、Grader 与版本回归门禁 | 规格已冻结，待实施 |
+
+Phase 6C 提供追加式审计、只读一致性扫描与 SQLite 安全备份恢复：
+
+```powershell
+uv run python scripts/check_phase6_consistency.py
+uv run python scripts/demo_phase6_backup_restore.py
+```
+
+恢复操作只允许在持有目标数据库的 `RuntimeContainer` 已关闭后执行；备份恢复
+是显式运维动作，不暴露为普通诊断 API。
 
 Phase 0A 交付范围：
 
