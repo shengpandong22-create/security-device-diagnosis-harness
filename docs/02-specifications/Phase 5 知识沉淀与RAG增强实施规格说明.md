@@ -1,6 +1,6 @@
 # Phase 5 知识沉淀与 RAG 增强实施规格说明
 
-> 文档状态：待实施基线  
+> 文档状态：已实施
 > 适用项目：Security Device Diagnosis Harness  
 > 目标阶段：Phase 5A / 5B / 5C  
 
@@ -247,19 +247,21 @@ src/security_diagnosis_harness/adapters/knowledge/in_memory.py
 
 ### 5.3 RAG 演进接口
 
-Phase 5C 只定义轻量检索，不强制接向量库。
+Phase 5C 已按独立 BGE HTTP 服务落地语义检索，但不强制引入向量数据库。
 
 后续企业化可演进为：
 
 ```text
 KnowledgeRepository Port
-  -> SQLite FTS Adapter
-  -> Vector Adapter
-  -> BGE Embedding Adapter
-  -> Hybrid Retriever
+  -> InMemory Adapter（当前）
+  -> 中文词法检索
+  -> HttpBgeEmbeddingAdapter（当前）
+  -> Weighted RRF Hybrid Retriever（当前）
+  -> SQLite / pgvector（后续数据规模需要时）
 ```
 
-如果本机已有 BGE Docker 服务，可以作为后续 adapter 接入，但 Phase 5C 不依赖它。
+BGE 被部署为独立 `local-bge-service`，安防项目通过 EmbeddingPort 调用；
+自动测试不依赖它，运行时不可用会降级到关键词检索。
 
 ## 6. 与现有代码映射
 

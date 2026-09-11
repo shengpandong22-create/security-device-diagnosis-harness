@@ -79,16 +79,36 @@
 | 数据最小化 | 复制摘要和来源 ID，不复制 Evidence payload |
 | 四域闭环 | 摄像头、录像、门禁、报警均通过真实本地应用链路测试 |
 
-## 3. Phase 5C：轻量知识检索与 RAG 演进入口（待开始）
+## 3. Phase 5C：知识检索与 RAG 增强（已完成）
 
-- [ ] 新增 KnowledgeRepository Port；
-- [ ] 新增内存或 JSON Knowledge Adapter；
-- [ ] `knowledge__search` 工具输入输出契约保持兼容；
-- [ ] confirmed knowledge 可被召回；
-- [ ] candidate / rejected knowledge 默认不可被诊断召回；
-- [ ] 知识召回仍然落成 `knowledge_sop` Evidence；
-- [ ] 知识类 Evidence 不能作为设备事实支撑 `probable`；
-- [ ] Phase 1～4 eval 不退化。
+- [x] 新增 KnowledgeRepository Port；
+- [x] 新增内存 Knowledge Adapter；
+- [x] 仓储通过深拷贝隔离调用方修改；
+- [x] confirmed knowledge 可被召回；
+- [x] candidate / rejected / retired knowledge 不可被诊断召回；
+- [x] 新增 EmbeddingPort、FakeEmbeddingAdapter 和 HttpBgeEmbeddingAdapter；
+- [x] BGE HTTP Adapter 校验模型名称、响应数量与 512 维向量；
+- [x] 新增独立 `local-bge-service`，业务项目可分别停机；
+- [x] 新增中文二元词法检索、BGE 向量检索和加权 RRF 混合检索；
+- [x] BGE 失败时 Hybrid Retriever 降级到关键词结果；
+- [x] 进入 BGE 前对查询自由文本脱敏；
+- [x] `knowledge__search` 工具名称、输入字段和 Evidence 契约保持兼容；
+- [x] 知识召回仍然落成 `knowledge_sop` Evidence；
+- [x] 知识类 Evidence 不能作为设备事实支撑 `probable`；
+- [x] Phase 1～4 eval 不退化。
+
+### 3.1 三路检索真实 BGE 评测
+
+| 模式 | Recall@1 | Recall@3 | MRR | 平均耗时 |
+|---|---:|---:|---:|---:|
+| Keyword | 0.7500 | 0.7500 | 0.7500 | 0.10 ms |
+| BGE Vector | 0.7500 | 1.0000 | 0.8611 | 40.78 ms |
+| Hybrid | 0.8333 | 1.0000 | 0.9028 | 51.77 ms |
+
+评测使用 12 条固定查询，覆盖四类故障以及 exact、semantic、colloquial 三种表达。
+指标表明 BGE 提升 Top-3 语义召回，Hybrid 在此基础上利用精确词法信号改善 Top-1；
+同时保留本地 CPU 推理的延迟成本，不把 BGE 描述为无条件优于关键词。
+独立容器冷启动模型加载实测约 7.24 秒，表内为预热后的单查询平均耗时。
 
 ## 4. Phase 5 固定评测目标
 
@@ -106,8 +126,8 @@
 
 - [x] Phase 5A 领域模型与测试完成；
 - [x] Phase 5B confirmed 诊断生成知识候选完成；
-- [ ] Phase 5C 轻量知识检索完成；
+- [x] Phase 5C 知识检索与 RAG 增强完成；
 - [x] confirmed knowledge 只能由人工审核产生；
 - [x] 知识可追溯到原始 Diagnosis、Conclusion 和 Evidence；
-- [ ] 引入知识后 Phase 1～4 评测不退化；
+- [x] 引入知识后 Phase 1～4 评测不退化；
 - [ ] Git 工作区干净并推送。

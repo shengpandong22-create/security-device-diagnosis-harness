@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B 已完成。
+- 当前阶段：Phase 0A/0B/0C、Phase 1～4、Phase 5A/5B/5C 已完成。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -30,7 +30,7 @@
 | Phase 4C | 报警规则、报告与固定评测 | 已完成 |
 | Phase 5A | 知识候选领域模型 | 已完成 |
 | Phase 5B | confirmed 诊断生成知识候选 | 已完成 |
-| Phase 5C | 轻量知识检索与 RAG 演进入口 | 待开始 |
+| Phase 5C | 知识治理、BGE 与混合检索评测 | 已完成 |
 
 Phase 0A 交付范围：
 
@@ -257,6 +257,20 @@ Phase 5B 交付范围（confirmed 诊断提炼知识候选）：
 - 仅保留原诊断、结论和 Evidence ID 以供追溯，不复制完整 Evidence payload；
 - 生成结果始终为 `candidate`，不持久化正式知识，也不绕过人工知识审核；
 - 已用 Phase 1～4 的真实本地应用链路验证四类 confirmed 诊断均可沉淀候选知识。
+
+Phase 5C 交付范围（知识检索与 RAG）：
+
+- `KnowledgeRepository` 保存知识全生命周期，但诊断检索只返回人工确认知识；
+- candidate、rejected、retired knowledge 不会进入 Agent 上下文；
+- `EmbeddingPort` 隔离业务代码与具体向量模型，提供 Fake 与 HTTP BGE Adapter；
+- 独立 `local-bge-service` 通过 `/v1/embeddings` 共享 `bge-small-zh-v1.5`；
+- `HybridKnowledgeRetriever` 使用中文词法检索、BGE 语义检索与加权 RRF 融合；
+- BGE 服务异常时确定性降级到关键词检索；
+- `knowledge__search` 名称、输入字段和 Evidence 类型保持兼容，动态知识仍落为 `knowledge_sop`；
+- 12 条固定检索评测中，Keyword / Vector / Hybrid 的 Recall@1 分别为
+  `0.75 / 0.75 / 0.8333`，Recall@3 为 `0.75 / 1.0 / 1.0`，
+  MRR 为 `0.75 / 0.8611 / 0.9028`；BGE 容器冷启动约 `7.24s`，
+  热查询平均约 `41～52ms/条`。
 
 ## 快速开始
 
