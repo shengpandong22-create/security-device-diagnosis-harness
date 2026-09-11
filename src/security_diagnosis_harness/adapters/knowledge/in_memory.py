@@ -76,8 +76,18 @@ class InMemoryKnowledgeRepository:
             self._items[candidate.knowledge_id] = persisted
             return deepcopy(persisted)
 
+    def _snapshot(self) -> list[KnowledgeCandidate]:
+        """在锁内生成一致的深拷贝快照。
+
+        快照之后的所有过滤 / 排序 / 打分都在锁外执行，避免长时间占锁。
+        """
+        with self._lock:
+            return [deepcopy(item) for item in self._items.values()]
+
     def list_all(self) -> list[KnowledgeCandidate]:
-        return [deepcopy(item) for item in self._items.values()]
+        snapshot = self._snapshot()
+        snapshot.sort(key=lambda item: (item.created_at, item.knowledge_id))
+        return snapshot
 
     def search_confirmed(
         self,
@@ -85,9 +95,13 @@ class InMemoryKnowledgeRepository:
         fault_type: SecurityFaultType,
         limit: int = 3,
     ) -> list[KnowledgeCandidate]:
-        """按故障类型和词项匹配，只召回人工确认知识。"""
+        """按故障类型和词项匹配，只召回人工确认知识。
+
+        先在锁内取快照，再在锁外做过滤与词法打分。
+        """
+        snapshot = self._snapshot()
         ranked: list[tuple[int, KnowledgeCandidate]] = []
-        for item in self._items.values():
+        for item in snapshot:
             if item.status is not KnowledgeCandidateStatus.CONFIRMED:
                 continue
             if item.fault_type is not fault_type:
