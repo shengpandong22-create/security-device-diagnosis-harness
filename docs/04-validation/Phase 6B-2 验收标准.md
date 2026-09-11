@@ -127,7 +127,78 @@ uv run python scripts/probe_cross_fault_guard.py           -> 6B-1 护栏未回�
 Phase 0 demo / Phase 1~4 eval / Phase 5 离线评测           -> 全部通过
 ```
 
-## 9. 明确未实现
+## 9. 审计收尾修复（Codex 代码审计）
+
+### 9.1 CAS execute 阶段异常泄漏
+
+- [x] `session.execute(UPDATE...)` 已纳入可控异常处理；
+- [x] execute 或 commit 抛 `SQLAlchemyError` → rollback + `RepositoryPersistenceError`；
+- [x] 不外泄 `OperationalError` / `IntegrityError` / `SQLAlchemyError`；
+- [x] `rowcount == 0` 仍保持：rollback → ID 不存在 `*NotFoundError` /
+      ID 存在 `ConcurrentUpdateError`（未被包装成持久化错误）；
+- [x] 非 SQLAlchemy 编程错误原样抛出（`RuntimeError` 穿透验证）；
+- [x] Diagnosis 与 Knowledge 行为对称；
+- [x] **读方法**（`get` / `list` / `exists` / `count` / `list_all` /
+      `search_confirmed`）同样统一映射 ORM 异常，不泄漏。
+
+### 9.2 真实 0001 → 0002 历史数据迁移
+
+- [x] 明确 `upgrade 0001`（非 head）后插入历史数据；
+- [x] 迁移前确认两表**不存在** version 列；
+- [x] `upgrade 0002`：数据保留、原字段不变、两条记录 `version=1`、
+      `alembic_version=0002`；
+- [x] `downgrade 0001`：数据保留、version 列移除、其它字段保留；
+- [x] 再 `upgrade 0002`：数据仍在、`version` 恢复为 1；
+- [x] 全程不使用 `Base.metadata.create_all()`。
+
+真实执行记录：
+
+```text
+1. upgrade 0001    alembic=0001  has_version=False  rows=0/0
+2. inserted legacy rows                             rows=1/1
+3. upgrade 0002    alembic=0002  has_version=True   rows=1/1  legacy version: 1 1
+4. downgrade 0001  alembic=0001  has_version=False  rows=1/1
+5. upgrade 0002    alembic=0002  has_version=True   rows=1/1  legacy version: 1 1
+```
+
+### 9.3 Application 真实冲突不自动重试
+
+通过可控冲突注入仓储（在 Application 最终 `update` **之前**完成一次竞争者
+合法 CAS）真实驱动：
+
+- 场景 A `run_diagnosis`：Runner 恰好执行 **1 次**（不是 0 次），
+  `update` 调用 1 次，赢家数据与版本保留，失败请求状态仍为 `created`
+  且无 Evidence / Conclusion；
+- 场景 B `review_diagnosis`：异常**精确**为 `ConcurrentUpdateError`
+  （`type(exc) is ConcurrentUpdateError`），不是终态导致的
+  `InvalidStatusTransition` / `ReviewNotAllowed`；输家 review 不落库，
+  赢家 review / `CONFIRMED` 状态 / `version=3` 全部保留，`update` 共 2 次。
+
+### 9.4 InMemoryKnowledgeRepository 读锁
+
+- [x] 新增 `_snapshot()`：在 `with self._lock` 内生成一致深拷贝快照；
+- [x] `list_all()` 与 `search_confirmed()` 均基于快照，不在锁外遍历
+      `self._items.values()`；
+- [x] 排序与词法打分在锁外基于快照执行，避免长时间占锁；
+- [x] AST 结构守卫 + 深拷贝/快照隔离行为测试（无随机线程测试）。
+
+### 9.5 探针输出
+
+```text
+STALE_UPDATE_REJECTED: True
+WINNER_VERSION: 2
+WINNER_DATA_PRESERVED: True
+LOSER_DATA_ABSENT: True
+AGENT_CONFLICT_OBSERVED: True
+AUTOMATIC_AGENT_RETRY: False
+REVIEW_CONFLICT_OBSERVED: True
+AUTOMATIC_REVIEW_RETRY: False
+```
+
+负面路径已验证：冲突注入不触发时 `EXIT_CODE: 1`
+（`AGENT_CONFLICT_OBSERVED: False` / `REVIEW_CONFLICT_OBSERVED: False`）。
+
+## 10. 明确未实现
 
 - 悲观锁、行锁、长事务；
 - 锁住 LLM / Tool 执行过程；
