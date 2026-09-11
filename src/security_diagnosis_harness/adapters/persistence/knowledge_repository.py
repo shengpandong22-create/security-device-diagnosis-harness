@@ -1,11 +1,14 @@
 """SQLite 知识仓储实现。
 
-契约与 `InMemoryKnowledgeRepository` 保持一致：
+契约与 `InMemoryKnowledgeRepository` 完全对称：
 
-- `save()`：新增；ID 重复时抛 `ValueError`（与内存实现同文案风格）；
+- `save()`：新增；ID 重复时抛 `KnowledgeAlreadyExistsError`；
 - `get()` / `update()`：ID 不存在时抛 `KnowledgeNotFoundError`；
 - `list_all()`：全部知识候选；
 - `search_confirmed()`：只召回 `status == confirmed` 且 `fault_type` 匹配的候选。
+
+异常不依赖底层 SQLAlchemy：`IntegrityError` 等统一映射为应用层受控错误。
+本模块不 import 内存 Adapter，异常统一来自 `application.errors`。
 
 检索打分复用 `domain.knowledge_retrieval` 的确定性词法规则，
 不引入向量服务，也不访问网络。
@@ -14,14 +17,19 @@
 from __future__ import annotations
 
 from sqlalchemy import Engine, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from security_diagnosis_harness.adapters.knowledge.in_memory import KnowledgeNotFoundError
 from security_diagnosis_harness.adapters.persistence.mapping import (
     columns_to_knowledge,
     knowledge_to_columns,
 )
 from security_diagnosis_harness.adapters.persistence.models import KnowledgeCandidateRow
+from security_diagnosis_harness.application.errors import (
+    KnowledgeAlreadyExistsError,
+    KnowledgeNotFoundError,
+    RepositoryPersistenceError,
+)
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidate,
@@ -31,6 +39,8 @@ from security_diagnosis_harness.domain.knowledge_retrieval import (
     MIN_LEXICAL_OVERLAP,
     lexical_overlap_score,
 )
+
+_ENTITY = "知识候选"
 
 
 class SqlAlchemyKnowledgeRepository:
@@ -46,20 +56,30 @@ class SqlAlchemyKnowledgeRepository:
     # ------------------------------------------------------------------ 写
     def save(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
         with self._session_factory() as session:
-            if session.get(KnowledgeCandidateRow, candidate.knowledge_id) is not None:
-                raise ValueError(f"知识 {candidate.knowledge_id} 已存在")
             session.add(KnowledgeCandidateRow(**knowledge_to_columns(candidate)))
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                # 主键冲突（常见于并发或重复 ID）→ 受控的 AlreadyExists。
+                session.rollback()
+                raise KnowledgeAlreadyExistsError(candidate.knowledge_id) from exc
+            except SQLAlchemyError as exc:
+                session.rollback()
+                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
         return self.get(candidate.knowledge_id)
 
     def update(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
         with self._session_factory() as session:
             row = session.get(KnowledgeCandidateRow, candidate.knowledge_id)
             if row is None:
-                raise KnowledgeNotFoundError(f"知识 {candidate.knowledge_id} 不存在")
+                raise KnowledgeNotFoundError(candidate.knowledge_id)
             for key, value in knowledge_to_columns(candidate).items():
                 setattr(row, key, value)
-            session.commit()
+            try:
+                session.commit()
+            except SQLAlchemyError as exc:
+                session.rollback()
+                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
         return self.get(candidate.knowledge_id)
 
     # ------------------------------------------------------------------ 读
@@ -67,7 +87,7 @@ class SqlAlchemyKnowledgeRepository:
         with self._session_factory() as session:
             row = session.get(KnowledgeCandidateRow, knowledge_id)
             if row is None:
-                raise KnowledgeNotFoundError(f"知识 {knowledge_id} 不存在")
+                raise KnowledgeNotFoundError(knowledge_id)
             return columns_to_knowledge(row)
 
     def list_all(self) -> list[KnowledgeCandidate]:

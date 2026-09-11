@@ -1,4 +1,16 @@
-"""知识仓储 Port。"""
+"""知识仓储 Port。
+
+契约要点：
+
+- 所有读操作返回**独立**的 Domain 对象（深拷贝语义），
+  调用方本地修改**不会**隐式修改数据库，必须显式调用 `update()`；
+- `save()` 遇到重复 ID 必须抛 `KnowledgeAlreadyExistsError`；
+- `get()` / `update()` 遇到不存在 ID 必须抛 `KnowledgeNotFoundError`；
+- 无法归类的持久化写入失败统一抛 `RepositoryPersistenceError`；
+- 实现不得把底层 ORM 异常作为公开契约泄漏给调用方。
+
+异常统一来自 `application.errors`，Adapter 之间不互相 import 异常。
+"""
 
 from __future__ import annotations
 

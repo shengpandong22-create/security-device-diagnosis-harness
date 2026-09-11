@@ -13,7 +13,8 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from security_diagnosis_harness.adapters.persistence.mapping import (
@@ -24,8 +25,11 @@ from security_diagnosis_harness.adapters.persistence.models import DiagnosisCase
 from security_diagnosis_harness.application.errors import (
     DiagnosisAlreadyExistsError,
     DiagnosisNotFoundError,
+    RepositoryPersistenceError,
 )
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
+
+_ENTITY = "诊断"
 
 
 class SqlAlchemyDiagnosisRepository:
@@ -41,12 +45,21 @@ class SqlAlchemyDiagnosisRepository:
 
     # ------------------------------------------------------------------ 写
     def save(self, case: SecurityDiagnosisCase) -> SecurityDiagnosisCase:
-        """新增一条诊断；ID 重复时受控失败。"""
+        """新增一条诊断；ID 重复时受控失败。
+
+        不做 `select exists -> insert` 的竞态检查，直接插入并依赖主键约束：
+        捕获 `IntegrityError` 后映射为 `DiagnosisAlreadyExistsError`。
+        """
         with self._session_factory() as session:
-            if session.get(DiagnosisCaseRow, case.diagnosis_id) is not None:
-                raise DiagnosisAlreadyExistsError(case.diagnosis_id)
             session.add(DiagnosisCaseRow(**case_to_columns(case)))
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                raise DiagnosisAlreadyExistsError(case.diagnosis_id) from exc
+            except SQLAlchemyError as exc:
+                session.rollback()
+                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
         return self.get(case.diagnosis_id)
 
     def update(self, case: SecurityDiagnosisCase) -> SecurityDiagnosisCase:
@@ -57,7 +70,11 @@ class SqlAlchemyDiagnosisRepository:
                 raise DiagnosisNotFoundError(case.diagnosis_id)
             for key, value in case_to_columns(case).items():
                 setattr(row, key, value)
-            session.commit()
+            try:
+                session.commit()
+            except SQLAlchemyError as exc:
+                session.rollback()
+                raise RepositoryPersistenceError(_ENTITY, type(exc).__name__) from exc
         return self.get(case.diagnosis_id)
 
     # ------------------------------------------------------------------ 读
@@ -80,8 +97,9 @@ class SqlAlchemyDiagnosisRepository:
             return session.get(DiagnosisCaseRow, diagnosis_id) is not None
 
     def count(self) -> int:
+        """用 SQL COUNT 统计，不加载全部主键。"""
         with self._session_factory() as session:
-            return len(session.scalars(select(DiagnosisCaseRow.diagnosis_id)).all())
+            return int(session.scalar(select(func.count()).select_from(DiagnosisCaseRow)) or 0)
 
 
 __all__ = ["SqlAlchemyDiagnosisRepository"]

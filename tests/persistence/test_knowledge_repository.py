@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from security_diagnosis_harness.adapters.knowledge.in_memory import KnowledgeNotFoundError
+from security_diagnosis_harness.application.errors import (
+    KnowledgeAlreadyExistsError,
+    KnowledgeNotFoundError,
+)
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidate,
@@ -147,7 +150,7 @@ def test_duplicate_save_is_rejected(knowledge_repository):
     candidate = build_knowledge_candidate()
     knowledge_repository.save(candidate)
 
-    with pytest.raises(ValueError, match="已存在"):
+    with pytest.raises(KnowledgeAlreadyExistsError):
         knowledge_repository.save(candidate)
 
 

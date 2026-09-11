@@ -6,6 +6,7 @@ from security_diagnosis_harness.adapters.knowledge.in_memory import (
     InMemoryKnowledgeRepository,
     KnowledgeNotFoundError,
 )
+from security_diagnosis_harness.application.errors import KnowledgeAlreadyExistsError
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidate,
@@ -53,7 +54,7 @@ def test_repository_rejects_duplicate_id():
     candidate = _candidate()
     repository.save(candidate)
 
-    with pytest.raises(ValueError, match="已存在"):
+    with pytest.raises(KnowledgeAlreadyExistsError):
         repository.save(candidate)
 
 

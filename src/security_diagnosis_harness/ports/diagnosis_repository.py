@@ -5,10 +5,14 @@ Phase 6A 把原本只在 application 层的 `InMemoryDiagnosisRepository`
 
 契约要点：
 
-- 所有读操作返回**独立**的 Domain 对象（深拷贝语义），调用方本地修改数据库；
-- `save()` 遇到重复 ID 必须受控失败；
-- `update()` 遇到不存在 ID 必须受控失败；
-- `get()` 遇到不存在 ID 抛统一 `DiagnosisNotFoundError`。
+- 所有读操作返回**独立**的 Domain 对象（深拷贝语义），
+  调用方本地修改**不会**隐式修改数据库，必须显式调用 `update()`；
+- `save()` 遇到重复 ID 必须抛 `DiagnosisAlreadyExistsError`；
+- `update()` 遇到不存在 ID 必须抛 `DiagnosisNotFoundError`；
+- `get()` 遇到不存在 ID 抛统一 `DiagnosisNotFoundError`；
+- 无法归类的持久化写入失败统一抛 `RepositoryPersistenceError`；
+- 实现不得把底层 ORM 异常（`IntegrityError` / `OperationalError` 等）
+  作为公开契约泄漏给调用方。
 """
 
 from __future__ import annotations

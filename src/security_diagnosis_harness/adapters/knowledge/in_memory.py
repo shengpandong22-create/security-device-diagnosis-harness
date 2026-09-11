@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from security_diagnosis_harness.application.errors import (
+    KnowledgeAlreadyExistsError,
+    KnowledgeNotFoundError,
+)
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidate,
@@ -14,9 +18,9 @@ from security_diagnosis_harness.domain.knowledge_retrieval import (
     lexical_overlap_score,
 )
 
-
-class KnowledgeNotFoundError(KeyError):
-    """知识候选不存在。"""
+# 兼容旧导入路径：`KnowledgeNotFoundError` 现在定义在 application.errors，
+# 此处保留同名导出，历史调用者无需改动。
+__all__ = ["InMemoryKnowledgeRepository", "KnowledgeNotFoundError"]
 
 
 class InMemoryKnowledgeRepository:
@@ -27,7 +31,7 @@ class InMemoryKnowledgeRepository:
 
     def save(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
         if candidate.knowledge_id in self._items:
-            raise ValueError(f"知识 {candidate.knowledge_id} 已存在")
+            raise KnowledgeAlreadyExistsError(candidate.knowledge_id)
         self._items[candidate.knowledge_id] = deepcopy(candidate)
         return deepcopy(candidate)
 
@@ -35,11 +39,11 @@ class InMemoryKnowledgeRepository:
         try:
             return deepcopy(self._items[knowledge_id])
         except KeyError as exc:
-            raise KnowledgeNotFoundError(f"知识 {knowledge_id} 不存在") from exc
+            raise KnowledgeNotFoundError(knowledge_id) from exc
 
     def update(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
         if candidate.knowledge_id not in self._items:
-            raise KnowledgeNotFoundError(f"知识 {candidate.knowledge_id} 不存在")
+            raise KnowledgeNotFoundError(candidate.knowledge_id)
         self._items[candidate.knowledge_id] = deepcopy(candidate)
         return deepcopy(candidate)
 
