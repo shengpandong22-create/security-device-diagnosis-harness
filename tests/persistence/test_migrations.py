@@ -20,7 +20,7 @@ ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-EXPECTED_TABLES = {"diagnosis_cases", "knowledge_candidates"}
+EXPECTED_TABLES = {"audit_events", "diagnosis_cases", "knowledge_candidates"}
 
 
 def _alembic_config(database_url: str) -> Config:

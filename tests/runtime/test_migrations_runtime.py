@@ -22,7 +22,7 @@ from security_diagnosis_harness.config import RuntimeConfigurationError
 from security_diagnosis_harness.runtime import upgrade_database
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_TABLES = {"diagnosis_cases", "knowledge_candidates"}
+EXPECTED_TABLES = {"audit_events", "diagnosis_cases", "knowledge_candidates"}
 
 
 def _url(tmp_path: Path) -> str:
@@ -164,7 +164,7 @@ def test_alembic_version_recorded(tmp_path: Path):
     finally:
         engine.dispose()
 
-    assert version == "0002"
+    assert version == "0003"
 
 
 def test_version_columns_exist_after_migration(tmp_path: Path):
@@ -369,3 +369,26 @@ def test_downgrade_to_base_removes_version_columns(tmp_path: Path):
     command.downgrade(config, "base")
 
     assert EXPECTED_TABLES.isdisjoint(_tables(url))
+
+
+def test_audit_migration_is_reversible_without_losing_aggregates(tmp_path: Path):
+    """0002 → 0003 → 0002 → 0003 不得影响已有诊断和知识数据。"""
+    url = _url(tmp_path)
+    config = _alembic_config(url)
+    command.upgrade(config, "0002")
+    _insert_legacy_rows(url)
+
+    command.upgrade(config, "0003")
+    assert "audit_events" in _tables(url)
+    assert _row_count(url, "diagnosis_cases") == 1
+    assert _row_count(url, "knowledge_candidates") == 1
+
+    command.downgrade(config, "0002")
+    assert "audit_events" not in _tables(url)
+    assert _row_count(url, "diagnosis_cases") == 1
+    assert _row_count(url, "knowledge_candidates") == 1
+
+    command.upgrade(config, "0003")
+    assert "audit_events" in _tables(url)
+    assert _row_count(url, "diagnosis_cases") == 1
+    assert _row_count(url, "knowledge_candidates") == 1
