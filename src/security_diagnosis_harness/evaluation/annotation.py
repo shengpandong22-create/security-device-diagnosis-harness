@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -95,6 +96,8 @@ class AnnotationDisagreement(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     task_id: str
+    case_id: str
+    fault_type: SecurityFaultType
     first_annotation_id: str
     second_annotation_id: str
     first_label: str
@@ -104,6 +107,17 @@ class AnnotationDisagreement(BaseModel):
     evidence_jaccard: float = Field(ge=0, le=1)
     confidence_delta: float = Field(ge=0, le=1)
     requires_adjudication: bool
+
+
+class FaultTypeAgreementSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    fault_type: SecurityFaultType
+    task_count: int = Field(ge=1)
+    label_agreement_rate: float = Field(ge=0, le=1)
+    mean_tool_jaccard: float = Field(ge=0, le=1)
+    mean_evidence_jaccard: float = Field(ge=0, le=1)
+    adjudication_rate: float = Field(ge=0, le=1)
 
 
 class AnnotationAgreementReport(BaseModel):
@@ -116,8 +130,36 @@ class AnnotationAgreementReport(BaseModel):
     mean_confidence_delta: float = Field(ge=0, le=1)
     label_kappa: float = Field(ge=-1, le=1)
     adjudication_rate: float = Field(ge=0, le=1)
+    fault_type_summaries: tuple[FaultTypeAgreementSummary, ...] = ()
+    pairs: tuple[AnnotationDisagreement, ...] = ()
 
-
+    def to_markdown(self) -> str:
+        lines = [
+            "# Phase 8A 标注一致性报告",
+            "",
+            "- 数据性质：`synthetic_protocol_fixture`（不冒充真实专家标注）",
+            f"- 任务数：`{self.task_count}`",
+            f"- 标签一致率：`{self.label_agreement_rate:.4f}`",
+            f"- 工具 Jaccard：`{self.mean_tool_jaccard:.4f}`",
+            f"- Evidence Jaccard：`{self.mean_evidence_jaccard:.4f}`",
+            f"- Cohen's kappa：`{self.label_kappa:.4f}`",
+            f"- 待裁决率：`{self.adjudication_rate:.4f}`",
+            "",
+            "## 故障域",
+            "",
+            (
+                "| Fault type | Cases | Label agreement | Tool Jaccard | "
+                "Evidence Jaccard | Adjudication |"
+            ),
+            "| --- | ---: | ---: | ---: | ---: | ---: |",
+        ]
+        for item in self.fault_type_summaries:
+            lines.append(
+                f"| {item.fault_type.value} | {item.task_count} | "
+                f"{item.label_agreement_rate:.4f} | {item.mean_tool_jaccard:.4f} | "
+                f"{item.mean_evidence_jaccard:.4f} | {item.adjudication_rate:.4f} |"
+            )
+        return "\n".join(lines) + "\n"
 class AdjudicationDecision(BaseModel):
     """显式裁决记录；裁决本身仍不修改任何数据集文件。"""
 
@@ -235,6 +277,8 @@ def compare_blind_annotations(
     )
     return AnnotationDisagreement(
         task_id=task.task_id,
+        case_id=task.case_id,
+        fault_type=task.fault_type,
         first_annotation_id=first.annotation_id,
         second_annotation_id=second.annotation_id,
         first_label=first.candidate_label,
@@ -254,6 +298,9 @@ def build_annotation_agreement_report(
 ) -> AnnotationAgreementReport:
     if not disagreements:
         raise AnnotationProtocolError("一致性报告至少需要一组双人标注")
+    by_fault_type: dict[SecurityFaultType, list[AnnotationDisagreement]] = {}
+    for item in disagreements:
+        by_fault_type.setdefault(item.fault_type, []).append(item)
     return AnnotationAgreementReport(
         task_count=len(disagreements),
         label_agreement_rate=_mean(item.label_agrees for item in disagreements),
@@ -262,6 +309,11 @@ def build_annotation_agreement_report(
         mean_confidence_delta=_mean(item.confidence_delta for item in disagreements),
         label_kappa=_cohen_kappa(disagreements),
         adjudication_rate=_mean(item.requires_adjudication for item in disagreements),
+        fault_type_summaries=tuple(
+            _fault_type_summary(fault_type, tuple(items))
+            for fault_type, items in sorted(by_fault_type.items(), key=lambda pair: pair[0].value)
+        ),
+        pairs=tuple(disagreements),
     )
 
 
@@ -317,6 +369,37 @@ def _jaccard(first: Sequence[object], second: Sequence[object]) -> float:
     left, right = set(first), set(second)
     union = left | right
     return len(left & right) / len(union) if union else 1.0
+
+
+def _fault_type_summary(
+    fault_type: SecurityFaultType,
+    items: tuple[AnnotationDisagreement, ...],
+) -> FaultTypeAgreementSummary:
+    return FaultTypeAgreementSummary(
+        fault_type=fault_type,
+        task_count=len(items),
+        label_agreement_rate=_mean(item.label_agrees for item in items),
+        mean_tool_jaccard=_mean(item.tool_jaccard for item in items),
+        mean_evidence_jaccard=_mean(item.evidence_jaccard for item in items),
+        adjudication_rate=_mean(item.requires_adjudication for item in items),
+    )
+
+
+def write_annotation_agreement_report(
+    report: AnnotationAgreementReport, output_directory: Path
+) -> tuple[Path, Path]:
+    output_directory.mkdir(parents=True, exist_ok=True)
+    json_path = output_directory / "phase8-annotation-agreement.json"
+    markdown_path = output_directory / "phase8-annotation-agreement.md"
+    _atomic_write(json_path, report.model_dump_json(indent=2))
+    _atomic_write(markdown_path, report.to_markdown())
+    return json_path, markdown_path
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
 
 
 def _mean(values: Iterable[float | bool]) -> float:

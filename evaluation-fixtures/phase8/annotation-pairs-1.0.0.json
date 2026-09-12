@@ -1,0 +1,82 @@
+{
+  "fixture_kind": "synthetic_protocol_fixture",
+  "dataset_version": "1.0.0",
+  "pairs": [
+    {
+      "case_id": "dev-camera-stream-timeout",
+      "first": {
+        "reviewer": "synthetic-reviewer-a",
+        "candidate_label": "overloaded_encoding_configuration",
+        "necessary_tools": ["device__query_status", "camera__read_stream"],
+        "necessary_evidence_types": ["device_status", "device_stream"],
+        "rationale": "设备在线但高码率下码流异常",
+        "confidence": "high"
+      },
+      "second": {
+        "reviewer": "synthetic-reviewer-b",
+        "candidate_label": "overloaded_encoding_configuration",
+        "necessary_tools": ["device__query_status", "camera__read_stream", "camera__check_platform_pull"],
+        "necessary_evidence_types": ["device_status", "device_stream", "platform_pull"],
+        "rationale": "需要同时排除平台拉流路径",
+        "confidence": "medium"
+      }
+    },
+    {
+      "case_id": "dev-recording-storage-full",
+      "first": {
+        "reviewer": "synthetic-reviewer-a",
+        "candidate_label": "storage_capacity_or_pool_issue",
+        "necessary_tools": ["storage__query_status", "recording__check_playback"],
+        "necessary_evidence_types": ["storage_status", "playback_check"],
+        "rationale": "存储满与回放缺失形成直接证据链",
+        "confidence": "high"
+      },
+      "second": {
+        "reviewer": "synthetic-reviewer-b",
+        "candidate_label": "storage_capacity_or_pool_issue",
+        "necessary_tools": ["storage__query_status", "recording__check_playback"],
+        "necessary_evidence_types": ["storage_status", "playback_check"],
+        "rationale": "录像计划有效但存储不可写",
+        "confidence": "high"
+      }
+    },
+    {
+      "case_id": "validation-access-time-window",
+      "first": {
+        "reviewer": "synthetic-reviewer-a",
+        "candidate_label": "access_time_window_denied",
+        "necessary_tools": ["access__query_policy", "access__search_events"],
+        "necessary_evidence_types": ["access_policy", "access_event"],
+        "rationale": "权限有效但刷卡时间越界",
+        "confidence": "high"
+      },
+      "second": {
+        "reviewer": "synthetic-reviewer-b",
+        "candidate_label": "access_time_window_denied",
+        "necessary_tools": ["access__query_policy", "access__search_events"],
+        "necessary_evidence_types": ["access_policy", "access_event"],
+        "rationale": "拒绝事件与时间策略相符",
+        "confidence": "high"
+      }
+    },
+    {
+      "case_id": "validation-alarm-weather",
+      "first": {
+        "reviewer": "synthetic-reviewer-a",
+        "candidate_label": "environment_interference",
+        "necessary_tools": ["alarm__query_environment", "alarm__verify_event"],
+        "necessary_evidence_types": ["alarm_environment", "alarm_verification"],
+        "rationale": "强降雨且事件复核为阴性",
+        "confidence": "high"
+      },
+      "second": {
+        "reviewer": "synthetic-reviewer-b",
+        "candidate_label": "verification_negative_false_alarm",
+        "necessary_tools": ["alarm__query_environment", "alarm__verify_event"],
+        "necessary_evidence_types": ["alarm_environment", "alarm_verification"],
+        "rationale": "阴性复核是最直接的误报依据",
+        "confidence": "medium"
+      }
+    }
+  ]
+}

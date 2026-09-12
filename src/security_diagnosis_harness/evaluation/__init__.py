@@ -10,11 +10,13 @@ from security_diagnosis_harness.evaluation.annotation import (
     AnnotationTask,
     BlindAnnotation,
     DatasetAdmissionCandidate,
+    FaultTypeAgreementSummary,
     adjudicate_annotations,
     build_annotation_agreement_report,
     build_annotation_task,
     compare_blind_annotations,
     validate_blind_annotation,
+    write_annotation_agreement_report,
 )
 from security_diagnosis_harness.evaluation.dataset import (
     DatasetCase,
@@ -85,6 +87,7 @@ __all__ = [
     "AnnotationTask",
     "BlindAnnotation",
     "DatasetAdmissionCandidate",
+    "FaultTypeAgreementSummary",
     "DatasetCase",
     "DatasetAdmissionError",
     "DatasetAdmissionReview",
@@ -134,6 +137,7 @@ __all__ = [
     "write_real_model_report",
     "validate_dataset_admission",
     "validate_blind_annotation",
+    "write_annotation_agreement_report",
     "EvaluationTaxonomy",
     "evaluation_taxonomy",
 ]
