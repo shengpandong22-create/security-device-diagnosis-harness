@@ -43,6 +43,7 @@ from security_diagnosis_harness.evaluation.real_model import (
     RealModelCaseResult,
     RealModelConfigurationError,
     RealModelEvaluationRunner,
+    RealModelReviewCandidate,
     RealModelSettings,
     build_whitelisted_model_input,
     write_real_model_report,
@@ -52,6 +53,10 @@ from security_diagnosis_harness.evaluation.review import (
     DatasetAdmissionReview,
     ReviewDecision,
     validate_dataset_admission,
+)
+from security_diagnosis_harness.evaluation.taxonomy import (
+    EvaluationTaxonomy,
+    evaluation_taxonomy,
 )
 
 __all__ = [
@@ -89,6 +94,7 @@ __all__ = [
     "RealModelConfigurationError",
     "RealModelEvaluationRunner",
     "RealModelSettings",
+    "RealModelReviewCandidate",
     "ReviewDecision",
     "RunIdentity",
     "ToolCallTrace",
@@ -98,4 +104,6 @@ __all__ = [
     "write_gate_report",
     "write_real_model_report",
     "validate_dataset_admission",
+    "EvaluationTaxonomy",
+    "evaluation_taxonomy",
 ]

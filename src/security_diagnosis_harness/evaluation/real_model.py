@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from security_diagnosis_harness.domain.redaction import redact_mapping, redact_text
 from security_diagnosis_harness.evaluation.dataset import DatasetCase
+from security_diagnosis_harness.evaluation.taxonomy import evaluation_taxonomy
 
 
 class RealModelConfigurationError(ValueError):
@@ -134,7 +135,9 @@ class OpenAICompatibleEvaluationClient:
                             "content": (
                                 "你是安防诊断评测模型。只基于输入事实返回 JSON，字段为 "
                                 "candidate_label、explanation、selected_tools、"
-                                "cited_evidence_types；不得返回 confirmed。"
+                                "cited_evidence_types；candidate_label 必须从输入的 "
+                                "candidate_label_options 选择，工具和证据类型必须从对应 "
+                                "allowed 列表选择；不得返回 confirmed。"
                             ),
                         },
                         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
@@ -189,6 +192,27 @@ class RealModelCaseResult(BaseModel):
     error_type: str | None = None
     call_count: int = 1
     expected_match: bool | None = None
+    candidate_label_valid: bool = False
+    tools_valid: bool = False
+    evidence_types_valid: bool = False
+    tool_precision: float = 0
+    tool_recall: float = 0
+    evidence_recall: float = 0
+    quality_errors: tuple[str, ...] = ()
+    review_pending: bool = False
+    review_reason: str | None = None
+
+
+class RealModelReviewCandidate(BaseModel):
+    """只读人工争议项；不会自动批准或修改数据集。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    case_id: str
+    expected_candidate: str
+    observed_candidate: str
+    reason: str
+    status: str = "review_pending"
 
 
 class RealModelBatchReport(BaseModel):
@@ -204,7 +228,13 @@ class RealModelBatchReport(BaseModel):
     completion_tokens: int
     estimated_cost: float
     candidate_accuracy: float
+    tool_precision: float
+    tool_recall: float
+    evidence_compliance: float
+    evidence_recall: float
+    review_pending_cases: int
     results: tuple[RealModelCaseResult, ...]
+    review_candidates: tuple[RealModelReviewCandidate, ...] = ()
 
     def to_markdown(self) -> str:
         lines = [
@@ -215,19 +245,27 @@ class RealModelBatchReport(BaseModel):
             f"- 案例数 / 调用数：`{self.total_cases}` / `{self.total_calls}`",
             f"- 成功 / 失败：`{self.successful_cases}` / `{self.failed_cases}`",
             f"- Candidate Accuracy：`{self.candidate_accuracy:.4f}`",
+            f"- Tool Precision / Recall：`{self.tool_precision:.4f}` / `{self.tool_recall:.4f}`",
+            (
+                "- Evidence Compliance / Recall："
+                f"`{self.evidence_compliance:.4f}` / `{self.evidence_recall:.4f}`"
+            ),
+            f"- 待人工复核：`{self.review_pending_cases}`",
             f"- Token：`{self.prompt_tokens}` input / `{self.completion_tokens}` output",
             f"- 估算成本：`{self.estimated_cost:.8f}`",
             "",
             "## 案例结果",
             "",
-            "| Case | 成功 | 模型版本 | 候选 | 匹配 | 时延(ms) | 错误 |",
-            "| --- | --- | --- | --- | --- | ---: | --- |",
+            "| Case | 成功 | 模型版本 | 候选 | 匹配 | 工具P/R | Evidence合规/R | 人工复核 | 错误 |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for item in self.results:
             lines.append(
                 f"| {item.case_id} | {item.ok} | {item.model_version} | "
                 f"{item.candidate_label or '-'} | {item.expected_match} | "
-                f"{item.latency_ms:.2f} | {item.error_type or '-'} |"
+                f"{item.tool_precision:.2f}/{item.tool_recall:.2f} | "
+                f"{item.evidence_types_valid}/{item.evidence_recall:.2f} | "
+                f"{item.review_pending} | {item.error_type or '-'} |"
             )
         return "\n".join(lines) + "\n"
 
@@ -265,10 +303,19 @@ class RealModelEvaluationRunner:
                 latency_ms = (time.perf_counter() - started) * 1000
                 estimated_cost = self._cost(response)
                 budget_error = _response_budget_error(case, response, estimated_cost)
+                quality = _grade_model_response(case, response)
+                errors = tuple(
+                    item
+                    for item in (
+                        budget_error,
+                        *quality.errors,
+                    )
+                    if item is not None
+                )
                 results.append(
                     RealModelCaseResult(
                         case_id=case.case_id,
-                        ok=budget_error is None,
+                        ok=not errors,
                         model_version=_safe_text(response.model_version),
                         candidate_label=_safe_text(response.candidate_label),
                         explanation=_safe_text(response.explanation),
@@ -280,12 +327,19 @@ class RealModelEvaluationRunner:
                         completion_tokens=response.completion_tokens,
                         latency_ms=latency_ms,
                         estimated_cost=estimated_cost,
-                        error_type=budget_error,
+                        error_type=errors[0] if errors else None,
                         expected_match=(
-                            response.candidate_label == case.expected_candidate
-                            if budget_error is None
-                            else None
+                            quality.candidate_correct if budget_error is None else None
                         ),
+                        candidate_label_valid=quality.candidate_label_valid,
+                        tools_valid=quality.tools_valid,
+                        evidence_types_valid=quality.evidence_types_valid,
+                        tool_precision=quality.tool_precision,
+                        tool_recall=quality.tool_recall,
+                        evidence_recall=quality.evidence_recall,
+                        quality_errors=errors,
+                        review_pending=quality.review_pending,
+                        review_reason=quality.review_reason,
                     )
                 )
             except ModelEvaluationError as exc:
@@ -312,7 +366,22 @@ class RealModelEvaluationRunner:
                 if results
                 else 0.0
             ),
+            tool_precision=_average(item.tool_precision for item in results),
+            tool_recall=_average(item.tool_recall for item in results),
+            evidence_compliance=_average(item.evidence_types_valid for item in results),
+            evidence_recall=_average(item.evidence_recall for item in results),
+            review_pending_cases=sum(item.review_pending for item in results),
             results=tuple(results),
+            review_candidates=tuple(
+                RealModelReviewCandidate(
+                    case_id=case.case_id,
+                    expected_candidate=case.expected_candidate,
+                    observed_candidate=result.candidate_label or "",
+                    reason=result.review_reason or "candidate_mismatch",
+                )
+                for case, result in zip(cases, results, strict=True)
+                if result.review_pending
+            ),
         )
 
     def _cost(self, response: EvaluationModelResponse) -> float:
@@ -327,16 +396,75 @@ def build_whitelisted_model_input(case: DatasetCase) -> dict[str, Any]:
     safe_facts, changed = redact_mapping(case.input_facts)
     if changed or safe_facts != case.input_facts:
         raise RealModelConfigurationError("案例输入未通过脱敏白名单")
+    taxonomy = evaluation_taxonomy(case.fault_type)
     return {
         "case_id": case.case_id,
         "fault_type": case.fault_type.value,
         "input_facts": safe_facts,
         "allowed_tools": list(case.allowed_tools),
+        "candidate_label_options": list(taxonomy.candidate_labels),
+        "allowed_evidence_types": [item.value for item in taxonomy.evidence_types],
         "budget": {
             "max_rounds": case.budget.max_rounds,
             "max_tool_calls": case.budget.max_tool_calls,
         },
     }
+
+
+@dataclass(frozen=True)
+class _ResponseQuality:
+    candidate_correct: bool
+    candidate_label_valid: bool
+    tools_valid: bool
+    evidence_types_valid: bool
+    tool_precision: float
+    tool_recall: float
+    evidence_recall: float
+    errors: tuple[str, ...]
+    review_pending: bool
+    review_reason: str | None
+
+
+def _grade_model_response(
+    case: DatasetCase, response: EvaluationModelResponse
+) -> _ResponseQuality:
+    taxonomy = evaluation_taxonomy(case.fault_type)
+    selected_tools = set(response.selected_tools)
+    expected_tools = set(case.expected_tools)
+    cited_types = set(response.cited_evidence_types)
+    required_types = {item.value for item in case.required_evidence_types}
+    allowed_types = {item.value for item in taxonomy.evidence_types}
+    candidate_valid = response.candidate_label in taxonomy.candidate_labels
+    tools_valid = bool(selected_tools) and selected_tools.issubset(case.allowed_tools)
+    evidence_valid = bool(cited_types) and cited_types.issubset(allowed_types)
+    errors: list[str] = []
+    if not candidate_valid:
+        errors.append("candidate_label_out_of_taxonomy")
+    if not tools_valid:
+        errors.append("tool_selection_invalid")
+    if not evidence_valid:
+        errors.append("evidence_type_out_of_taxonomy")
+    candidate_correct = candidate_valid and response.candidate_label == case.expected_candidate
+    review_pending = bool(response.candidate_label) and not candidate_correct
+    return _ResponseQuality(
+        candidate_correct=candidate_correct,
+        candidate_label_valid=candidate_valid,
+        tools_valid=tools_valid,
+        evidence_types_valid=evidence_valid,
+        tool_precision=(
+            len(selected_tools & expected_tools) / len(selected_tools) if selected_tools else 0.0
+        ),
+        tool_recall=len(selected_tools & expected_tools) / len(expected_tools),
+        evidence_recall=len(cited_types & required_types) / len(required_types),
+        errors=tuple(errors),
+        review_pending=review_pending,
+        review_reason="candidate_mismatch_or_semantic_equivalence" if review_pending else None,
+    )
+
+
+def _average(values: Sequence[float | bool]) -> float:
+    items = tuple(float(item) for item in values)
+    return sum(items) / len(items) if items else 0.0
 
 
 def _safe_text(text: str) -> str:
