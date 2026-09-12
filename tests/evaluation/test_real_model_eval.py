@@ -405,6 +405,7 @@ def test_openai_compatible_client_sends_one_request_and_parses_usage():
     assert len(requests) == 1
     assert requests[0].headers["authorization"] == "Bearer unit-test-key"
     assert json.loads(requests[0].content)["max_tokens"] == 123
+    assert json.loads(requests[0].content)["thinking"] == {"type": "disabled"}
     assert response.model_version == "server-model-v2"
     assert response.prompt_tokens == 12
     assert response.completion_tokens == 4
@@ -435,6 +436,33 @@ def test_invalid_provider_json_is_controlled():
     client = OpenAICompatibleEvaluationClient(_settings(), http)
     with pytest.raises(ModelEvaluationError, match="invalid_response"):
         client.evaluate({"facts": {}}, max_completion_tokens=100)
+
+
+@pytest.mark.parametrize(
+    ("choice", "error_type"),
+    [
+        (
+            {"finish_reason": "length", "message": {"content": "{}"}},
+            "output_truncated",
+        ),
+        ({"finish_reason": "stop", "message": {"content": ""}}, "empty_content"),
+        (
+            {"finish_reason": "stop", "message": {"content": "not-json"}},
+            "invalid_json",
+        ),
+    ],
+)
+def test_provider_output_failures_have_precise_safe_error_types(choice, error_type):
+    http = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"choices": [choice]})
+        ),
+        base_url="https://model.test",
+    )
+    client = OpenAICompatibleEvaluationClient(_settings(), http)
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=100)
+    assert excinfo.value.error_type == error_type
 
 
 def test_report_files_are_separate_and_contain_no_input_facts(validation_cases, tmp_path):

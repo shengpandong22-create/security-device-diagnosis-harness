@@ -128,6 +128,7 @@ class OpenAICompatibleEvaluationClient:
                     "model": self._settings.model_name,
                     "temperature": 0,
                     "max_tokens": max_completion_tokens,
+                    "thinking": {"type": "disabled"},
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {
@@ -146,7 +147,16 @@ class OpenAICompatibleEvaluationClient:
             )
             response.raise_for_status()
             body = response.json()
-            content = json.loads(body["choices"][0]["message"]["content"])
+            choice = body["choices"][0]
+            if choice.get("finish_reason") == "length":
+                raise ModelEvaluationError("output_truncated")
+            raw_content = choice["message"]["content"]
+            if not isinstance(raw_content, str) or not raw_content.strip():
+                raise ModelEvaluationError("empty_content")
+            try:
+                content = json.loads(raw_content)
+            except (TypeError, ValueError) as exc:
+                raise ModelEvaluationError("invalid_json") from exc
             usage = body.get("usage", {})
             return EvaluationModelResponse(
                 model_version=str(body.get("model") or self._settings.model_name),
@@ -161,6 +171,8 @@ class OpenAICompatibleEvaluationClient:
             raise ModelEvaluationError("timeout") from exc
         except httpx.HTTPStatusError as exc:
             raise ModelEvaluationError(f"http_{exc.response.status_code}") from exc
+        except ModelEvaluationError:
+            raise
         except (httpx.HTTPError, IndexError, KeyError, TypeError, ValueError) as exc:
             raise ModelEvaluationError("invalid_response") from exc
 
