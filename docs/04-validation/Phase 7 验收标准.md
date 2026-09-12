@@ -20,11 +20,13 @@ Phase 7B 补充验收：`CodeBasedGrader` 同时输出单案例 Findings 和 Sui
 
 ## 3. Phase 7C 版本门禁
 
-- [ ] 报告绑定 commit、数据集、模型、Prompt hash 和配置
-- [ ] candidate 与 baseline 保持单变量比较
-- [ ] 输出逐案例新增失败与已修复问题
-- [ ] 任一 P0 失败阻塞发布
-- [ ] 核心指标退化超过容差时进程返回非零
+- [x] 报告绑定 commit、数据集、模型、Prompt hash 和配置
+- [x] candidate 与 baseline 保持单变量比较
+- [x] 输出逐案例新增失败与已修复问题
+- [x] 任一 P0 失败阻塞发布
+- [x] 核心指标退化超过容差时进程返回非零
+
+Phase 7C 补充验收：`EvaluationRun` 不保存原始输入或密钥；比较时除 `code_commit` 外的实验变量必须完全一致，案例集合也必须一致；报告同时输出 JSON 与 Markdown，并列出指标 delta、逐案例新增失败和已修复问题。仓库基线明确标注为确定性协议基线，不冒充真实模型效果。
 
 ## 4. Phase 7D 真实模型与人工复核
 
