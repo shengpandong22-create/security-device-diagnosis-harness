@@ -34,8 +34,12 @@ Phase 7C 补充验收：`EvaluationRun` 不保存原始输入或密钥；比较�
 - [x] 调用次数、超时、token 和成本受预算限制
 - [x] 真实模型报告与 Fake 基线明确分离
 - [x] disputed 案例经过人工复核才能进入正式数据集
+- [x] 模型只看到完整候选目录，不看到案例 expected candidate / tools / Evidence
+- [x] 返回标签、工具、Evidence 类型执行严格目录校验
+- [x] 标签准确率、工具 Precision/Recall、Evidence Compliance/Recall 分项统计
+- [x] 疑似语义等价结果进入 `review_pending`，不自动归一化或篡改标准答案
 
-Phase 7D 工程验收已完成：外部模型入口默认关闭，必须显式传入 `--execute-real-model`；Validation/Test 每案例最多一次调用且不重试，报告记录模型版本、token、时延、错误类型和估算成本。当前环境未配置真实模型变量，因此没有伪造真实模型效果基线；配置后的首次真实运行属于独立运营验收。
+Phase 7D 工程验收已完成：外部模型入口默认关闭，必须显式传入 `--execute-real-model`；Validation/Test 每案例最多一次调用且不重试，报告记录模型版本、token、时延、错误类型、分项质量指标和估算成本。已使用 `deepseek-flash` 完成 2 个 Validation 案例的首次协议验证；该小样本不冒充生产准确率，协议增强后的正式 Baseline 仍需单独授权执行。
 
 ## 5. 总体验收
 

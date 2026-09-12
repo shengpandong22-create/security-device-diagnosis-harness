@@ -37,7 +37,7 @@
 | Phase 6C | 审计、一致性与备份恢复验收 | 已完成 |
 | Phase 7 | 分层数据集、Grader、版本门禁与低频真实模型评测 | 工程基线已完成 |
 
-Phase 7D 的真实模型入口默认关闭，不会因运行测试或启动 API 产生外部调用。人工确认输入范围后，使用独立环境变量配置 OpenAI-compatible 服务，并显式运行：
+Phase 7D 的真实模型入口默认关闭，不会因运行测试或启动 API 产生外部调用。模型只看到故障域完整候选标签和 Evidence 目录，不会看到案例标准答案；标签、工具和 Evidence 分项评分，语义争议进入人工复核。人工确认输入范围后，使用独立环境变量配置 OpenAI-compatible 服务，并显式运行：
 
 ```powershell
 $env:SECURITY_DIAGNOSIS_EVAL_BASE_URL = "https://provider.example/v1"

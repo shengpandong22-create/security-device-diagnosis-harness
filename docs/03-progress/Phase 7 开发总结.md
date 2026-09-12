@@ -13,6 +13,15 @@ Phase 7 把项目从“固定案例能够回归”推进到“数据集受治理
 | 7C | Baseline/Candidate 单变量比较，逐案例差异报告，P0 与核心指标退化门禁 |
 | 7D | OpenAI-compatible 低频评测入口、白名单输入、单次无重试、token/成本预算、人工争议准入 |
 
+### 7D 真实模型协议收尾
+
+首次 `deepseek-flash` Validation 实测完成 2 次调用且无协议失败。初始精确标签准确率为 0.5，其中报警案例输出与标准标签语义接近但命名越界。项目没有修改标准答案迎合模型，而是补齐以下治理：
+
+- 向模型公开故障域完整候选标签和标准 Evidence 类型，不发送案例期望答案；
+- 候选标签、工具和 Evidence 类型执行确定性枚举校验；
+- Candidate Accuracy、Tool Precision/Recall、Evidence Compliance/Recall 分开统计；
+- 合法但未命中、或疑似语义等价的标签生成 `review_pending` 项，不自动归一化或修改数据集。
+
 ## 3. 关键安全边界
 
 - Test Set 默认不可读，发布门禁必须显式授权；
@@ -24,7 +33,7 @@ Phase 7 把项目从“固定案例能够回归”推进到“数据集受治理
 
 ## 4. 当前未完成的外部验收
 
-当前机器没有配置 `SECURITY_DIAGNOSIS_EVAL_BASE_URL`、`SECURITY_DIAGNOSIS_EVAL_MODEL` 和 `SECURITY_DIAGNOSIS_EVAL_API_KEY`，因此本阶段没有访问外部模型，也没有生成真实模型效果基线。这是诚实的环境边界，不影响离线工程验收；首次真实运行需单独授权并保留报告。
+已使用 `deepseek-flash` 完成一次受控 Validation 协议验证：2 个案例、每案例一次、无自动重试。报告位于被 Git 忽略的 `demo-output/`，不包含 API Key 或原始期望答案。该小样本只能证明真实链路和评测协议可运行，不能作为生产准确率证明；协议增强后的新基线仍需单独授权复验。
 
 ## 5. 后续演进建议
 
