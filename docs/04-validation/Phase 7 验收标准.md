@@ -39,7 +39,7 @@ Phase 7C 补充验收：`EvaluationRun` 不保存原始输入或密钥；比较�
 - [x] 标签准确率、工具 Precision/Recall、Evidence Compliance/Recall 分项统计
 - [x] 疑似语义等价结果进入 `review_pending`，不自动归一化或篡改标准答案
 
-Phase 7D 工程验收已完成：外部模型入口默认关闭，必须显式传入 `--execute-real-model`；Validation/Test 每案例最多一次调用且不重试，报告记录模型版本、token、时延、错误类型、分项质量指标和估算成本。已使用 `deepseek-flash` 完成 2 个 Validation 案例的首次协议验证；该小样本不冒充生产准确率，协议增强后的正式 Baseline 仍需单独授权执行。
+Phase 7D 工程与真实模型协议验收已完成：外部模型入口默认关闭，必须显式传入 `--execute-real-model`；Validation/Test 每案例最多一次调用且不重试。增强后的 `deepseek-flash` Validation 基线为 Candidate Accuracy 1.0、Tool Precision 0.75、Tool Recall 1.0、Evidence Compliance/Recall 1.0。该结果仅覆盖 2 个案例，不冒充生产准确率；因未配置 token 单价，成本指标尚未形成有效基线。
 
 ## 5. 总体验收
 

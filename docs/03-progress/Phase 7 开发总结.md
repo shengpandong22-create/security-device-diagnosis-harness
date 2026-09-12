@@ -22,6 +22,8 @@ Phase 7 把项目从“固定案例能够回归”推进到“数据集受治理
 - Candidate Accuracy、Tool Precision/Recall、Evidence Compliance/Recall 分开统计；
 - 合法但未命中、或疑似语义等价的标签生成 `review_pending` 项，不自动归一化或修改数据集。
 
+增强协议后的受控复验结果为：2/2 调用成功、Candidate Accuracy 1.0、Tool Precision 0.75、Tool Recall 1.0、Evidence Compliance/Recall 1.0、无待复核案例。报警案例额外选择了两个允许但非必要的工具，因此工具精确率不是满分；这属于效率优化项，不是越权或诊断错误。脱敏结果已固化为 `evaluation-baselines/phase7/validation-1.0.0-deepseek-flash.json`。
+
 ## 3. 关键安全边界
 
 - Test Set 默认不可读，发布门禁必须显式授权；
@@ -33,7 +35,7 @@ Phase 7 把项目从“固定案例能够回归”推进到“数据集受治理
 
 ## 4. 当前未完成的外部验收
 
-已使用 `deepseek-flash` 完成一次受控 Validation 协议验证：2 个案例、每案例一次、无自动重试。报告位于被 Git 忽略的 `demo-output/`，不包含 API Key 或原始期望答案。该小样本只能证明真实链路和评测协议可运行，不能作为生产准确率证明；协议增强后的新基线仍需单独授权复验。
+已使用 `deepseek-flash` 完成受控 Validation 协议验证及增强后复验：每轮 2 个案例、每案例一次、无自动重试。原始运行报告位于被 Git 忽略的 `demo-output/`，版本化基线只保留脱敏评分结果，不包含输入事实、API Key 或服务地址。该小样本只能证明真实链路和评测协议可运行，不能作为生产准确率证明。由于未配置 token 单价，成本仍显示为 0，暂不具备成本基线意义。
 
 ## 5. 后续演进建议
 

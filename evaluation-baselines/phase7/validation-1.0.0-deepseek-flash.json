@@ -1,0 +1,72 @@
+{
+  "report_kind": "real_model",
+  "model_name": "deepseek-flash",
+  "dataset_version": "1.0.0",
+  "split": "validation",
+  "total_cases": 2,
+  "total_calls": 2,
+  "successful_cases": 2,
+  "failed_cases": 0,
+  "prompt_tokens": 638,
+  "completion_tokens": 193,
+  "estimated_cost": 0.0,
+  "candidate_accuracy": 1.0,
+  "tool_precision": 0.75,
+  "tool_recall": 1.0,
+  "evidence_compliance": 1.0,
+  "evidence_recall": 1.0,
+  "review_pending_cases": 0,
+  "cases": [
+    {
+      "case_id": "validation-access-time-window",
+      "candidate_label": "access_time_window_denied",
+      "expected_match": true,
+      "selected_tools": [
+        "access__query_policy",
+        "access__search_events"
+      ],
+      "cited_evidence_types": [
+        "access_policy",
+        "access_event"
+      ],
+      "tool_precision": 1.0,
+      "tool_recall": 1.0,
+      "evidence_recall": 1.0,
+      "latency_ms": 1226.769,
+      "quality_errors": []
+    },
+    {
+      "case_id": "validation-alarm-weather",
+      "candidate_label": "environment_interference",
+      "expected_match": true,
+      "selected_tools": [
+        "alarm__query_rule",
+        "alarm__query_signal",
+        "alarm__query_environment",
+        "alarm__verify_event"
+      ],
+      "cited_evidence_types": [
+        "alarm_rule",
+        "alarm_signal",
+        "alarm_environment",
+        "alarm_verification"
+      ],
+      "tool_precision": 0.5,
+      "tool_recall": 1.0,
+      "evidence_recall": 1.0,
+      "latency_ms": 932.6258,
+      "quality_errors": []
+    }
+  ],
+  "security": {
+    "contains_input_facts": false,
+    "contains_api_key": false,
+    "contains_base_url": false,
+    "automatic_retry": false
+  },
+  "limitations": [
+    "仅包含两个 Validation 案例，不能代表生产准确率",
+    "未配置 token 单价，因此 estimated_cost 不具备成本基线意义",
+    "报警案例包含两个允许但非必要的额外工具调用"
+  ]
+}
