@@ -1,12 +1,16 @@
 """诊断质量评测协议与数据集治理。"""
 
 from security_diagnosis_harness.evaluation.annotation import (
+    AdjudicationAction,
+    AdjudicationDecision,
     AnnotationAgreementReport,
     AnnotationConfidence,
     AnnotationDisagreement,
     AnnotationProtocolError,
     AnnotationTask,
     BlindAnnotation,
+    DatasetAdmissionCandidate,
+    adjudicate_annotations,
     build_annotation_agreement_report,
     build_annotation_task,
     compare_blind_annotations,
@@ -72,12 +76,15 @@ from security_diagnosis_harness.evaluation.taxonomy import (
 )
 
 __all__ = [
+    "AdjudicationAction",
+    "AdjudicationDecision",
     "AnnotationAgreementReport",
     "AnnotationConfidence",
     "AnnotationDisagreement",
     "AnnotationProtocolError",
     "AnnotationTask",
     "BlindAnnotation",
+    "DatasetAdmissionCandidate",
     "DatasetCase",
     "DatasetAdmissionError",
     "DatasetAdmissionReview",
@@ -118,6 +125,7 @@ __all__ = [
     "ToolCallTrace",
     "compare_runs",
     "build_whitelisted_model_input",
+    "adjudicate_annotations",
     "build_annotation_agreement_report",
     "build_annotation_task",
     "compare_blind_annotations",

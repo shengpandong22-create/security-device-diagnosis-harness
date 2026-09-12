@@ -25,6 +25,12 @@ class AnnotationConfidence(StrEnum):
     HIGH = "high"
 
 
+class AdjudicationAction(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+    NEEDS_REVISION = "needs_revision"
+
+
 _CONFIDENCE_SCORE = {
     AnnotationConfidence.LOW: 0.25,
     AnnotationConfidence.MEDIUM: 0.5,
@@ -54,6 +60,13 @@ class AnnotationTask(BaseModel):
             raise ValueError("盲标任务目录不能为空")
         if not self.allowed_evidence_types:
             raise ValueError("盲标任务 Evidence 目录不能为空")
+        taxonomy = evaluation_taxonomy(self.fault_type)
+        if self.candidate_label_options != taxonomy.candidate_labels:
+            raise ValueError("盲标任务必须公开完整候选标签目录")
+        if self.allowed_evidence_types != taxonomy.evidence_types:
+            raise ValueError("盲标任务必须公开完整 Evidence 目录")
+        if len(set(self.allowed_tools)) != len(self.allowed_tools):
+            raise ValueError("盲标任务工具目录不允许重复")
         return self
 
 
@@ -105,6 +118,60 @@ class AnnotationAgreementReport(BaseModel):
     adjudication_rate: float = Field(ge=0, le=1)
 
 
+class AdjudicationDecision(BaseModel):
+    """显式裁决记录；裁决本身仍不修改任何数据集文件。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    adjudication_id: str = Field(default_factory=lambda: new_id("adjudication"))
+    task_id: str = Field(min_length=1)
+    first_annotation_id: str = Field(min_length=1)
+    second_annotation_id: str = Field(min_length=1)
+    adjudicator: str = Field(min_length=1)
+    action: AdjudicationAction
+    final_candidate_label: str | None = None
+    final_tools: tuple[str, ...] = ()
+    final_evidence_types: tuple[EvidenceType, ...] = ()
+    rationale: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _redact_and_validate_shape(self) -> AdjudicationDecision:
+        adjudicator, _ = redact_text(self.adjudicator)
+        rationale, _ = redact_text(self.rationale)
+        object.__setattr__(self, "adjudicator", adjudicator)
+        object.__setattr__(self, "rationale", rationale)
+        if self.action is AdjudicationAction.APPROVE and (
+            not self.final_candidate_label
+            or not self.final_tools
+            or not self.final_evidence_types
+        ):
+            raise ValueError("approve 裁决必须给出完整标签、工具和 Evidence")
+        if self.action is not AdjudicationAction.APPROVE and (
+            self.final_candidate_label or self.final_tools or self.final_evidence_types
+        ):
+            raise ValueError("非 approve 裁决不得携带最终标准答案")
+        return self
+
+
+class DatasetAdmissionCandidate(BaseModel):
+    """裁决后的只读准入候选；它不是 DatasetCase，也没有写盘能力。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    candidate_id: str = Field(default_factory=lambda: new_id("dataset_candidate"))
+    task_id: str
+    source_case_id: str
+    fault_type: SecurityFaultType
+    proposed_candidate_label: str
+    proposed_expected_tools: tuple[str, ...]
+    proposed_required_evidence_types: tuple[EvidenceType, ...]
+    annotation_ids: tuple[str, str]
+    adjudication_id: str
+    adjudicator: str
+    rationale: str
+    status: str = "candidate"
+
+
 def build_annotation_task(case: DatasetCase) -> AnnotationTask:
     """从案例构建盲标视图，刻意不复制 expected/source/split/budget 字段。"""
     taxonomy = evaluation_taxonomy(case.fault_type)
@@ -121,6 +188,11 @@ def build_annotation_task(case: DatasetCase) -> AnnotationTask:
 def validate_blind_annotation(
     task: AnnotationTask, annotation: BlindAnnotation
 ) -> BlindAnnotation:
+    try:
+        task = AnnotationTask.model_validate(task.model_dump(mode="python"))
+        annotation = BlindAnnotation.model_validate(annotation.model_dump(mode="python"))
+    except ValueError as exc:
+        raise AnnotationProtocolError("盲标任务或标注意见未通过协议复验") from exc
     if annotation.task_id != task.task_id:
         raise AnnotationProtocolError("标注意见不属于当前盲标任务")
     if annotation.candidate_label not in task.candidate_label_options:
@@ -149,6 +221,8 @@ def compare_blind_annotations(
 ) -> AnnotationDisagreement:
     first = validate_blind_annotation(task, first)
     second = validate_blind_annotation(task, second)
+    if first.annotation_id == second.annotation_id:
+        raise AnnotationProtocolError("两份盲标意见必须具有不同 annotation_id")
     if first.reviewer == second.reviewer:
         raise AnnotationProtocolError("双人盲标必须由两名不同标注员完成")
     label_agrees = first.candidate_label == second.candidate_label
@@ -188,6 +262,54 @@ def build_annotation_agreement_report(
         mean_confidence_delta=_mean(item.confidence_delta for item in disagreements),
         label_kappa=_cohen_kappa(disagreements),
         adjudication_rate=_mean(item.requires_adjudication for item in disagreements),
+    )
+
+
+def adjudicate_annotations(
+    task: AnnotationTask,
+    first: BlindAnnotation,
+    second: BlindAnnotation,
+    decision: AdjudicationDecision,
+) -> DatasetAdmissionCandidate:
+    """执行显式裁决并返回准入候选；拒绝或待修订不会产生候选。"""
+    try:
+        task = AnnotationTask.model_validate(task.model_dump(mode="python"))
+        decision = AdjudicationDecision.model_validate(decision.model_dump(mode="python"))
+    except ValueError as exc:
+        raise AnnotationProtocolError("裁决记录未通过协议复验") from exc
+    first = validate_blind_annotation(task, first)
+    second = validate_blind_annotation(task, second)
+    compare_blind_annotations(task, first, second)
+    expected_ids = {first.annotation_id, second.annotation_id}
+    decision_ids = {decision.first_annotation_id, decision.second_annotation_id}
+    if decision.task_id != task.task_id or decision_ids != expected_ids:
+        raise AnnotationProtocolError("裁决记录与盲标任务或两份标注意见不匹配")
+    if decision.adjudicator in {first.reviewer, second.reviewer}:
+        raise AnnotationProtocolError("裁决人必须独立于两名盲标员")
+    if decision.action is not AdjudicationAction.APPROVE:
+        raise AnnotationProtocolError("只有显式 approve 裁决才能生成准入候选")
+    final_label = decision.final_candidate_label
+    if final_label is None or final_label not in task.candidate_label_options:
+        raise AnnotationProtocolError("裁决标签不在当前故障域目录")
+    if not set(decision.final_tools).issubset(task.allowed_tools):
+        raise AnnotationProtocolError("裁决工具不在任务允许目录")
+    if not set(decision.final_evidence_types).issubset(task.allowed_evidence_types):
+        raise AnnotationProtocolError("裁决 Evidence 不在标准目录")
+    if len(set(decision.final_tools)) != len(decision.final_tools):
+        raise AnnotationProtocolError("裁决工具不允许重复")
+    if len(set(decision.final_evidence_types)) != len(decision.final_evidence_types):
+        raise AnnotationProtocolError("裁决 Evidence 不允许重复")
+    return DatasetAdmissionCandidate(
+        task_id=task.task_id,
+        source_case_id=task.case_id,
+        fault_type=task.fault_type,
+        proposed_candidate_label=final_label,
+        proposed_expected_tools=decision.final_tools,
+        proposed_required_evidence_types=decision.final_evidence_types,
+        annotation_ids=(first.annotation_id, second.annotation_id),
+        adjudication_id=decision.adjudication_id,
+        adjudicator=decision.adjudicator,
+        rationale=decision.rationale,
     )
 
 
