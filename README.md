@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0～6 已完成；Phase 7A～7C 数据集、Grader 与版本门禁已完成，Phase 7D 待实施。
+- 当前阶段：Phase 0～7 工程基线已完成；首次真实模型运行仍需外部配置与人工授权。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -35,7 +35,18 @@
 | Phase 6B-1 | 正式运行装配（SQLite）与真实重启恢复 | 已完成 |
 | Phase 6B-2 | 乐观锁与并发状态更新保护 | 已完成 |
 | Phase 6C | 审计、一致性与备份恢复验收 | 已完成 |
-| Phase 7 | 分层数据集、Grader 与版本回归门禁 | 7A～7C 已完成 |
+| Phase 7 | 分层数据集、Grader、版本门禁与低频真实模型评测 | 工程基线已完成 |
+
+Phase 7D 的真实模型入口默认关闭，不会因运行测试或启动 API 产生外部调用。人工确认输入范围后，使用独立环境变量配置 OpenAI-compatible 服务，并显式运行：
+
+```powershell
+$env:SECURITY_DIAGNOSIS_EVAL_BASE_URL = "https://provider.example/v1"
+$env:SECURITY_DIAGNOSIS_EVAL_MODEL = "model-name"
+$env:SECURITY_DIAGNOSIS_EVAL_API_KEY = "<read-from-secure-store>"
+uv run python scripts/eval_phase7_real_model.py --split validation --execute-real-model
+```
+
+API Key 不得写入 README、`.env` 或提交记录。该报告固定标记为 `real_model`，不能与 Fake/确定性协议基线合并宣称准确率。
 
 Phase 6C 提供追加式审计、只读一致性扫描与 SQLite 安全备份恢复：
 
