@@ -13,6 +13,8 @@ Phase 8A-1 已完成：盲标任务不复制 expected、source、split 或模型
 
 Phase 8A-2 已完成：approve/reject/needs_revision 具有明确语义；裁决人必须独立于两名盲标员；一致与分歧案例都必须显式 approve 才能生成 `DatasetAdmissionCandidate`；候选对象不包含事实、数据集版本或 split，也不具备写文件能力。所有 Task、Annotation 和 Decision 在裁决边界重新构造校验，阻断 `model_copy` 绕过。
 
+Phase 8A-3 已完成：四个故障域各提供 1 组合成盲标协议夹具，固定报告的标签一致率为 0.75、工具/Evidence Jaccard 均为 11/12、标签 kappa 为 0.6923、待裁决率为 0.5；JSON/Markdown 报告不保存事实、reviewer 或 rationale。该结果只验证标注治理协议，不冒充真实专家一致性。
+
 ## 2. Phase 8B 失败归因
 
 - [ ] 每条 Finding 映射到稳定阶段和责任域
