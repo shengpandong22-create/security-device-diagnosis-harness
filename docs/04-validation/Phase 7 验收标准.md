@@ -11,10 +11,12 @@ Phase 7A 补充验收：Test Set 默认不可读取，只有发布门禁显式�
 
 ## 2. Phase 7B Grader
 
-- [ ] 端到端与步骤级指标均可计算
-- [ ] 权限、敏感信息、confirmed 越权由代码规则判定
-- [ ] 工具选择、参数、重复调用和 Evidence 链可评分
-- [ ] Grader 自身有正反例测试
+- [x] 端到端与步骤级指标均可计算
+- [x] 权限、敏感信息、confirmed 越权由代码规则判定
+- [x] 工具选择、参数、重复调用和 Evidence 链可评分
+- [x] Grader 自身有正反例测试
+
+Phase 7B 补充验收：`CodeBasedGrader` 同时输出单案例 Findings 和 Suite 聚合指标；自动 confirmed、敏感泄漏、越权工具、跨故障域、轮次/工具/模型/超时预算超限均为 P0；候选准确率与 macro-F1、Citation、unsupported claim、工具 precision/recall、参数、重复失败、Evidence 覆盖/归属/可信度、轮次、时延和成本均可确定性计算。模型 Grader 不得覆盖这些结果。
 
 ## 3. Phase 7C 版本门禁
 
