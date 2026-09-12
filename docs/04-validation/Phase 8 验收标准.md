@@ -5,11 +5,13 @@
 - [x] AnnotationTask 不包含 expected、模型输出或 Test Set 答案
 - [x] 两名不同标注员独立提交，标签和引用值均受目录约束
 - [x] 标签、工具、Evidence 分歧可确定性计算
-- [ ] 无分歧仍需显式裁决，有分歧无裁决不得准入
-- [ ] 裁决只产生 DatasetAdmissionCandidate，不自动写数据集
+- [x] 无分歧仍需显式裁决，有分歧无裁决不得准入
+- [x] 裁决只产生 DatasetAdmissionCandidate，不自动写数据集
 - [x] 标注一致率、Jaccard 和标签 kappa 可计算
 
 Phase 8A-1 已完成：盲标任务不复制 expected、source、split 或模型输出；候选标签、工具和 Evidence 必须来自完整目录；同一 reviewer 不能冒充双人标注；报告输出标签一致率、工具/Evidence Jaccard、置信度差、Cohen's kappa 和裁决率。裁决及数据集准入候选留给 8A-2。
+
+Phase 8A-2 已完成：approve/reject/needs_revision 具有明确语义；裁决人必须独立于两名盲标员；一致与分歧案例都必须显式 approve 才能生成 `DatasetAdmissionCandidate`；候选对象不包含事实、数据集版本或 split，也不具备写文件能力。所有 Task、Annotation 和 Decision 在裁决边界重新构造校验，阻断 `model_copy` 绕过。
 
 ## 2. Phase 8B 失败归因
 
