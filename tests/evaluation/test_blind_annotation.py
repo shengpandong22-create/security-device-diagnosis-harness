@@ -73,7 +73,9 @@ def test_annotation_task_exposes_complete_options(task):
 
 def test_valid_annotation_is_accepted(task):
     annotation = _annotation(task)
-    assert validate_blind_annotation(task, annotation) is annotation
+    validated = validate_blind_annotation(task, annotation)
+    assert validated == annotation
+    assert validated is not annotation
 
 
 @pytest.mark.parametrize(
