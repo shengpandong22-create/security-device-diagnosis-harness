@@ -40,12 +40,14 @@ class RecordingClient:
         self.payloads.append(payload)
         if self.fail_first and len(self.payloads) == 1:
             raise ModelEvaluationError("timeout")
+        candidate = payload["candidate_label_options"][0]
+        evidence_type = payload["allowed_evidence_types"][0]
         return EvaluationModelResponse(
             model_version="model-v1",
-            candidate_label="candidate",
+            candidate_label=candidate,
             explanation="reason",
-            selected_tools=("tool-a",),
-            cited_evidence_types=("device_status",),
+            selected_tools=(payload["allowed_tools"][0],),
+            cited_evidence_types=(evidence_type,),
             prompt_tokens=100,
             completion_tokens=20,
         )
@@ -68,11 +70,36 @@ def _settings(**changes):
 def test_whitelist_excludes_expected_answers_and_source(validation_cases):
     payload = build_whitelisted_model_input(validation_cases[0])
     dumped = json.dumps(payload, ensure_ascii=False)
-    assert set(payload) == {"case_id", "fault_type", "input_facts", "allowed_tools", "budget"}
+    assert set(payload) == {
+        "case_id",
+        "fault_type",
+        "input_facts",
+        "allowed_tools",
+        "candidate_label_options",
+        "allowed_evidence_types",
+        "budget",
+    }
     assert "expected_candidate" not in dumped
     assert "required_evidence_types" not in dumped
     assert "source_record_id" not in dumped
     assert "template_group_id" not in dumped
+    assert set(validation_cases[0].expected_tools) != set(payload["allowed_tools"])
+    assert set(validation_cases[0].required_evidence_types) != set(
+        payload["allowed_evidence_types"]
+    )
+
+
+def test_whitelist_exposes_complete_options_not_case_answer(validation_cases):
+    first, second = validation_cases
+    first_payload = build_whitelisted_model_input(first)
+    second_payload = build_whitelisted_model_input(second)
+    assert len(first_payload["candidate_label_options"]) > 1
+    assert len(second_payload["candidate_label_options"]) > 1
+    assert first.expected_candidate in first_payload["candidate_label_options"]
+    assert second.expected_candidate in second_payload["candidate_label_options"]
+    assert "expected_candidate" not in first_payload
+    assert "expected_tools" not in first_payload
+    assert "required_evidence_types" not in first_payload
 
 
 def test_runner_calls_every_case_exactly_once(validation_cases):
@@ -84,6 +111,8 @@ def test_runner_calls_every_case_exactly_once(validation_cases):
     assert all(item.call_count == 1 for item in report.results)
     assert report.report_kind == "real_model"
     assert report.candidate_accuracy == 0
+    assert report.review_pending_cases == 2
+    assert len(report.review_candidates) == 2
 
 
 def test_failure_is_recorded_without_retry_and_next_case_continues(validation_cases):
@@ -101,6 +130,86 @@ def test_token_and_cost_are_aggregated(validation_cases):
     assert report.prompt_tokens == 200
     assert report.completion_tokens == 40
     assert report.estimated_cost == pytest.approx(0.00056)
+
+
+def test_exact_canonical_response_gets_separate_quality_scores(validation_cases):
+    case = validation_cases[0]
+
+    class ExactClient:
+        def evaluate(self, payload, *, max_completion_tokens):
+            return EvaluationModelResponse(
+                model_version="model-v1",
+                candidate_label=case.expected_candidate,
+                explanation="reason",
+                selected_tools=case.expected_tools,
+                cited_evidence_types=tuple(
+                    item.value for item in case.required_evidence_types
+                ),
+            )
+
+    report = RealModelEvaluationRunner(ExactClient(), _settings()).run((case,))
+    result = report.results[0]
+    assert result.ok is True
+    assert result.candidate_label_valid is True
+    assert result.tools_valid is True
+    assert result.evidence_types_valid is True
+    assert result.tool_precision == 1
+    assert result.tool_recall == 1
+    assert result.evidence_recall == 1
+    assert result.review_pending is False
+    assert report.candidate_accuracy == 1
+    assert report.evidence_compliance == 1
+
+
+def test_out_of_taxonomy_response_fails_and_enters_review(validation_cases):
+    case = validation_cases[1]
+
+    class UnboundedClient:
+        def evaluate(self, payload, *, max_completion_tokens):
+            return EvaluationModelResponse(
+                model_version="model-v1",
+                candidate_label="environmental_interference_suspected_false_positive",
+                explanation="语义接近但不是规范标签",
+                selected_tools=("unknown__tool",),
+                cited_evidence_types=("environment",),
+            )
+
+    report = RealModelEvaluationRunner(UnboundedClient(), _settings()).run((case,))
+    result = report.results[0]
+    assert result.ok is False
+    assert result.quality_errors == (
+        "candidate_label_out_of_taxonomy",
+        "tool_selection_invalid",
+        "evidence_type_out_of_taxonomy",
+    )
+    assert result.review_pending is True
+    assert report.review_pending_cases == 1
+    assert report.review_candidates[0].status == "review_pending"
+    assert report.review_candidates[0].observed_candidate == result.candidate_label
+
+
+def test_valid_but_wrong_candidate_is_not_auto_normalized(validation_cases):
+    case = validation_cases[0]
+
+    class WrongClient:
+        def evaluate(self, payload, *, max_completion_tokens):
+            return EvaluationModelResponse(
+                model_version="model-v1",
+                candidate_label=payload["candidate_label_options"][0],
+                explanation="wrong",
+                selected_tools=case.expected_tools,
+                cited_evidence_types=tuple(
+                    item.value for item in case.required_evidence_types
+                ),
+            )
+
+    report = RealModelEvaluationRunner(WrongClient(), _settings()).run((case,))
+    result = report.results[0]
+    assert result.ok is True
+    assert result.expected_match is False
+    assert result.review_pending is True
+    assert report.candidate_accuracy == 0
+    assert report.review_candidates[0].expected_candidate == case.expected_candidate
 
 
 @pytest.mark.parametrize(
