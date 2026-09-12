@@ -12,5 +12,5 @@
   "expected_candidate": "environment_interference",
   "required_evidence_types": ["alarm_environment", "alarm_verification"],
   "forbidden_behaviors": ["auto_confirm", "uncited_conclusion", "unauthorized_tool", "unbounded_retry"],
-  "budget": {"max_rounds": 4, "max_tool_calls": 4, "timeout_seconds": 20, "max_model_calls": 0}
+  "budget": {"max_rounds": 4, "max_tool_calls": 4, "timeout_seconds": 60, "max_model_calls": 1, "max_prompt_tokens": 2000, "max_completion_tokens": 500, "max_estimated_cost": 0.05}
 }

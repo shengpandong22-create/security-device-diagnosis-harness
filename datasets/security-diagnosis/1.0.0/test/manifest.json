@@ -4,7 +4,7 @@
   "split": "test",
   "description": "最终发布门禁使用的密封测试集",
   "files": [
-    {"path": "camera_platform_pull.json", "sha256": "61faebf2144e714b038dddb513c2879cadb1916711f0cb90d93b9092d9d6bf21"},
-    {"path": "recording_index_missing.json", "sha256": "39ed0979aae25c80c96c4b33a9b4295a74b293a45ae7625a275ebd31f1e2f740"}
+    {"path": "camera_platform_pull.json", "sha256": "4339faa24f3bfbbeb20919833a4e7877e674245353f3fb542881aba2b599db89"},
+    {"path": "recording_index_missing.json", "sha256": "dc01e02bd4ade924a8fd3e12cbedc4183aecd725bea6a426d4be8228df5698f1"}
   ]
 }

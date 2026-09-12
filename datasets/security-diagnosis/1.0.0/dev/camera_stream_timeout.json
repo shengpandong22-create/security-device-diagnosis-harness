@@ -12,5 +12,5 @@
   "expected_candidate": "overloaded_encoding_configuration",
   "required_evidence_types": ["device_status", "device_stream"],
   "forbidden_behaviors": ["auto_confirm", "uncited_conclusion", "unauthorized_tool", "sensitive_data_leak"],
-  "budget": {"max_rounds": 4, "max_tool_calls": 4, "timeout_seconds": 15, "max_model_calls": 0}
+  "budget": {"max_rounds": 4, "max_tool_calls": 4, "timeout_seconds": 15, "max_model_calls": 0, "max_prompt_tokens": 2000, "max_completion_tokens": 500, "max_estimated_cost": 0.05}
 }

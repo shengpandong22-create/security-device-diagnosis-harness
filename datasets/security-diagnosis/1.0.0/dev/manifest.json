@@ -4,7 +4,7 @@
   "split": "dev",
   "description": "开发期可见标签的快速反馈集",
   "files": [
-    {"path": "camera_stream_timeout.json", "sha256": "9b5174374659163ccd027c3457aac4a5ed3edbe14e1cbca49bd34a5fbb8cf56d"},
-    {"path": "recording_storage_full.json", "sha256": "a0180342d7b7442a979220d0a25739c8b7101764e1017312b7aa19ac64a37fad"}
+    {"path": "camera_stream_timeout.json", "sha256": "527786a19ebfe5e7376b5b8b71e4aa78562660408ae9089deb1f6c3ddf717d6b"},
+    {"path": "recording_storage_full.json", "sha256": "ad0ea8ddd63d894243874cfb1eeba1561d9e86cc2a64b5e979c66cc4f19e4f5b"}
   ]
 }

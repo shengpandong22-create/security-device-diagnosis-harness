@@ -50,6 +50,9 @@ class EvaluationBudget(BaseModel):
     max_tool_calls: int = Field(ge=0, le=50)
     timeout_seconds: int = Field(ge=1, le=300)
     max_model_calls: int = Field(default=0, ge=0, le=10)
+    max_prompt_tokens: int = Field(default=2000, ge=1, le=100_000)
+    max_completion_tokens: int = Field(default=500, ge=1, le=10_000)
+    max_estimated_cost: float = Field(default=0.05, ge=0, le=100)
 
 
 class DatasetCase(BaseModel):

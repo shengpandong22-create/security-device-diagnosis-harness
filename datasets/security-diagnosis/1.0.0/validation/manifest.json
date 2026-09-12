@@ -4,7 +4,7 @@
   "split": "validation",
   "description": "用于版本选择且禁止个案调参的留出集",
   "files": [
-    {"path": "access_time_window.json", "sha256": "9855b225c132b55f98ba6e2a800913c016c861cf68348d4e3279f9033f4db5f0"},
-    {"path": "alarm_weather_interference.json", "sha256": "c2f9e1149ded259b682743a35377feb30d6b0b3b086012da00605f1c6f934f85"}
+    {"path": "access_time_window.json", "sha256": "1d629ddec580217a92fe6de5076ac89f16123380ffa4149035fa25a6758598fc"},
+    {"path": "alarm_weather_interference.json", "sha256": "e9cc5c93bc6637ccc4b0c0b1e52004c75e253f793ae6511573a78864a008302e"}
   ]
 }
