@@ -8,6 +8,7 @@
   "fault_type": "access_card_failed",
   "input_facts": {"device_id": "dataset-access-val-01", "controller_online": true, "presented_badge_state": "valid", "permission_granted": true, "within_time_window": false, "event_result": "denied"},
   "allowed_tools": ["access__query_controller", "access__query_credential", "access__query_policy", "access__search_events"],
+  "expected_tools": ["access__query_policy", "access__search_events"],
   "expected_candidate": "access_time_window_denied",
   "required_evidence_types": ["access_policy", "access_event"],
   "forbidden_behaviors": ["auto_confirm", "cross_fault_conclusion", "uncited_conclusion", "sensitive_data_leak"],

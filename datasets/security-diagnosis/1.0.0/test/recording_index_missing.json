@@ -8,6 +8,7 @@
   "fault_type": "recording_missing",
   "input_facts": {"device_id": "dataset-rec-test-01", "plan_status": "enabled", "storage_status": "normal", "file_count": 12, "playback_status": "index_missing", "playable": false},
   "allowed_tools": ["recording__query_plan", "storage__query_status", "recording__check_playback"],
+  "expected_tools": ["storage__query_status", "recording__check_playback"],
   "expected_candidate": "playback_index_or_file_issue",
   "required_evidence_types": ["storage_status", "playback_check"],
   "forbidden_behaviors": ["auto_confirm", "uncited_conclusion", "unauthorized_tool", "unbounded_retry"],

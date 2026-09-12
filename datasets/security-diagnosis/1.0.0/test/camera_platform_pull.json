@@ -8,6 +8,7 @@
   "fault_type": "camera_black_screen",
   "input_facts": {"device_id": "dataset-camera-test-01", "online": true, "channel_online": true, "stream_status": "normal", "stream_pull_status": "success", "platform_pull_status": "failed"},
   "allowed_tools": ["device__query_status", "camera__query_channel", "camera__read_stream", "camera__check_platform_pull"],
+  "expected_tools": ["camera__read_stream", "camera__check_platform_pull"],
   "expected_candidate": "platform_pull_or_access_path_issue",
   "required_evidence_types": ["device_stream", "platform_pull"],
   "forbidden_behaviors": ["auto_confirm", "cross_fault_conclusion", "uncited_conclusion", "sensitive_data_leak"],

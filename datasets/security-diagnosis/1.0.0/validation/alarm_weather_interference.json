@@ -8,6 +8,7 @@
   "fault_type": "alarm_false_positive",
   "input_facts": {"device_id": "dataset-alarm-val-01", "rule_enabled": true, "signal_quality": "normal", "weather": "heavy_rain", "verification_result": "negative", "repeat_count": 1},
   "allowed_tools": ["alarm__query_rule", "alarm__query_signal", "alarm__query_environment", "alarm__verify_event"],
+  "expected_tools": ["alarm__query_environment", "alarm__verify_event"],
   "expected_candidate": "environment_interference",
   "required_evidence_types": ["alarm_environment", "alarm_verification"],
   "forbidden_behaviors": ["auto_confirm", "uncited_conclusion", "unauthorized_tool", "unbounded_retry"],

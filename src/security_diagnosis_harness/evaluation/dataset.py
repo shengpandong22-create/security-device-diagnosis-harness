@@ -66,6 +66,7 @@ class DatasetCase(BaseModel):
     fault_type: SecurityFaultType
     input_facts: dict[str, Any]
     allowed_tools: tuple[str, ...]
+    expected_tools: tuple[str, ...]
     expected_candidate: str = Field(min_length=1)
     required_evidence_types: tuple[EvidenceType, ...]
     forbidden_behaviors: tuple[ForbiddenBehavior, ...]
@@ -77,6 +78,10 @@ class DatasetCase(BaseModel):
             raise ValueError("input_facts 不能为空")
         if not self.allowed_tools:
             raise ValueError("allowed_tools 不能为空")
+        if not self.expected_tools:
+            raise ValueError("expected_tools 不能为空")
+        if not set(self.expected_tools).issubset(self.allowed_tools):
+            raise ValueError("expected_tools 必须是 allowed_tools 的子集")
         if len(set(self.allowed_tools)) != len(self.allowed_tools):
             raise ValueError("allowed_tools 不允许重复")
         if not self.required_evidence_types:

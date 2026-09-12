@@ -12,6 +12,17 @@ from security_diagnosis_harness.evaluation.dataset import (
     TestSetAccessError,
     load_dataset_split,
 )
+from security_diagnosis_harness.evaluation.grader import (
+    CaseGrade,
+    CodeBasedGrader,
+    EvaluationOutput,
+    EvidenceTrace,
+    FindingLevel,
+    GraderFinding,
+    SuiteGrade,
+    SuiteMetrics,
+    ToolCallTrace,
+)
 
 __all__ = [
     "DatasetCase",
@@ -20,8 +31,17 @@ __all__ = [
     "DatasetProtocolError",
     "DatasetRegistry",
     "DatasetSplit",
+    "CaseGrade",
+    "CodeBasedGrader",
+    "EvaluationOutput",
+    "EvidenceTrace",
     "EvaluationBudget",
     "ForbiddenBehavior",
+    "FindingLevel",
+    "GraderFinding",
     "TestSetAccessError",
+    "SuiteGrade",
+    "SuiteMetrics",
+    "ToolCallTrace",
     "load_dataset_split",
 ]
