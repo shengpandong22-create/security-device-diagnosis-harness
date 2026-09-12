@@ -42,6 +42,8 @@ def test_cases_contain_complete_evaluation_contract(registry: DatasetRegistry):
             assert case.dataset_version == "1.0.0"
             assert case.input_facts
             assert case.allowed_tools
+            assert case.expected_tools
+            assert set(case.expected_tools).issubset(case.allowed_tools)
             assert case.expected_candidate
             assert case.required_evidence_types
             assert case.forbidden_behaviors
