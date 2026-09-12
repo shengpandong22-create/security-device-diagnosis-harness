@@ -1,0 +1,73 @@
+{
+  "run_id": "phase7-dev-1.0.0-deterministic-reference",
+  "created_at": "2026-09-12T00:00:00Z",
+  "identity": {
+    "code_commit": "ecc22fb0cba9d821bf20148f1fe11ac08836ba07",
+    "dataset_name": "security-diagnosis",
+    "dataset_version": "1.0.0",
+    "split": "dev",
+    "runner_name": "deterministic-reference",
+    "model_name": "fake-llm",
+    "model_parameters": {"temperature": 0},
+    "prompt_hash": "a021bacf89c4d998a2e52bbe092c54d36bbd14accd7f88623b83bb9c35528913",
+    "configuration_hash": "3c16911a9d62ab3e76c72f1a8417290dd25910448a53a7203e398adeaf5f2fdc",
+    "environment": {"python": "3.12", "platform": "portable"}
+  },
+  "grade": {
+    "metrics": {
+      "total": 2,
+      "pass_rate": 1.0,
+      "task_completion_rate": 1.0,
+      "controlled_degradation_rate": 0.0,
+      "candidate_accuracy": 1.0,
+      "candidate_macro_f1": 1.0,
+      "citation_compliance": 1.0,
+      "unsupported_claim_rate": 0.0,
+      "tool_precision": 1.0,
+      "tool_recall": 1.0,
+      "parameter_valid_rate": 1.0,
+      "fault_type_match_rate": 1.0,
+      "repeated_failed_call_rate": 0.0,
+      "evidence_coverage": 1.0,
+      "evidence_ownership_rate": 1.0,
+      "evidence_reliability_rate": 1.0,
+      "average_rounds": 2.0,
+      "average_tool_calls": 2.0,
+      "average_latency_ms": 0.0,
+      "estimated_cost": 0.0,
+      "p0_failure_count": 0
+    },
+    "cases": [
+      {
+        "case_id": "dev-camera-stream-timeout",
+        "passed": true,
+        "p0_blocked": false,
+        "metrics": {
+          "task_completed": 1.0, "candidate_correct": 1.0, "controlled_degradation": 0.0,
+          "citation_compliance": 1.0, "unsupported_claim_rate": 0.0,
+          "tool_precision": 1.0, "tool_recall": 1.0, "parameter_valid_rate": 1.0,
+          "fault_type_match_rate": 1.0, "repeated_failed_call_rate": 0.0,
+          "evidence_coverage": 1.0, "evidence_ownership_rate": 1.0,
+          "evidence_reliability_rate": 1.0, "rounds": 2, "tool_call_count": 2,
+          "latency_ms": 0.0, "estimated_cost": 0.0
+        },
+        "findings": []
+      },
+      {
+        "case_id": "dev-recording-storage-full",
+        "passed": true,
+        "p0_blocked": false,
+        "metrics": {
+          "task_completed": 1.0, "candidate_correct": 1.0, "controlled_degradation": 0.0,
+          "citation_compliance": 1.0, "unsupported_claim_rate": 0.0,
+          "tool_precision": 1.0, "tool_recall": 1.0, "parameter_valid_rate": 1.0,
+          "fault_type_match_rate": 1.0, "repeated_failed_call_rate": 0.0,
+          "evidence_coverage": 1.0, "evidence_ownership_rate": 1.0,
+          "evidence_reliability_rate": 1.0, "rounds": 2, "tool_call_count": 2,
+          "latency_ms": 0.0, "estimated_cost": 0.0
+        },
+        "findings": []
+      }
+    ]
+  }
+}
