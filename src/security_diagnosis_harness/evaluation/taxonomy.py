@@ -77,4 +77,3 @@ _TAXONOMIES: dict[SecurityFaultType, EvaluationTaxonomy] = {
 def evaluation_taxonomy(fault_type: SecurityFaultType) -> EvaluationTaxonomy:
     """返回完整故障域目录；目录本身不含任何案例期望答案。"""
     return _TAXONOMIES[fault_type]
-

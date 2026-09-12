@@ -39,4 +39,3 @@ def test_taxonomy_uses_only_canonical_evidence_types(fault_type):
     assert taxonomy.evidence_types
     assert all(isinstance(item, EvidenceType) for item in taxonomy.evidence_types)
     assert len(taxonomy.evidence_types) == len(set(taxonomy.evidence_types))
-
