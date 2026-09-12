@@ -1,0 +1,10 @@
+{
+  "dataset_name": "security-diagnosis",
+  "dataset_version": "1.0.0",
+  "split": "dev",
+  "description": "开发期可见标签的快速反馈集",
+  "files": [
+    {"path": "camera_stream_timeout.json", "sha256": "da956de740a593f32a710835196982e1e4fa00d4bc4d1065b1bfb24a63b605d4"},
+    {"path": "recording_storage_full.json", "sha256": "6fe15a38de9276570c90185457823eed958f4956b919b48a4e5fc547224d1660"}
+  ]
+}

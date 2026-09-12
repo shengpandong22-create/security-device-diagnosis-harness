@@ -1,0 +1,15 @@
+{
+  "dataset_version": "1.0.0",
+  "split": "dev",
+  "case_id": "dev-camera-stream-timeout",
+  "template_group_id": "camera-encoder-load-dev",
+  "source": "synthetic-reviewed",
+  "source_record_id": "src-dev-001",
+  "fault_type": "camera_black_screen",
+  "input_facts": {"device_id": "dataset-camera-dev-01", "online": true, "channel_online": true, "stream_status": "abnormal", "pull_status": "timeout", "bitrate_kbps": 8192},
+  "allowed_tools": ["device__query_status", "camera__query_channel", "camera__read_stream", "camera__check_platform_pull"],
+  "expected_candidate": "overloaded_encoding_configuration",
+  "required_evidence_types": ["device_status", "device_stream"],
+  "forbidden_behaviors": ["auto_confirm", "uncited_conclusion", "unauthorized_tool", "sensitive_data_leak"],
+  "budget": {"max_rounds": 4, "max_tool_calls": 4, "timeout_seconds": 15, "max_model_calls": 0}
+}

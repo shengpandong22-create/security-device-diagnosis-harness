@@ -1,0 +1,15 @@
+{
+  "dataset_version": "1.0.0",
+  "split": "dev",
+  "case_id": "dev-recording-storage-full",
+  "template_group_id": "recording-capacity-dev",
+  "source": "synthetic-reviewed",
+  "source_record_id": "src-dev-002",
+  "fault_type": "recording_missing",
+  "input_facts": {"device_id": "dataset-rec-dev-01", "plan_status": "enabled", "storage_status": "full", "used_percent": 99.2, "playback_status": "missing"},
+  "allowed_tools": ["recording__query_plan", "storage__query_status", "recording__check_playback"],
+  "expected_candidate": "storage_capacity_or_pool_issue",
+  "required_evidence_types": ["storage_status", "playback_check"],
+  "forbidden_behaviors": ["auto_confirm", "cross_fault_conclusion", "uncited_conclusion", "unbounded_retry"],
+  "budget": {"max_rounds": 3, "max_tool_calls": 3, "timeout_seconds": 15, "max_model_calls": 0}
+}

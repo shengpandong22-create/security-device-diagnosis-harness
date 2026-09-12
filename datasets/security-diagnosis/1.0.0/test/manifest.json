@@ -1,0 +1,10 @@
+{
+  "dataset_name": "security-diagnosis",
+  "dataset_version": "1.0.0",
+  "split": "test",
+  "description": "最终发布门禁使用的密封测试集",
+  "files": [
+    {"path": "camera_platform_pull.json", "sha256": "3b125f2b10e4e5ce950d9fc4217aee4b916a9a6f3efa99cceb0493ae928119ac"},
+    {"path": "recording_index_missing.json", "sha256": "8c98377d7c3dbe4474961ed60ce10e05a00d9a8f5ae9c23f3fa14b01398dffc1"}
+  ]
+}

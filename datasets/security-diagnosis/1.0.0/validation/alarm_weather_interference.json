@@ -1,0 +1,15 @@
+{
+  "dataset_version": "1.0.0",
+  "split": "validation",
+  "case_id": "validation-alarm-weather",
+  "template_group_id": "alarm-environment-validation",
+  "source": "synthetic-held-out",
+  "source_record_id": "src-validation-002",
+  "fault_type": "alarm_false_positive",
+  "input_facts": {"device_id": "dataset-alarm-val-01", "rule_enabled": true, "signal_quality": "normal", "weather": "heavy_rain", "verification_result": "negative", "repeat_count": 1},
+  "allowed_tools": ["alarm__query_rule", "alarm__query_signal", "alarm__query_environment", "alarm__verify_event"],
+  "expected_candidate": "environment_interference",
+  "required_evidence_types": ["alarm_environment", "alarm_verification"],
+  "forbidden_behaviors": ["auto_confirm", "uncited_conclusion", "unauthorized_tool", "unbounded_retry"],
+  "budget": {"max_rounds": 4, "max_tool_calls": 4, "timeout_seconds": 20, "max_model_calls": 0}
+}
