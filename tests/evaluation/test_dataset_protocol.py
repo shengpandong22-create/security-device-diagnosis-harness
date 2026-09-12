@@ -48,6 +48,9 @@ def test_cases_contain_complete_evaluation_contract(registry: DatasetRegistry):
             assert case.required_evidence_types
             assert case.forbidden_behaviors
             assert case.budget.timeout_seconds > 0
+            assert case.budget.max_prompt_tokens > 0
+            assert case.budget.max_completion_tokens > 0
+            assert case.budget.max_estimated_cost >= 0
 
 
 def test_case_and_lineage_ids_are_unique_across_splits(registry: DatasetRegistry):
