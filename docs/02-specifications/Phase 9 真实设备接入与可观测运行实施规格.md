@@ -99,7 +99,7 @@ Phase 9 完成前，项目仍是工程化诊断原型；完成高保真端到端
 - 仅允许 HTTPS；本机模拟器可使用 localhost HTTP；
 - 禁止 URL userinfo、查询串凭证和自动重定向；
 - endpoint 必须来自受控配置并命中 host allowlist，工具参数不能覆盖；
-- 显式连接、读取和总超时；
+- 显式连接、读取、写入和连接池超时；不得把单阶段超时夸大为全链路 wall-clock deadline；
 - 限制响应体大小、JSON 深度和列表数量；
 - 2xx 也必须执行 Schema 校验，缺字段不能伪造成 Evidence；
 - 认证信息通过 CredentialResolverPort 注入 Header，不进入异常文本；

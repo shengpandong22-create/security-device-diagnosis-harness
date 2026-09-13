@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0～8 与 Phase 9A 已完成；Phase 9B 真实只读 HTTP Adapter 尚未开发。
+- 当前阶段：Phase 0～8、Phase 9A/9B 已完成；Phase 9C 路由与 Runtime 接入尚未开发。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -41,6 +41,7 @@
 | Phase 8C | 安全评测历史、单变量趋势与发布门禁联动 | 已完成 |
 | Phase 8D | 双人标注裁决准入、近重复检查与不可变数据集发布 | 已完成 |
 | Phase 9A | 设备接入契约、高保真模拟器与端到端固定评测 | 已完成 |
+| Phase 9B | 本机 HTTP 契约服务与严格只读 HTTP Adapter | 已完成 |
 
 Phase 9A 新增供应商无关的资产、能力、连接引用、请求上下文和稳定错误分类，
 并通过确定性 Simulator 验证真实 Runner、Registry、Evidence、CitationPolicy
@@ -49,6 +50,10 @@ Phase 9A 新增供应商无关的资产、能力、连接引用、请求上下�
 ```powershell
 uv run python scripts/eval_phase9a_simulator_e2e.py
 ```
+
+Phase 9B 提供本机只读契约服务与供应商无关 HTTP Adapter。它执行 endpoint
+allowlist、凭证引用、路径编码、阶段超时、响应大小/深度/数量、Schema、错误映射
+与不重试约束。当前只完成本机契约集成测试，没有访问真实安防平台。
 
 Phase 8B 将 Code Grader 的 Finding 映射到稳定失败阶段与责任域，保留首次出现 commit、数据集版本和受影响案例。归因层不能覆盖严重度，P0 仍由确定性规则直接阻塞；修复建议只给出核验方向，不复制敏感事实，也不宣称未经验证的根因。
 

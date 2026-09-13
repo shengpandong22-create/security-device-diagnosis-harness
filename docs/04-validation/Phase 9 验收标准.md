@@ -12,14 +12,14 @@
 
 ## 2. Phase 9B HTTP Adapter
 
-- [ ] 只允许 HTTPS 或本机 HTTP，拒绝 URL userinfo、查询凭证和重定向
-- [ ] endpoint 来自受控配置和 host allowlist，工具参数不能覆盖
-- [ ] 凭证只由 CredentialResolverPort 提供且不进入异常、日志、Evidence、审计和报告
-- [ ] 连接/读取/总超时、响应大小、JSON Schema 和列表数量均有限制
-- [ ] 401/403、超时、429、5xx、非法 JSON 和 Schema 错误映射为稳定错误类型
-- [ ] 失败响应不产生 Evidence，异常原文不回传 LLM
-- [ ] 所有 HTTP 操作只读且默认不自动重试
-- [ ] 本机契约服务和 Adapter 集成测试通过
+- [x] 只允许 HTTPS 或本机 HTTP，拒绝 URL userinfo、查询凭证和重定向
+- [x] endpoint 来自受控配置和 host allowlist，工具参数不能覆盖
+- [x] 凭证只由 CredentialResolverPort 提供且不进入异常、日志、Evidence、审计和报告
+- [x] 连接/读取/写入/连接池超时、响应大小、JSON 深度、Schema 和列表数量均有限制
+- [x] 401/403、超时、429、5xx、非法 JSON 和 Schema 错误映射为稳定错误类型
+- [x] 失败响应不产生 Evidence，异常原文不回传 LLM
+- [x] 所有 HTTP 操作只读且默认不自动重试
+- [x] 本机契约服务和 Adapter 集成测试通过
 
 ## 3. Phase 9C 路由与 Runtime
 
