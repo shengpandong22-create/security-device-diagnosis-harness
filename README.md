@@ -49,6 +49,8 @@ Phase 8D 将 DatasetCase、双人盲标、独立裁决、来源授权和近重�
 
 Phase 7D 的真实模型入口默认关闭，不会因运行测试或启动 API 产生外部调用。模型只看到故障域完整候选标签和 Evidence 目录，不会看到案例标准答案；标签、工具和 Evidence 分项评分，语义争议进入人工复核。人工确认输入范围后，使用独立环境变量配置 OpenAI-compatible 服务，并显式运行：
 
+该入口评测的是“受限事实输入下的结构化诊断决策”：模型声明候选标签、拟选择工具和拟引用 Evidence 类型，再由确定性规则评分。它不执行正式 ToolLoopRunner，也不连接真实 DeviceGateway，因此不是端到端 Agent 或真实设备诊断准确率评测。
+
 ```powershell
 $env:SECURITY_DIAGNOSIS_EVAL_BASE_URL = "https://provider.example/v1"
 $env:SECURITY_DIAGNOSIS_EVAL_MODEL = "model-name"

@@ -41,6 +41,8 @@ Phase 7C 补充验收：`EvaluationRun` 不保存原始输入或密钥；比较�
 
 Phase 7D 工程与真实模型协议验收已完成：外部模型入口默认关闭，必须显式传入 `--execute-real-model`；Validation/Test 每案例最多一次调用且不重试。增强后的 `deepseek-flash` Validation 基线为 Candidate Accuracy 1.0、Tool Precision 0.75、Tool Recall 1.0、Evidence Compliance/Recall 1.0。该结果仅覆盖 2 个案例，不冒充生产准确率；因未配置 token 单价，成本指标尚未形成有效基线。
 
+能力口径：上述真实模型脚本评测受限事实上的结构化诊断决策，没有执行正式 ToolLoopRunner、真实工具或 DeviceGateway。真实端到端 Agent 与设备诊断效果必须在 Phase 9 建成只读 Adapter 后另行评测。
+
 ## 5. 总体验收
 
 - [x] 能回答一次版本变更修复了什么、退化了什么
