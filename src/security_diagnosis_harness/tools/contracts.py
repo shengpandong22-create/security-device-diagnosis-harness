@@ -10,10 +10,11 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.evidence import EvidenceSource, EvidenceType, Reliability
+from security_diagnosis_harness.domain.redaction import redact_mapping, redact_text
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 
 
@@ -58,6 +59,15 @@ class ToolEvidenceDraft(BaseModel):
     reliability: Reliability = Reliability.MEDIUM
     redacted: bool = False
 
+    @model_validator(mode="after")
+    def _redact_before_model_context(self) -> ToolEvidenceDraft:
+        summary, summary_changed = redact_text(self.summary)
+        payload, payload_changed = redact_mapping(self.payload)
+        self.summary = summary
+        self.payload = payload
+        self.redacted = self.redacted or summary_changed or payload_changed
+        return self
+
 
 class ToolExecutionResult(BaseModel):
     """工具执行结果。
@@ -73,6 +83,20 @@ class ToolExecutionResult(BaseModel):
     error: str | None = None
     evidence_drafts: list[ToolEvidenceDraft] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _redact_before_model_context(self) -> ToolExecutionResult:
+        observation, _ = redact_text(self.observation)
+        error, _ = (
+            redact_text(self.error) if self.error is not None else (None, False)
+        )
+        metadata, _ = redact_mapping(self.metadata)
+        self.observation = observation
+        self.error = error
+        self.metadata = metadata
+        if not self.ok:
+            self.evidence_drafts = []
+        return self
 
 
 class ToolExecutionContext(BaseModel):

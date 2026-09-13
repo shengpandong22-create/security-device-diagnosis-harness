@@ -92,6 +92,13 @@ class ToolRegistry:
         except Exception as exc:  # noqa: BLE001 - 受控失败，不允许异常冒泡
             return failure_result(tool_name, f"工具执行失败: {exc}")
 
+        try:
+            # Third-party tools may mutate a result after construction. Rebuild it at
+            # the Registry boundary so nested redaction validators always run again.
+            result = ToolExecutionResult.model_validate(result.model_dump(mode="python"))
+        except Exception as exc:  # noqa: BLE001 - invalid tool output is controlled
+            return failure_result(tool_name, f"工具返回结果不合法: {exc}")
+
         if not result.ok:
             # 工具失败不能被包装成 Evidence。
             return failure_result(tool_name, result.error or "工具执行失败")
