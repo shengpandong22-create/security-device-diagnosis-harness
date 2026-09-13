@@ -18,6 +18,7 @@
 - [Phase 3 门禁刷卡异常深化实施规格说明](./02-specifications/Phase%203%20门禁刷卡异常深化实施规格说明.md)
 - [Phase 4 报警误报深化实施规格说明](./02-specifications/Phase%204%20报警误报深化实施规格说明.md)
 - [Phase 5 知识沉淀与 RAG 增强实施规格说明](./02-specifications/Phase%205%20知识沉淀与RAG增强实施规格说明.md)
+- [Phase 9 真实设备接入与可观测运行实施规格](./02-specifications/Phase%209%20真实设备接入与可观测运行实施规格.md)
 
 ## 03-progress
 
@@ -46,6 +47,7 @@
 - [Phase 8 评测运营与标注可信度实施规格](./02-specifications/Phase%208%20评测运营与标注可信度实施规格.md)
 - [Phase 7 验收标准](./04-validation/Phase%207%20验收标准.md)
 - [Phase 8 验收标准](./04-validation/Phase%208%20验收标准.md)
+- [Phase 9 验收标准](./04-validation/Phase%209%20验收标准.md)
 - [Phase 6B-2 验收标准（乐观锁与并发状态更新保护）](./04-validation/Phase%206B-2%20验收标准.md)
 - [Phase 3 验收标准](./04-validation/Phase%203%20验收标准.md)
 - [Phase 4 验收标准](./04-validation/Phase%204%20验收标准.md)
