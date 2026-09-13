@@ -85,6 +85,14 @@ from security_diagnosis_harness.domain.evidence import (
     EvidenceType,
     Reliability,
 )
+from security_diagnosis_harness.domain.device_integration import (
+    DeviceAdapterError,
+    DeviceAdapterErrorKind,
+    DeviceAsset,
+    DeviceCapability,
+    DeviceConnectionProfile,
+    DeviceRequestContext,
+)
 from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidate,
     KnowledgeCandidateSource,
@@ -139,7 +147,13 @@ __all__ = [
     "CredentialType",
     "Device",
     "DeviceAlarmEvent",
+    "DeviceAdapterError",
+    "DeviceAdapterErrorKind",
+    "DeviceAsset",
+    "DeviceCapability",
     "DeviceConfigSnapshot",
+    "DeviceConnectionProfile",
+    "DeviceRequestContext",
     "DeviceSnapshot",
     "DeviceType",
     "DiagnosisConclusion",
