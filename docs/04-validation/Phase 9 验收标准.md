@@ -23,23 +23,23 @@
 
 ## 3. Phase 9C 路由与 Runtime
 
-- [ ] device_id 通过 AssetCatalog 确定性映射 Adapter 与 capabilities
-- [ ] 模型不能伪造或覆盖路由结果
-- [ ] 缺资产、禁用资产、缺 capability 或 Adapter 未就绪均受控失败
-- [ ] supported fault types 根据已装配能力生成，不手工放开全集
-- [ ] Static、Simulator、HTTP Adapter 产生相同领域对象和 Evidence 契约
-- [ ] 部分事实、超时和限流进入受控降级，不猜测根因
-- [ ] 正式 Runtime 至少一个故障域完成非 Static Adapter 闭环
+- [x] device_id 通过 AssetCatalog 确定性映射 Adapter 与 capabilities
+- [x] 模型不能伪造或覆盖路由结果
+- [x] 缺资产、禁用资产、缺 capability 或 Adapter 未就绪均受控失败
+- [x] supported fault types 根据已装配能力生成，不手工放开全集
+- [x] Static、Simulator、HTTP Adapter 产生相同领域对象和 Evidence 契约
+- [x] 部分事实、超时和限流进入受控降级，不猜测根因
+- [x] 正式 Runtime 至少一个故障域完成非 Static Adapter 闭环
 
 ## 4. Phase 9D 可观测与影子评测
 
-- [ ] 指标覆盖工具、Adapter、Evidence、状态、预算、成本、P0 和人工反馈
-- [ ] 指标标签不含设备 ID、IP、人员、车牌、卡号、Token、endpoint 或自由文本
-- [ ] simulator_e2e 执行真实 Runner、Registry、Gateway、Evidence、Citation 和 Review
-- [ ] simulator_e2e 与 real_model、authorized_device_e2e 分开报告
+- [x] 指标覆盖工具、Adapter、Evidence、状态、预算、成本、P0 和人工反馈
+- [x] 指标标签不含设备 ID、IP、人员、车牌、卡号、Token、endpoint 或自由文本
+- [x] simulator_e2e 执行真实 Runner、Registry、Gateway、Evidence、Citation 和 Review
+- [x] simulator_e2e 与 real_model、authorized_device_e2e 分开报告
 - [ ] 端到端结果接入 Phase 8 历史、失败归因和 Phase 7 Gate
-- [ ] 影子模式不写设备、不自动关闭工单、不自动发送外部通知
-- [ ] 人工反馈只进入候选区，不自动修改正式数据集
+- [x] 影子模式不写设备、不自动关闭工单、不自动发送外部通知
+- [x] 人工反馈只进入候选区，不自动修改正式数据集
 
 ## 5. 真实联调条件
 
@@ -61,7 +61,10 @@
 ## 7. 能力表述
 
 - [x] Simulator 结果明确标注为高保真模拟
-- [ ] 真实 HTTP 契约测试不表述为真实设备准确率
-- [ ] 小样本授权联调不表述为生产稳定性或生产准确率
-- [ ] 只有真实 Adapter + 完整 Agent Loop 才可称为端到端设备诊断评测
-- [ ] Phase 9 完成后只称“具备企业试接入能力”，生产化仍需规模、权限、高可用和长期反馈验证
+- [x] 真实 HTTP 契约测试不表述为真实设备准确率
+- [x] 小样本授权联调不表述为生产稳定性或生产准确率
+- [x] 只有真实 Adapter + 完整 Agent Loop 才可称为端到端设备诊断评测
+- [x] Phase 9 工程基线完成后只称“具备企业试接入能力”，生产化仍需规模、权限、高可用和长期反馈验证
+
+> 未完成边界：Phase 8 历史/Gate 的正式持久化接线，以及用户授权下的
+> `authorized_device_e2e` 均未验收；不得以 `simulator_e2e` 替代。
