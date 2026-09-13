@@ -80,6 +80,24 @@ def test_manifest_split_must_match_physical_directory(tmp_path: Path):
         load_dataset_split(target)
 
 
+def test_version_directory_name_must_match_manifest_version(tmp_path: Path):
+    target = tmp_path / "9.9.9"
+    shutil.copytree(DATASET_ROOT, target)
+    with pytest.raises(DatasetProtocolError, match="目录名"):
+        DatasetRegistry.load(target)
+
+
+def test_all_split_manifests_must_share_dataset_name(tmp_path: Path):
+    target = tmp_path / "1.0.0"
+    shutil.copytree(DATASET_ROOT, target)
+    manifest_path = target / "validation/manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["dataset_name"] = "another-dataset"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(DatasetProtocolError, match="dataset_name"):
+        DatasetRegistry.load(target)
+
+
 def test_case_split_must_match_manifest(tmp_path: Path):
     target = tmp_path / "dev"
     shutil.copytree(DATASET_ROOT / "dev", target)

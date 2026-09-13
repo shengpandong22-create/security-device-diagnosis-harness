@@ -26,6 +26,7 @@ from security_diagnosis_harness.evaluation import (
     adjudicate_annotations,
     build_annotation_task,
     publish_dataset_version,
+    verify_dataset_release,
 )
 from security_diagnosis_harness.evaluation import (
     TestSetAccessError as SealedTestSetAccessError,
@@ -292,3 +293,30 @@ def test_release_manifest_hashes_detect_tampering(tmp_path):
     case_path.write_text("{}", encoding="utf-8")
     with pytest.raises(DatasetProtocolError, match="hash"):
         DatasetRegistry.load(target)
+
+
+def test_release_receipt_is_bound_to_split_manifests(tmp_path):
+    target, receipt = publish_dataset_version(
+        SOURCE, tmp_path, "1.1.0", (_addition(),),
+        released_at=datetime(2026, 9, 13, tzinfo=UTC),
+    )
+    assert verify_dataset_release(target) == receipt
+    receipt_path = target / "release.json"
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    payload["split_manifest_hashes"]["dev"] = "0" * 64
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(DatasetReleaseError, match="Manifest 哈希"):
+        verify_dataset_release(target)
+
+
+def test_release_receipt_count_and_addition_presence_are_verified(tmp_path):
+    target, _ = publish_dataset_version(
+        SOURCE, tmp_path, "1.1.0", (_addition(),),
+        released_at=datetime(2026, 9, 13, tzinfo=UTC),
+    )
+    receipt_path = target / "release.json"
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    payload["total_case_count"] = 99
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(DatasetReleaseError, match="数量"):
+        verify_dataset_release(target)

@@ -99,6 +99,7 @@ from security_diagnosis_harness.evaluation.release import (
     SourceKind,
     SourceProvenance,
     publish_dataset_version,
+    verify_dataset_release,
     write_dataset_release_report,
 )
 from security_diagnosis_harness.evaluation.review import (
@@ -194,6 +195,7 @@ __all__ = [
     "compare_blind_annotations",
     "load_dataset_split",
     "publish_dataset_version",
+    "verify_dataset_release",
     "write_gate_report",
     "write_real_model_report",
     "validate_dataset_admission",

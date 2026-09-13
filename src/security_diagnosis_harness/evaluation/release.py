@@ -100,6 +100,8 @@ class DatasetReleaseReceipt(BaseModel):
     authorized_case_count: int = Field(ge=0)
     total_case_count: int = Field(ge=1)
     split_counts: dict[DatasetSplit, int]
+    split_manifest_hashes: dict[DatasetSplit, str]
+    dataset_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     additions: tuple[ReleasedAddition, ...]
 
     def to_markdown(self) -> str:
@@ -176,7 +178,7 @@ def publish_dataset_version(
             _write_split(staging / split.value, target_version, split, cases)
         _write_json(staging / "release.json", receipt.model_dump(mode="json"))
         # Verify staging fully before the immutable target becomes visible.
-        DatasetRegistry.load(staging)
+        verify_dataset_release(staging)
         try:
             staging.rename(target)
         except FileExistsError as exc:
@@ -282,13 +284,7 @@ def _write_split(
         payload = case.model_dump(mode="json")
         _write_json(directory / filename, payload)
         files.append(ManifestFile(path=filename, sha256=sha256_text(canonical_json(payload))))
-    manifest = DatasetManifest(
-        dataset_name="security-diagnosis",
-        dataset_version=version,
-        split=split,
-        description=f"Phase 8D governed {split.value} split",
-        files=tuple(files),
-    )
+    manifest = _build_manifest(version, split, tuple(files))
     _write_json(directory / "manifest.json", manifest.model_dump(mode="json"))
 
 
@@ -313,6 +309,24 @@ def _receipt(
         )
         for case, item in validated
     )
+    manifest_hashes = {
+        split: sha256_text(
+            canonical_json(
+                _build_manifest(
+                    target_version,
+                    split,
+                    tuple(
+                        ManifestFile(
+                            path=f"{case.case_id}.json",
+                            sha256=sha256_text(canonical_json(case.model_dump(mode="json"))),
+                        )
+                        for case in sorted(items, key=lambda value: value.case_id)
+                    ),
+                ).model_dump(mode="json")
+            )
+        )
+        for split, items in cases.items()
+    }
     return DatasetReleaseReceipt(
         dataset_name="security-diagnosis",
         source_version=source_version,
@@ -324,7 +338,23 @@ def _receipt(
         ),
         total_case_count=sum(len(items) for items in cases.values()),
         split_counts={split: len(items) for split, items in cases.items()},
+        split_manifest_hashes=manifest_hashes,
+        dataset_content_hash=sha256_text(
+            canonical_json({split.value: value for split, value in manifest_hashes.items()})
+        ),
         additions=additions,
+    )
+
+
+def _build_manifest(
+    version: str, split: DatasetSplit, files: tuple[ManifestFile, ...]
+) -> DatasetManifest:
+    return DatasetManifest(
+        dataset_name="security-diagnosis",
+        dataset_version=version,
+        split=split,
+        description=f"Phase 8D governed {split.value} split",
+        files=files,
     )
 
 
@@ -344,6 +374,49 @@ def write_dataset_release_report(
     _atomic_write(json_path, receipt.model_dump_json(indent=2))
     _atomic_write(markdown_path, receipt.to_markdown())
     return json_path, markdown_path
+
+
+def verify_dataset_release(directory: Path) -> DatasetReleaseReceipt:
+    """Verify release receipt, manifests, case hashes, counts, and addition presence."""
+    root = directory.resolve()
+    try:
+        receipt = DatasetReleaseReceipt.model_validate_json(
+            (root / "release.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError) as exc:
+        raise DatasetReleaseError("发布回执不存在或协议不合法") from exc
+    if root.name != receipt.released_version:
+        raise DatasetReleaseError("发布目录名与回执版本不一致")
+    registry = DatasetRegistry.load(root)
+    actual_hashes: dict[DatasetSplit, str] = {}
+    for split in DatasetSplit:
+        try:
+            manifest_payload = json.loads(
+                (root / split.value / "manifest.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DatasetReleaseError("发布 Manifest 无法读取") from exc
+        actual_hashes[split] = sha256_text(canonical_json(manifest_payload))
+    if actual_hashes != receipt.split_manifest_hashes:
+        raise DatasetReleaseError("发布回执与 split Manifest 哈希不一致")
+    actual_content_hash = sha256_text(
+        canonical_json({split.value: value for split, value in actual_hashes.items()})
+    )
+    if actual_content_hash != receipt.dataset_content_hash:
+        raise DatasetReleaseError("发布回执的整体内容哈希不一致")
+    actual_counts = {split: registry.case_count(split) for split in DatasetSplit}
+    if (
+        actual_counts != receipt.split_counts
+        or sum(actual_counts.values()) != receipt.total_case_count
+    ):
+        raise DatasetReleaseError("发布回执的案例数量与实际数据集不一致")
+    by_split = {
+        split: {case.case_id for case in registry.cases(split, allow_test=True)}
+        for split in DatasetSplit
+    }
+    if any(item.case_id not in by_split[item.split] for item in receipt.additions):
+        raise DatasetReleaseError("发布回执包含数据集中不存在的新增案例")
+    return receipt
 
 
 def _atomic_write(path: Path, content: str) -> None:

@@ -22,6 +22,7 @@ from security_diagnosis_harness.evaluation import (
     ForbiddenBehavior,
     SourceKind,
     SourceProvenance,
+    TestSetAccessError,
     adjudicate_annotations,
     build_annotation_task,
     publish_dataset_version,
@@ -121,6 +122,12 @@ def main() -> int:
         )
         registry = DatasetRegistry.load(target)
         split_counts = {split.value: registry.case_count(split) for split in DatasetSplit}
+        try:
+            registry.cases(DatasetSplit.TEST)
+        except TestSetAccessError:
+            test_set_remains_sealed = True
+        else:
+            test_set_remains_sealed = False
     json_path, markdown_path = write_dataset_release_report(receipt, ROOT / "demo-output")
     print(
         json.dumps(
@@ -130,7 +137,7 @@ def main() -> int:
                 "split_counts": split_counts,
                 "synthetic_case_count": receipt.synthetic_case_count,
                 "authorized_case_count": receipt.authorized_case_count,
-                "test_set_remains_sealed": True,
+                "test_set_remains_sealed": test_set_remains_sealed,
                 "external_model_called": False,
                 "json_report": str(json_path.relative_to(ROOT)),
                 "markdown_report": str(markdown_path.relative_to(ROOT)),

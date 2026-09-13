@@ -182,12 +182,19 @@ class DatasetRegistry:
     def load(cls, version_directory: Path) -> DatasetRegistry:
         loaded: dict[DatasetSplit, tuple[DatasetCase, ...]] = {}
         versions: set[str] = set()
+        dataset_names: set[str] = set()
         for split in DatasetSplit:
             manifest, cases = load_dataset_split(version_directory / split.value)
             loaded[split] = cases
             versions.add(manifest.dataset_version)
+            dataset_names.add(manifest.dataset_name)
         if len(versions) != 1:
             raise DatasetProtocolError("三个 split 的 dataset_version 必须一致")
+        if len(dataset_names) != 1:
+            raise DatasetProtocolError("三个 split 的 dataset_name 必须一致")
+        declared_version = next(iter(versions))
+        if version_directory.resolve().name != declared_version:
+            raise DatasetProtocolError("版本目录名必须与 manifest dataset_version 一致")
         return cls(loaded)
 
     def cases(
