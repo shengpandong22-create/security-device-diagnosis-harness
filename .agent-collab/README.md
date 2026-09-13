@@ -25,3 +25,26 @@
 - 未经任务明确允许，不接真实模型、真实设备、数据库、RAG、前端或写操作工具。
 - 每轮必须报告修改文件、测试结果、偏离说明和 `git status`。
 
+## 任务规模与预算
+
+需求文件应在标题后声明一行任务规模：
+
+```text
+task_size: small
+```
+
+可选值及单次 CodeBuddy 轮次预算：
+
+| task_size | 适用任务 | max turns |
+|---|---|---:|
+| `probe` | 登录、进程退出、单文件写入等链路探针 | 8 |
+| `small` | 单一领域对象、Adapter 或局部修复闭环 | 24 |
+| `medium` | 有明确边界的多文件功能闭环 | 36 |
+
+命令行 `-TaskSize` 优先于需求文件；显式 `-CodeBuddyMaxTurns` 可覆盖映射值。
+未声明任务规模时按 `small` 处理。
+
+达到 `Max turns` 后，编排器不会触发 Codex 审查，而是在运行目录写入
+`NEEDS_CONTINUATION.json`。默认仅允许 CodeBuddy 在同一 worktree 自动续作一次，
+两次调用共享 `CodeBuddyTimeoutSeconds` 总时间预算。续作仍失败时立即停止，保留
+worktree、分支、日志和状态文件供人工检查；编排器永不自动合并或推送。

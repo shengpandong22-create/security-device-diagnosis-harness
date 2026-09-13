@@ -16,6 +16,7 @@ inspection.
 param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$Model = "fast-model",
+    [ValidateSet("probe", "small", "medium")][string]$TaskSize = "probe",
     [int]$CodeBuddyMaxTurns = 8,
     [int]$CodexTimeoutSeconds = 900,
     [int]$CodeBuddyTimeoutSeconds = 900,
@@ -212,7 +213,7 @@ $codebuddyArgs = @(
     "-y",
     "--model", $Model,
     "--allowedTools", "Read,Write,Edit,Bash",
-    "--max-turns", "$CodeBuddyMaxTurns",
+    "--max-turns", "$(if ($PSBoundParameters.ContainsKey('CodeBuddyMaxTurns')) { $CodeBuddyMaxTurns } else { @{ probe = 8; small = 24; medium = 36 }[$TaskSize] })",
     "--output-format", "text",
     $codebuddyPrompt
 )

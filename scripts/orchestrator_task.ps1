@@ -8,7 +8,9 @@ This script is the practical version of orchestrator_probe.ps1.
 It accepts a requirement file, creates an isolated git worktree, optionally asks
 Codex CLI to produce a plan, lets CodeBuddy implement the task, optionally asks
 Codex CLI to review the diff, and stops for human inspection. It never merges
-or pushes automatically.
+or pushes automatically. Requirement files may declare `task_size: probe|small|medium`;
+the default turn budgets are 8/24/36. A max-turn stop may continue once in the
+same worktree, within the original total timeout, before any Codex review.
 
 Recommended first run:
 
@@ -22,9 +24,11 @@ param(
     [Parameter(Mandatory = $true)][string]$ReqFile,
     [string]$ProjectRoot = "",
     [string]$TaskName = "",
+    [ValidateSet("", "probe", "small", "medium")][string]$TaskSize = "",
     [string]$CodeBuddyModel = "fast-model",
     [string]$CodexModel = "gpt-5.6-luna",
-    [int]$CodeBuddyMaxTurns = 20,
+    [int]$CodeBuddyMaxTurns = 0,
+    [int]$MaxContinuationRounds = 1,
     [int]$MaxFixRounds = 1,
     [int]$CodexTimeoutSeconds = 300,
     [int]$CodeBuddyTimeoutSeconds = 1800,
@@ -123,6 +127,48 @@ function Test-ExternalResultOk {
     return (-not $Result.TimedOut -and $Result.ExitCode -eq 0 -and $null -eq $falseSuccess)
 }
 
+function Test-MaxTurnsOutput {
+    param([string]$Text)
+
+    return $Text -match "Max turns(?:\s+\(\d+\))?\s+exceeded"
+}
+
+function Resolve-TaskSize {
+    param(
+        [string]$ExplicitSize,
+        [string]$RequirementText
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitSize)) {
+        return $ExplicitSize.ToLowerInvariant()
+    }
+    if ($RequirementText -match "(?im)^\s*task_size\s*:\s*(probe|small|medium)\s*$") {
+        return $Matches[1].ToLowerInvariant()
+    }
+    return "small"
+}
+
+function Resolve-MaxTurns {
+    param(
+        [string]$Size,
+        [int]$ExplicitMaxTurns
+    )
+
+    if ($ExplicitMaxTurns -gt 0) {
+        return $ExplicitMaxTurns
+    }
+    return @{ probe = 8; small = 24; medium = 36 }[$Size]
+}
+
+function Write-JsonFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$Value
+    )
+
+    Write-TextFile -Path $Path -Text ($Value | ConvertTo-Json -Depth 8)
+}
+
 function Convert-ToSafeSlug {
     param([string]$Text)
 
@@ -185,8 +231,14 @@ $codebuddyLogPath = Join-Path $runDir "CODEBUDDY_IMPL.log.txt"
 $reviewPath = Join-Path $runDir "REVIEW.md"
 $reviewLogPath = Join-Path $runDir "CODEX_REVIEW.log.txt"
 $summaryPath = Join-Path $runDir "SUMMARY.md"
+$continuationPath = Join-Path $runDir "NEEDS_CONTINUATION.json"
 
 $reqText = Get-Content $ReqFile -Raw -Encoding UTF8
+$resolvedTaskSize = Resolve-TaskSize -ExplicitSize $TaskSize -RequirementText $reqText
+$resolvedMaxTurns = Resolve-MaxTurns -Size $resolvedTaskSize -ExplicitMaxTurns $CodeBuddyMaxTurns
+if ($MaxContinuationRounds -lt 0 -or $MaxContinuationRounds -gt 1) {
+    throw "MaxContinuationRounds must be 0 or 1."
+}
 
 if ($SkipCodexPlan) {
     Write-TextFile -Path $planPath -Text $reqText
@@ -277,10 +329,11 @@ $codebuddyArgs = @(
     "-y",
     "--model", $CodeBuddyModel,
     "--allowedTools", "Read,Write,Edit,Bash,Grep,Glob",
-    "--max-turns", "$CodeBuddyMaxTurns",
+    "--max-turns", "$resolvedMaxTurns",
     "--output-format", "text",
     $codebuddyPrompt
 )
+$codeBuddyStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $implementationResult = Invoke-ExternalWithExitEvent `
     -FilePath $codebuddy `
     -CommandArguments $codebuddyArgs `
@@ -289,6 +342,71 @@ $implementationResult = Invoke-ExternalWithExitEvent `
 Write-TextFile -Path $codebuddyLogPath -Text $implementationResult.Output
 
 $implOk = Test-ExternalResultOk $implementationResult
+$continuationRoundsUsed = 0
+$implementationAttempts = 1
+
+if (-not $implOk -and (Test-MaxTurnsOutput $implementationResult.Output)) {
+    $continuationState = [ordered]@{
+        schema_version = 1
+        status = "needs_continuation"
+        task = $TaskName
+        task_size = $resolvedTaskSize
+        worktree = $worktreeRoot
+        branch = $branchName
+        reason = "max_turns_exceeded"
+        initial_max_turns = $resolvedMaxTurns
+        continuation_rounds_allowed = $MaxContinuationRounds
+        continuation_rounds_used = 0
+        elapsed_seconds = [math]::Round($codeBuddyStopwatch.Elapsed.TotalSeconds, 3)
+        git_status = @(git -C $worktreeRoot status --short)
+    }
+    Write-JsonFile -Path $continuationPath -Value $continuationState
+
+    if ($MaxContinuationRounds -eq 1) {
+        $remainingSeconds = $CodeBuddyTimeoutSeconds - [int][math]::Ceiling($codeBuddyStopwatch.Elapsed.TotalSeconds)
+        if ($remainingSeconds -gt 0) {
+            $continuationRoundsUsed = 1
+            $implementationAttempts = 2
+            $continuationPrompt = @(
+                "Continue the same bounded task in the existing isolated worktree.",
+                "Do not restart or discard completed work.",
+                "Inspect git status and the previous implementation before acting.",
+                "Finish only the remaining requirement, run the required validation, and commit locally.",
+                "Do not push, merge, access .env, real credentials, real devices, or external services.",
+                "Requirement file: $ReqFile",
+                "Plan file: $planPath",
+                "Previous attempt log: $codebuddyLogPath"
+            ) -join [Environment]::NewLine
+            $continuationArgs = @(
+                "-p", "-y",
+                "--model", $CodeBuddyModel,
+                "--allowedTools", "Read,Write,Edit,Bash,Grep,Glob",
+                "--max-turns", "$resolvedMaxTurns",
+                "--output-format", "text",
+                $continuationPrompt
+            )
+            $continuationResult = Invoke-ExternalWithExitEvent `
+                -FilePath $codebuddy `
+                -CommandArguments $continuationArgs `
+                -WorkingDirectory $worktreeRoot `
+                -TimeoutSeconds $remainingSeconds
+            $combinedImplementationLog = @(
+                $implementationResult.Output,
+                "`n===== CONTINUATION 1 =====`n",
+                $continuationResult.Output
+            ) -join [Environment]::NewLine
+            Write-TextFile -Path $codebuddyLogPath -Text $combinedImplementationLog
+            $implementationResult = $continuationResult
+            $implOk = Test-ExternalResultOk $continuationResult
+            $continuationState.status = if ($implOk) { "continued_successfully" } else { "continuation_failed" }
+            $continuationState.continuation_rounds_used = 1
+            $continuationState.elapsed_seconds = [math]::Round($codeBuddyStopwatch.Elapsed.TotalSeconds, 3)
+            $continuationState.git_status = @(git -C $worktreeRoot status --short)
+            Write-JsonFile -Path $continuationPath -Value $continuationState
+        }
+    }
+}
+$codeBuddyStopwatch.Stop()
 
 $reviewOk = $false
 if ($implOk -and -not $SkipCodexReview) {
@@ -344,6 +462,11 @@ $summary = @(
     "- worktree: $worktreeRoot",
     "- run_dir: $runDir",
     "- codebuddy_model: $CodeBuddyModel",
+    "- task_size: $resolvedTaskSize",
+    "- codebuddy_max_turns_per_attempt: $resolvedMaxTurns",
+    "- implementation_attempts: $implementationAttempts",
+    "- continuation_rounds_used: $continuationRoundsUsed",
+    "- codebuddy_elapsed_seconds: $([math]::Round($codeBuddyStopwatch.Elapsed.TotalSeconds, 3))",
     "- codex_model: $CodexModel",
     "- implementation_ok: $($implOk.ToString().ToLowerInvariant())",
     "- review_ok: $($reviewOk.ToString().ToLowerInvariant())",
@@ -353,6 +476,7 @@ $summary = @(
     "- REQ: $ReqFile",
     "- PLAN: $planPath",
     "- CODEBUDDY_LOG: $codebuddyLogPath",
+    "- CONTINUATION_STATE: $continuationPath",
     "- REVIEW: $reviewPath",
     "",
     "## Worktree git status",
