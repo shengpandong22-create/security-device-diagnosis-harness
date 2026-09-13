@@ -87,7 +87,7 @@ function Test-FalseSuccessOutput {
         "not recognized",
         "command not found",
         "Unknown command",
-        "Max turns exceeded"
+        "Max turns"
     )
 
     foreach ($pattern in $patterns) {
