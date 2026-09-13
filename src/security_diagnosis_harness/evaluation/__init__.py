@@ -40,6 +40,7 @@ from security_diagnosis_harness.evaluation.dataset import (
     EvaluationBudget,
     ForbiddenBehavior,
     TestSetAccessError,
+    are_near_duplicate_cases,
     load_dataset_split,
 )
 from security_diagnosis_harness.evaluation.gate import (
@@ -90,6 +91,16 @@ from security_diagnosis_harness.evaluation.real_model import (
     build_whitelisted_model_input,
     write_real_model_report,
 )
+from security_diagnosis_harness.evaluation.release import (
+    DatasetReleaseAddition,
+    DatasetReleaseError,
+    DatasetReleaseReceipt,
+    ReleasedAddition,
+    SourceKind,
+    SourceProvenance,
+    publish_dataset_version,
+    write_dataset_release_report,
+)
 from security_diagnosis_harness.evaluation.review import (
     DatasetAdmissionError,
     DatasetAdmissionReview,
@@ -119,6 +130,9 @@ __all__ = [
     "DatasetManifest",
     "DatasetProtocolError",
     "DatasetRegistry",
+    "DatasetReleaseAddition",
+    "DatasetReleaseError",
+    "DatasetReleaseReceipt",
     "DatasetSplit",
     "CaseGrade",
     "CaseDiff",
@@ -160,7 +174,10 @@ __all__ = [
     "RealModelSettings",
     "RealModelReviewCandidate",
     "ReviewDecision",
+    "ReleasedAddition",
     "RunIdentity",
+    "SourceKind",
+    "SourceProvenance",
     "ResponsibilityOwner",
     "ToolCallTrace",
     "TrendPoint",
@@ -171,10 +188,12 @@ __all__ = [
     "catalog_entry",
     "build_whitelisted_model_input",
     "adjudicate_annotations",
+    "are_near_duplicate_cases",
     "build_annotation_agreement_report",
     "build_annotation_task",
     "compare_blind_annotations",
     "load_dataset_split",
+    "publish_dataset_version",
     "write_gate_report",
     "write_real_model_report",
     "validate_dataset_admission",
@@ -182,6 +201,7 @@ __all__ = [
     "write_annotation_agreement_report",
     "write_failure_attribution_report",
     "write_evaluation_trend_report",
+    "write_dataset_release_report",
     "EvaluationTaxonomy",
     "evaluation_taxonomy",
 ]

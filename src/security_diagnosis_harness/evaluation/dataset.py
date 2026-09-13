@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from security_diagnosis_harness.domain.common import canonical_json, sha256_text
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.evidence import EvidenceType
-from security_diagnosis_harness.domain.redaction import redact_mapping
+from security_diagnosis_harness.domain.redaction import redact_mapping, redact_text
 
 
 class DatasetProtocolError(ValueError):
@@ -94,6 +94,11 @@ class DatasetCase(BaseModel):
         redacted, _ = redact_mapping(self.input_facts)
         if redacted != self.input_facts:
             raise ValueError("input_facts 含未脱敏的敏感信息")
+        for name in ("source", "source_record_id"):
+            value = getattr(self, name)
+            safe, changed = redact_text(value)
+            if changed or safe != value:
+                raise ValueError(f"{name} 含未脱敏的敏感信息")
         return self
 
     def structural_fingerprint(self) -> str:
@@ -257,6 +262,11 @@ def _near_duplicate(left: DatasetCase, right: DatasetCase) -> bool:
     if not left_grams or not right_grams:
         return False
     return len(left_grams & right_grams) / len(left_grams | right_grams) >= 0.92
+
+
+def are_near_duplicate_cases(left: DatasetCase, right: DatasetCase) -> bool:
+    """Public deterministic near-duplicate check used by governed release flows."""
+    return _near_duplicate(left, right)
 
 
 def _character_ngrams(text: str, size: int = 3) -> set[str]:
