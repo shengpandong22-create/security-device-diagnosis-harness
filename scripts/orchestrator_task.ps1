@@ -41,6 +41,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "collab_process.ps1")
+. (Join-Path $PSScriptRoot "collab_protocol.ps1")
 
 function Resolve-CommandPath {
     param(
@@ -245,12 +246,19 @@ $reviewPath = Join-Path $runDir "REVIEW.md"
 $reviewLogPath = Join-Path $runDir "CODEX_REVIEW.log.txt"
 $summaryPath = Join-Path $runDir "SUMMARY.md"
 $continuationPath = Join-Path $runDir "NEEDS_CONTINUATION.json"
+$statePath = Join-Path $runDir "STATE.json"
+$handoffPath = Join-Path $runDir "HANDOFF.json"
+$reviewResultPath = Join-Path $runDir "REVIEW_RESULT.json"
+$takeoverPath = Join-Path $runDir "CODEX_TAKEOVER.json"
 
 $reqText = Get-Content $ReqFile -Raw -Encoding UTF8
 $resolvedTaskSize = Resolve-TaskSize -ExplicitSize $TaskSize -RequirementText $reqText
 $resolvedMaxTurns = Resolve-MaxTurns -Size $resolvedTaskSize -ExplicitMaxTurns $CodeBuddyMaxTurns
 if ($MaxContinuationRounds -lt 0 -or $MaxContinuationRounds -gt 1) {
     throw "MaxContinuationRounds must be 0 or 1."
+}
+if ($MaxFixRounds -lt 0 -or $MaxFixRounds -gt 1) {
+    throw "MaxFixRounds must be 0 or 1."
 }
 
 if ($SkipCodexPlan) {
@@ -308,6 +316,7 @@ else {
 
 $baseCommit = (git -C $ProjectRoot rev-parse HEAD).Trim()
 git -C $ProjectRoot worktree add -b $branchName $worktreeRoot $baseCommit | Out-Null
+Write-CollabState $statePath "implementing" $TaskName $branchName $baseCommit
 
 $codebuddyPrompt = @(
     "You are CodeBuddy acting as implementation engineer.",
@@ -329,6 +338,11 @@ $codebuddyPrompt = @(
     "- Do not push, merge, or create pull requests.",
     "- Run the validation commands required by the plan.",
     "- Commit your changes locally using small English conventional commits.",
+    "- External access is forbidden: do not run real model, BGE, device, network, push, or notification commands.",
+    "- Do not run demo_phase5_knowledge_loop.py or eval_phase7_real_model.py.",
+    "- Before exiting, write UTF-8 JSON to: $handoffPath",
+    '- HANDOFF.json schema: {"schema_version":2,"status":"ready_for_review","base_commit":"<base>","head_commit":"<HEAD>","worktree_clean":true,"changed_files":["..."],"validation":[{"command":"...","exit_code":0}],"remaining_items":[],"risks":["..."]}',
+    "- HANDOFF base_commit must be $baseCommit; head_commit must equal final git HEAD.",
     "",
     "Final report:",
     "- Print changed files.",
@@ -426,7 +440,28 @@ $implementationHead = (git -C $worktreeRoot rev-parse HEAD).Trim()
 $implementationStatus = @(git -C $worktreeRoot status --porcelain)
 $implementationCommitted = $implementationHead -ne $baseCommit
 $implementationClean = $implementationStatus.Count -eq 0
-$implOk = ($implOk -and $implementationCommitted -and $implementationClean)
+$handoffResult = Test-CodeBuddyHandoff `
+    -Path $handoffPath `
+    -ExpectedBaseCommit $baseCommit `
+    -ExpectedHeadCommit $implementationHead `
+    -ExpectedClean $implementationClean
+$implOk = ($implOk -and $implementationCommitted -and $implementationClean -and `
+    $handoffResult.Ok)
+
+if ($implOk) {
+    Write-CollabState $statePath "ready_for_review" $TaskName $branchName `
+        $baseCommit $implementationHead
+}
+else {
+    $failureReason = if (-not $handoffResult.Ok) { $handoffResult.Reason } `
+        elseif (-not $implementationCommitted) { "head_not_advanced" } `
+        elseif (-not $implementationClean) { "worktree_dirty" } `
+        else { "implementation_failed" }
+    Write-CollabState $statePath "codex_takeover_required" $TaskName $branchName `
+        $baseCommit $implementationHead $failureReason
+    Write-CodexTakeover $takeoverPath $TaskName $worktreeRoot $branchName `
+        $baseCommit $implementationHead $failureReason $implementationAttempts
+}
 
 $reviewOk = $false
 if ($implOk -and -not $SkipCodexReview) {
@@ -463,6 +498,93 @@ if ($implOk -and -not $SkipCodexReview) {
     Write-TextFile -Path $reviewLogPath -Text $reviewResult.Output
     Write-TextFile -Path $reviewPath -Text $reviewResult.Output
     $reviewOk = Test-ReviewResultOk $reviewResult
+    Write-CollabJson $reviewResultPath ([ordered]@{
+        schema_version = 2
+        status = if ($reviewOk) { "approved" } else { "changes_requested" }
+        base_commit = $baseCommit
+        reviewed_commit = $implementationHead
+        verdict = if ($reviewOk) { "REVIEW_PASSED" } else { "REVIEW_FAILED" }
+        report = $reviewPath
+    })
+    Write-CollabState $statePath `
+        $(if ($reviewOk) { "approved" } else { "changes_requested" }) `
+        $TaskName $branchName $baseCommit $implementationHead
+
+    if (-not $reviewOk -and $MaxFixRounds -eq 1) {
+        $fixLogPath = Join-Path $runDir "CODEBUDDY_FIX.log.txt"
+        Write-CollabState $statePath "repairing" $TaskName $branchName `
+            $baseCommit $implementationHead
+        $fixPrompt = @(
+            "Continue in the existing worktree and repair only the review findings.",
+            "Do not restart or discard accepted work. Do not expand scope.",
+            "Review file: $reviewPath",
+            "Requirement file: $ReqFile",
+            "External access, real model, BGE, device, network and git push are forbidden.",
+            "Run bounded offline validation and commit the repair locally.",
+            "Rewrite HANDOFF.json at $handoffPath using schema_version 2,",
+            "the original base_commit $baseCommit, final HEAD, clean status, validation,",
+            "empty remaining_items, and explicit risks."
+        ) -join [Environment]::NewLine
+        $fixResult = Invoke-ExternalWithExitEvent `
+            -FilePath $codebuddy `
+            -CommandArguments @(
+                "-p", "-y", "--model", $CodeBuddyModel,
+                "--allowedTools", "Read,Write,Edit,Bash,Grep,Glob",
+                "--max-turns", "$resolvedMaxTurns", "--output-format", "text", $fixPrompt
+            ) `
+            -WorkingDirectory $worktreeRoot `
+            -TimeoutSeconds $CodeBuddyTimeoutSeconds
+        Write-TextFile $fixLogPath $fixResult.Output
+
+        $fixedHead = (git -C $worktreeRoot rev-parse HEAD).Trim()
+        $fixedClean = @(git -C $worktreeRoot status --porcelain).Count -eq 0
+        $fixHandoff = Test-CodeBuddyHandoff $handoffPath $baseCommit $fixedHead $fixedClean
+        $fixOk = (Test-ExternalResultOk $fixResult) -and $fixedClean -and `
+            ($fixedHead -ne $implementationHead) -and $fixHandoff.Ok
+
+        if ($fixOk) {
+            $implementationHead = $fixedHead
+            Write-CollabState $statePath "ready_for_re_review" $TaskName $branchName `
+                $baseCommit $implementationHead
+            $finalReviewPath = Join-Path $runDir "REVIEW_FINAL.md"
+            $finalPrompt = @(
+                "You are Codex acting as strict read-only final reviewer.",
+                "Review git diff $baseCommit...HEAD against $ReqFile and $reviewPath.",
+                "Verify every P0/P1 finding, tests, scope and safety. Do not modify files.",
+                "End with REVIEW_PASSED only if no blocking issue remains; otherwise REVIEW_FAILED."
+            ) -join [Environment]::NewLine
+            $finalReview = Invoke-ExternalWithExitEvent `
+                -FilePath $codex `
+                -CommandArguments @(
+                    "exec", "--model", $CodexModel, "--sandbox", "read-only",
+                    "--color", "never", "--cd", $worktreeRoot, $finalPrompt
+                ) `
+                -WorkingDirectory $worktreeRoot `
+                -TimeoutSeconds $CodexTimeoutSeconds
+            Write-TextFile $finalReviewPath $finalReview.Output
+            $reviewOk = Test-ReviewResultOk $finalReview
+            Write-CollabJson $reviewResultPath ([ordered]@{
+                schema_version = 2
+                status = if ($reviewOk) { "approved" } else { "codex_takeover_required" }
+                base_commit = $baseCommit
+                reviewed_commit = $implementationHead
+                verdict = if ($reviewOk) { "REVIEW_PASSED" } else { "REVIEW_FAILED" }
+                report = $finalReviewPath
+                repair_rounds_used = 1
+            })
+        }
+        if (-not $fixOk -or -not $reviewOk) {
+            $reason = if (-not $fixOk) { "repair_failed" } else { "final_review_failed" }
+            Write-CollabState $statePath "codex_takeover_required" $TaskName $branchName `
+                $baseCommit $implementationHead $reason
+            Write-CodexTakeover $takeoverPath $TaskName $worktreeRoot $branchName `
+                $baseCommit $implementationHead $reason $implementationAttempts
+        }
+        elseif ($reviewOk) {
+            Write-CollabState $statePath "approved" $TaskName $branchName `
+                $baseCommit $implementationHead
+        }
+    }
 }
 elseif ($implOk -and $SkipCodexReview) {
     Write-TextFile -Path $reviewPath -Text "# Review skipped`n`nSkipCodexReview was set for this run."
@@ -502,6 +624,10 @@ $summary = @(
     "- CODEBUDDY_LOG: $codebuddyLogPath",
     "- CONTINUATION_STATE: $continuationPath",
     "- REVIEW: $reviewPath",
+    "- STATE: $statePath",
+    "- HANDOFF: $handoffPath",
+    "- REVIEW_RESULT: $reviewResultPath",
+    "- CODEX_TAKEOVER: $takeoverPath",
     "",
     "## Worktree git status",
     "",

@@ -1,6 +1,6 @@
 # AI 协作开发 Harness
 
-本目录用于 Codex 与 CodeBuddy 通过文件协议协作。
+本目录用于 Codex 与 CodeBuddy 通过文件、Git commit 和进程退出事件协作。
 
 ## 角色分工
 
@@ -15,6 +15,7 @@
   outbox/     CodeBuddy 写回的执行报告
   review/     Codex 的审核结论与返修清单
   rules/      长期协作规则和模板
+  runs/       每次运行的状态、交接、审查、接管和日志证据
 ```
 
 ## 硬约束
@@ -48,3 +49,20 @@ task_size: small
 `NEEDS_CONTINUATION.json`。默认仅允许 CodeBuddy 在同一 worktree 自动续作一次，
 两次调用共享 `CodeBuddyTimeoutSeconds` 总时间预算。续作仍失败时立即停止，保留
 worktree、分支、日志和状态文件供人工检查；编排器永不自动合并或推送。
+
+## Protocol v2 状态机
+
+```text
+implementing -> needs_continuation -> ready_for_review
+  -> changes_requested -> repairing -> ready_for_re_review -> approved
+  -> codex_takeover_required（任一不可恢复失败）
+```
+
+- `STATE.json`：当前状态与精确 base/head commit；
+- `HANDOFF.json`：CodeBuddy 的结构化交接，必须声明修改文件、验证、剩余项和风险；
+- `REVIEW_RESULT.json`：Codex 对指定 commit 的机器可读裁决；
+- `CODEX_TAKEOVER.json`：两次实现或一次返修仍失败时保留现场，禁止从头重跑；
+- `NEEDS_CONTINUATION.json`：Max Turns 的有界续作证据。
+
+实现成功但缺少合法 `HANDOFF.json`、HEAD 未推进、工作区不干净、存在未完成项或
+验证为空时，均不得进入 Codex 审查。默认禁止真实模型、BGE、设备、网络、push 和通知。
