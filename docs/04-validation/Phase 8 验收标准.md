@@ -17,10 +17,20 @@ Phase 8A-3 已完成：四个故障域各提供 1 组合成盲标协议夹具，
 
 ## 2. Phase 8B 失败归因
 
-- [ ] 每条 Finding 映射到稳定阶段和责任域
-- [ ] P0 不可被模型评分覆盖或降级
-- [ ] 失败报告可定位首次出现版本与受影响案例
-- [ ] 修复建议不包含敏感输入和未经证实的根因
+- [x] 每条 Finding 映射到稳定阶段和责任域
+- [x] P0 不可被模型评分覆盖或降级
+- [x] 失败报告可定位首次出现版本与受影响案例
+- [x] 修复建议不包含敏感输入和未经证实的根因
+
+Phase 8B 已完成：确定性 Code Grader 当前产生的 15 个 Finding code 全部进入受治理目录，统一映射到 `dataset / perception / tool / evidence / conclusion / model / budget / infrastructure` 八类稳定阶段及明确责任域。归因 API 只接收不可变 `EvaluationRun`，严重度逐条继承 Code Grader，未提供模型覆盖或降级入口；未知 code 受控失败，必须先完成目录治理。历史报告按 `(case_id, finding_code)` 保留首次出现 commit 与数据集版本；报告仅输出静态、可验证的排查建议，不复制案例事实或 Finding 自由文本。
+
+固定离线验收命令：
+
+```powershell
+uv run python scripts/eval_phase8_failure_attribution.py
+```
+
+该脚本故意制造受控失败以验证归因协议，使用 `FakeLLM`/确定性 Grader 语义，不访问真实模型、BGE 或设备，也不代表生产故障率。
 
 ## 3. Phase 8C 历史与趋势
 
