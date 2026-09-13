@@ -20,6 +20,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "collab_process.ps1")
 
 function Resolve-CodeBuddy {
     $command = Get-Command codebuddy -ErrorAction SilentlyContinue
@@ -123,7 +124,7 @@ $codeBuddyArguments = @(
     $prompt
 )
 
-$result = Invoke-ExternalWithTimeout `
+$result = Invoke-ExternalWithExitEvent `
     -FilePath $codebuddy `
     -CommandArguments $codeBuddyArguments `
     -WorkingDirectory $probeDir `

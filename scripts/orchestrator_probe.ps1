@@ -24,6 +24,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "collab_process.ps1")
 
 function Resolve-CommandPath {
     param(
@@ -180,7 +181,7 @@ $codexPlanArgs = @(
     "--cd", $ProjectRoot,
     $codexPlanPrompt
 )
-$planResult = Invoke-ExternalWithTimeout `
+$planResult = Invoke-ExternalWithExitEvent `
     -FilePath $codex `
     -CommandArguments $codexPlanArgs `
     -WorkingDirectory $ProjectRoot `
@@ -215,7 +216,7 @@ $codebuddyArgs = @(
     "--output-format", "text",
     $codebuddyPrompt
 )
-$codebuddyResult = Invoke-ExternalWithTimeout `
+$codebuddyResult = Invoke-ExternalWithExitEvent `
     -FilePath $codebuddy `
     -CommandArguments $codebuddyArgs `
     -WorkingDirectory $worktreeRoot `
@@ -257,7 +258,7 @@ $codexReviewArgs = @(
     "--cd", $worktreeRoot,
     $codexReviewPrompt
 )
-$reviewResult = Invoke-ExternalWithTimeout `
+$reviewResult = Invoke-ExternalWithExitEvent `
     -FilePath $codex `
     -CommandArguments $codexReviewArgs `
     -WorkingDirectory $worktreeRoot `
