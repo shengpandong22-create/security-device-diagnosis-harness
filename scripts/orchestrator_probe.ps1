@@ -94,7 +94,9 @@ function Test-FalseSuccessOutput {
         "not recognized",
         "command not found",
         "Unknown command",
-        "Max turns"
+        "Max turns",
+        "502 Socket is closed",
+        "target: https://copilot.tencent.com"
     )
 
     foreach ($pattern in $patterns) {

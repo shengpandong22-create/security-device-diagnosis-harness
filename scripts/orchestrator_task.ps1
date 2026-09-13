@@ -109,7 +109,9 @@ function Test-FalseSuccessOutput {
         "not recognized",
         "command not found",
         "Unknown command",
-        "Max turns"
+        "Max turns",
+        "502 Socket is closed",
+        "target: https://copilot.tencent.com"
     )
 
     foreach ($pattern in $patterns) {
@@ -304,7 +306,8 @@ else {
     }
 }
 
-git -C $ProjectRoot worktree add -b $branchName $worktreeRoot HEAD | Out-Null
+$baseCommit = (git -C $ProjectRoot rev-parse HEAD).Trim()
+git -C $ProjectRoot worktree add -b $branchName $worktreeRoot $baseCommit | Out-Null
 
 $codebuddyPrompt = @(
     "You are CodeBuddy acting as implementation engineer.",
@@ -419,14 +422,21 @@ if (-not $implOk -and (Test-MaxTurnsOutput $implementationResult.Output)) {
 }
 $codeBuddyStopwatch.Stop()
 
+$implementationHead = (git -C $worktreeRoot rev-parse HEAD).Trim()
+$implementationStatus = @(git -C $worktreeRoot status --porcelain)
+$implementationCommitted = $implementationHead -ne $baseCommit
+$implementationClean = $implementationStatus.Count -eq 0
+$implOk = ($implOk -and $implementationCommitted -and $implementationClean)
+
 $reviewOk = $false
 if ($implOk -and -not $SkipCodexReview) {
     $reviewPrompt = @(
         "You are Codex acting as a strict read-only reviewer.",
-        "Review the current branch relative to HEAD~1 or main if available.",
+        "Review the current branch relative to this exact base commit: $baseCommit.",
         "",
         "Rules:",
         "- Do not modify files.",
+        "- Use `git diff $baseCommit...HEAD`; do not substitute HEAD~1 or current main.",
         "- Check scope, safety boundaries, tests, docs, and git status.",
         "- Output Markdown only.",
         "- Include sections: conclusion, critical issues, important issues, suggestions, validation verdict.",
@@ -470,6 +480,7 @@ $summary = @(
     "- task: $TaskName",
     "- run_id: $runId",
     "- branch: $branchName",
+    "- base_commit: $baseCommit",
     "- worktree: $worktreeRoot",
     "- run_dir: $runDir",
     "- codebuddy_model: $CodeBuddyModel",
@@ -480,6 +491,8 @@ $summary = @(
     "- codebuddy_elapsed_seconds: $([math]::Round($codeBuddyStopwatch.Elapsed.TotalSeconds, 3))",
     "- codex_model: $CodexModel",
     "- implementation_ok: $($implOk.ToString().ToLowerInvariant())",
+    "- implementation_committed: $($implementationCommitted.ToString().ToLowerInvariant())",
+    "- implementation_clean: $($implementationClean.ToString().ToLowerInvariant())",
     "- review_ok: $($reviewOk.ToString().ToLowerInvariant())",
     "",
     "## Files",
