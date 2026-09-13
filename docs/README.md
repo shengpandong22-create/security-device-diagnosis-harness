@@ -39,6 +39,7 @@
 - [Phase 7 开发总结](./03-progress/Phase%207%20开发总结.md)
 - [Phase 8A 开发总结](./03-progress/Phase%208A%20开发总结.md)
 - [Phase 8B 开发总结](./03-progress/Phase%208B%20开发总结.md)
+- [Phase 8C 开发总结](./03-progress/Phase%208C%20开发总结.md)
 - [Phase 7 诊断质量评测体系实施规格](./02-specifications/Phase%207%20诊断质量评测体系实施规格.md)
 - [Phase 8 评测运营与标注可信度实施规格](./02-specifications/Phase%208%20评测运营与标注可信度实施规格.md)
 - [Phase 7 验收标准](./04-validation/Phase%207%20验收标准.md)

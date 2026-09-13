@@ -34,10 +34,20 @@ uv run python scripts/eval_phase8_failure_attribution.py
 
 ## 3. Phase 8C 历史与趋势
 
-- [ ] 运行摘要持久化但不保存事实、密钥和设备凭证
-- [ ] 只有单变量可比运行进入趋势
-- [ ] 数据集、模型、Prompt 或配置变化均可追踪
-- [ ] 趋势退化可触发现有发布门禁
+- [x] 运行摘要持久化但不保存事实、密钥和设备凭证
+- [x] 只有单变量可比运行进入趋势
+- [x] 数据集、模型、Prompt 或配置变化均可追踪
+- [x] 趋势退化可触发现有发布门禁
+
+Phase 8C 已完成：本地 JSON 历史只保存受控运行身份、聚合指标、运行内容哈希、Baseline 血缘和 Gate 结果，不保存案例、Finding、工具调用、Evidence、输入事实或环境变量值。除代码 commit 外，dataset、split、runner、model、model parameters、Prompt hash、configuration hash 和 environment 必须全部一致；变化字段会明确返回且运行不会写入当前趋势。候选运行始终复用 Phase 7 `compare_runs()`，核心指标退化或确定性 P0 会直接记录为 `BLOCKED`。
+
+固定离线验收命令：
+
+```powershell
+uv run python scripts/eval_phase8_history_trend.py
+```
+
+脚本故意构造一个退化 Candidate，验收历史血缘和发布门禁联动；它使用临时历史文件且可重复运行，不访问真实模型、BGE 或设备。
 
 ## 4. Phase 8D 数据集发布
 
