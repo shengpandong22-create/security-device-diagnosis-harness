@@ -122,7 +122,7 @@ def test_runner_never_sends_tool_exception_secret_back_to_llm():
     assert result.ok is False
     serialized_requests = " ".join(request.model_dump_json() for request in llm.requests)
     assert "PLAIN-GATEWAY-SECRET" not in serialized_requests
-    assert "***REDACTED***" in serialized_requests
+    assert "设备查询发生未预期错误" in serialized_requests
 
 
 def test_failed_result_cannot_carry_evidence():

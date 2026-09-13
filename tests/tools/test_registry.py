@@ -189,7 +189,12 @@ def test_tool_exception_becomes_controlled_failure():
     result = registry.execute("dummy__faulty", {}, context)
 
     assert result.ok is False
-    assert "设备网关连接失败" in (result.error or "")
+    assert result.error == "设备查询发生未预期错误"
+    assert "设备网关连接失败" not in (result.error or "")
+    assert result.metadata == {
+        "failure_kind": "unexpected",
+        "operation": "tool_execute",
+    }
     assert result.evidence_drafts == []
 
 

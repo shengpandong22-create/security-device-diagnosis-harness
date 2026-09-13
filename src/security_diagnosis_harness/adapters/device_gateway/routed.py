@@ -86,17 +86,25 @@ class RoutingContextRequiredError(DeviceRoutingError):
 
 
 class DeviceAssetDisabledError(DeviceRoutingError):
-    """资产被禁用，禁止路由到 Adapter。"""
+    """资产被禁用，禁止路由到 Adapter。
+
+    异常文本不得包含 device_id（Phase 9C-3 异常安全契约）；
+    内部属性保留供程序判断。
+    """
 
     reason = "asset_disabled"
 
     def __init__(self, device_id: str) -> None:
         self.device_id = device_id
-        super().__init__(f"设备资产 {device_id} 已禁用")
+        super().__init__("设备资产已禁用，禁止路由到 Adapter")
 
 
 class DeviceCapabilityMissingError(DeviceRoutingError):
-    """资产未声明操作所需的 DeviceCapability。"""
+    """资产未声明操作所需的 DeviceCapability。
+
+    异常文本不得包含 device_id（Phase 9C-3 异常安全契约）；
+    capability 与 operation 是低基数稳定码，允许进入文本。
+    """
 
     reason = "capability_missing"
 
@@ -105,7 +113,7 @@ class DeviceCapabilityMissingError(DeviceRoutingError):
         self.operation = operation
         self.capability = capability
         super().__init__(
-            f"设备资产 {device_id} 未声明能力 {capability.value}（操作 {operation}）"
+            f"设备资产未声明能力 {capability.value}（操作 {operation}）"
         )
 
 

@@ -60,6 +60,11 @@ from security_diagnosis_harness.ports.audit_repository import AuditRepository
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
 from security_diagnosis_harness.tools.contracts import ToolEvidenceDraft, ToolExecutionContext
+from security_diagnosis_harness.tools.device_failures import (
+    CAPABILITY_FAILURE_KINDS,
+    DeviceFailureKind,
+    collect_device_failure_kinds,
+)
 from security_diagnosis_harness.tools.registry import ToolRegistry, default_permissions
 
 
@@ -100,6 +105,9 @@ class RunDiagnosisResult(BaseModel):
     candidate_explanation: str = ""
     evidence_chain: list[str] = Field(default_factory=list)
     excluded_candidates: list[str] = Field(default_factory=list)
+    # Phase 9C-3：受控降级标记。部分工具失败时为 True，并携带稳定 failure kinds。
+    degraded: bool = False
+    failure_kinds: list[str] = Field(default_factory=list)
     troubleshooting_order: list[str] = Field(default_factory=list)
 
 
@@ -362,9 +370,43 @@ class SecurityDiagnosisApplicationService:
 
         result = self._runner.run(case, context, self._tool_allowlist)
 
+        # Phase 9C-3：从失败工具结果收集稳定 failure kinds（低基数，不含标识）。
+        failure_kinds = collect_device_failure_kinds(result.tool_results)
+        degraded = bool(failure_kinds)
+
         # 先把真实工具结果落成 Evidence（失败的草稿不会出现在 drafts 中）。
         for draft in result.evidence_drafts:
             case.add_evidence(to_diagnosis_evidence(case.diagnosis_id, draft))
+
+        if degraded and not case.evidence:
+            # Phase 9C-3：所有设备调用失败且无 Evidence，不落结论、不自动重试。
+            # capability 类失败允许进入 inconclusive（结构化说明，不猜根因）；
+            # timeout/rate_limited/unavailable/authentication/not_ready 等优先
+            # waiting_for_input，等待补充信息。
+            capability_only = all(
+                DeviceFailureKind(kind) in CAPABILITY_FAILURE_KINDS for kind in failure_kinds
+            )
+            if capability_only:
+                return self._finish_failure(
+                    case,
+                    result,
+                    "设备调用受控降级: failure_kinds="
+                    + ",".join(failure_kinds)
+                    + "；无可用事实，无法形成结论",
+                    status=SecurityDiagnosisStatus.INCONCLUSIVE,
+                    before=before,
+                    degraded=True,
+                    failure_kinds=failure_kinds,
+                )
+            return self._finish_failure(
+                case,
+                result,
+                "设备调用失败，暂无可用事实，请补充信息后重试",
+                status=SecurityDiagnosisStatus.WAITING_FOR_INPUT,
+                before=before,
+                degraded=True,
+                failure_kinds=failure_kinds,
+            )
 
         if not result.ok or result.final_conclusion is None:
             return self._finish_failure(
@@ -373,6 +415,8 @@ class SecurityDiagnosisApplicationService:
                 result.error or "Runner 未产出候选结论",
                 status=SecurityDiagnosisStatus.WAITING_FOR_INPUT,
                 before=before,
+                degraded=degraded,
+                failure_kinds=failure_kinds,
             )
 
         draft_conclusion = result.final_conclusion
@@ -388,6 +432,8 @@ class SecurityDiagnosisApplicationService:
                 "没有任何可用 Evidence，无法生成受控结论",
                 status=SecurityDiagnosisStatus.INCONCLUSIVE,
                 before=before,
+                degraded=degraded,
+                failure_kinds=failure_kinds,
             )
 
         conclusion = DiagnosisConclusion(
@@ -411,6 +457,8 @@ class SecurityDiagnosisApplicationService:
                 f"结论未通过 Citation Policy: {exc}",
                 status=SecurityDiagnosisStatus.INCONCLUSIVE,
                 before=before,
+                degraded=degraded,
+                failure_kinds=failure_kinds,
             )
 
         case.set_conclusion(conclusion)
@@ -443,6 +491,8 @@ class SecurityDiagnosisApplicationService:
             evidence_chain=insight.evidence_chain,
             excluded_candidates=insight.excluded_candidates,
             troubleshooting_order=insight.troubleshooting_order,
+            degraded=degraded,
+            failure_kinds=list(failure_kinds),
         )
 
     # ------------------------------------------------------- 候选根因（Phase 1/2/3/4C）
@@ -527,6 +577,8 @@ class SecurityDiagnosisApplicationService:
         *,
         status: SecurityDiagnosisStatus,
         before: SecurityDiagnosisCase,
+        degraded: bool = False,
+        failure_kinds: tuple[str, ...] = (),
     ) -> RunDiagnosisResult:
         """受控失败：不伪造 Evidence，只推进状态并记录错误。"""
         case.transition_to(status)
@@ -547,6 +599,8 @@ class SecurityDiagnosisApplicationService:
             rounds=result.rounds,
             tool_calls=result.tool_calls,
             error=error,
+            degraded=degraded,
+            failure_kinds=list(failure_kinds),
         )
 
     def _append_audit(

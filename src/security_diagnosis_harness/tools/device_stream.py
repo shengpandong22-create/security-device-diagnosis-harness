@@ -13,8 +13,15 @@ from security_diagnosis_harness.tools.contracts import (
     ToolExecutionResult,
     ToolPermission,
     ToolRiskLevel,
-    failure_result,
 )
+from security_diagnosis_harness.tools.device_failures import (
+    DeviceFailureKind,
+    classify_device_failure,
+    device_failure_result,
+)
+
+# 低基数操作码：失败 metadata 只允许 failure_kind / operation。
+_OPERATION = "query_stream_snapshot"
 
 
 class DeviceStreamInput(BaseModel):
@@ -42,15 +49,17 @@ class DeviceStreamTool(BaseTool):
     ) -> ToolExecutionResult:
         assert isinstance(arguments, DeviceStreamInput)
         if context.device_gateway is None:
-            return failure_result(self.name, "未配置 DeviceGateway")
+            return device_failure_result(
+                self.name, DeviceFailureKind.ADAPTER_NOT_READY, _OPERATION
+            )
 
         try:
             stream = context.device_gateway.query_stream_snapshot(
                 arguments.device_id,
                 arguments.stream_kind,
             )
-        except Exception as exc:  # 网关异常转成受控失败，不伪造成证据
-            return failure_result(self.name, f"查询设备码流失败: {exc}")
+        except Exception as exc:  # 受控降级：稳定分类 + 安全文案，不伪造成证据
+            return device_failure_result(self.name, classify_device_failure(exc), _OPERATION)
 
         observation = (
             f"设备 {stream.device_id} {stream.stream_kind.value} 码流 "

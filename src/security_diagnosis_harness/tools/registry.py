@@ -8,11 +8,16 @@ from typing import Any
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.tools.contracts import (
     BaseTool,
+    ToolArgumentError,
     ToolExecutionContext,
     ToolExecutionResult,
     ToolPermission,
     ToolRiskLevel,
     failure_result,
+)
+from security_diagnosis_harness.tools.device_failures import (
+    classify_device_failure,
+    device_failure_result,
 )
 
 
@@ -89,19 +94,32 @@ class ToolRegistry:
         guarded_context = context.model_copy(update={"invoked_by_registry": True})
         try:
             result = tool.run(arguments, guarded_context)
+        except ToolArgumentError as exc:
+            # Pydantic 错误可能回显 input_value；边界只保留稳定分类文案。
+            message = (
+                "工具参数必须是键值映射"
+                if str(exc) == "工具参数必须是键值映射"
+                else "工具参数非法"
+            )
+            return failure_result(tool_name, message)
         except Exception as exc:  # noqa: BLE001 - 受控失败，不允许异常冒泡
-            return failure_result(tool_name, f"工具执行失败: {exc}")
+            return device_failure_result(
+                tool_name,
+                classify_device_failure(exc),
+                "tool_execute",
+            )
 
         try:
             # Third-party tools may mutate a result after construction. Rebuild it at
             # the Registry boundary so nested redaction validators always run again.
             result = ToolExecutionResult.model_validate(result.model_dump(mode="python"))
-        except Exception as exc:  # noqa: BLE001 - invalid tool output is controlled
-            return failure_result(tool_name, f"工具返回结果不合法: {exc}")
+        except Exception:  # noqa: BLE001 - invalid tool output is controlled
+            return failure_result(tool_name, "工具返回结果不合法")
 
         if not result.ok:
-            # 工具失败不能被包装成 Evidence。
-            return failure_result(tool_name, result.error or "工具执行失败")
+            # 工具失败不能被包装成 Evidence。结果已在上方重建并通过校验，
+            # 保留其受控 metadata（如 failure_kind/operation）。
+            return result
         return result
 
 

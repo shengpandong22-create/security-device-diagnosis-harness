@@ -23,26 +23,36 @@ class InvalidAdapterKeyError(DeviceAdapterRegistryError):
 
 
 class DuplicateAdapterKeyError(DeviceAdapterRegistryError):
-    """adapter_key 已存在（禁止静默覆盖）。"""
+    """adapter_key 已存在（禁止静默覆盖）。
+
+    异常文本不得包含 adapter_key（Phase 9C-3 异常安全契约）；
+    内部属性保留供程序判断。
+    """
 
     def __init__(self, adapter_key: str) -> None:
-        super().__init__(f"adapter_key {adapter_key} 已注册，禁止覆盖")
+        super().__init__("adapter_key 已注册，禁止覆盖")
         self.adapter_key = adapter_key
 
 
 class UnknownAdapterKeyError(DeviceAdapterRegistryError):
-    """adapter_key 未注册（禁止返回 None 或猜测路由）。"""
+    """adapter_key 未注册（禁止返回 None 或猜测路由）。
+
+    异常文本不得包含 adapter_key（Phase 9C-3 异常安全契约）。
+    """
 
     def __init__(self, adapter_key: str) -> None:
-        super().__init__(f"adapter_key {adapter_key} 未注册")
+        super().__init__("adapter_key 未注册")
         self.adapter_key = adapter_key
 
 
 class AdapterNotReadyError(DeviceAdapterRegistryError):
-    """adapter_key 已注册但尚未 ready（Router 不得获取）。"""
+    """adapter_key 已注册但尚未 ready（Router 不得获取）。
+
+    异常文本不得包含 adapter_key（Phase 9C-3 异常安全契约）。
+    """
 
     def __init__(self, adapter_key: str) -> None:
-        super().__init__(f"adapter_key {adapter_key} 未 ready")
+        super().__init__("adapter_key 未 ready")
         self.adapter_key = adapter_key
 
 

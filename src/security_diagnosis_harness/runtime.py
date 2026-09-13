@@ -380,6 +380,7 @@ def build_runtime_container(
     adapter_ready: bool = True,
     self_check_passed_adapter_keys: Iterable[str] | None = None,
     registry: ToolRegistry | None = None,
+    device_adapter: DeviceGateway | None = None,
 ) -> RuntimeContainer:
     """按配置装配正式运行环境。
 
@@ -388,12 +389,16 @@ def build_runtime_container(
         device_data_path: 设备样例数据路径（默认沿用 Phase 0 样例）。
         assets: 注入设备资产目录内容；缺省时使用默认非敏感摄像头资产
             （device_id 与既有默认样例一致）。
-        adapter_ready: 默认 StaticDeviceGateway Adapter 是否标记 ready。
+        adapter_ready: 默认 Adapter 是否标记 ready。
         self_check_passed_adapter_keys: 固定自检通过集合；缺省时由装配参数
             显式构造（adapter ready 即默认 key 通过，否则为空），
             Router 不自行猜测自检结果。
         registry: 注入 ToolRegistry；缺省时使用摄像头运行时注册表。
             supported fault types 一律按该注册表实际注册工具推导。
+        device_adapter: Phase 9C-3 显式注入的 DeviceGateway Adapter（测试 /
+            影子运行用）；缺省时使用内部 StaticDeviceGateway，默认行为完全
+            不变。Adapter 注册在 DEFAULT_RUNTIME_ADAPTER_KEY 下，readiness
+            由 `adapter_ready` 决定；不形成全局单例、不访问网络。
 
     Raises:
         RuntimeConfigurationError: 配置非法。
@@ -411,13 +416,17 @@ def build_runtime_container(
 
     # ------------------------------------------------ 设备平面：Catalog + Registry
     resolved_assets = tuple(assets) if assets is not None else (build_default_runtime_asset(),)
-    static_gateway = StaticDeviceGateway(data_path)
+    # Phase 9C-3：允许显式注入受控 Adapter（如 SimulatorDeviceGateway）；
+    # 缺省时仍使用内部 StaticDeviceGateway，默认装配行为完全不变。
+    runtime_adapter = (
+        device_adapter if device_adapter is not None else StaticDeviceGateway(data_path)
+    )
     asset_catalog = InMemoryDeviceAssetCatalog(resolved_assets)
     adapter_registry = InMemoryDeviceAdapterRegistry()
-    # 既有 StaticDeviceGateway 注册为 Router 内部 Adapter；ready 状态由装配参数决定。
+    # Adapter 注册为 Router 内部 Adapter；ready 状态由装配参数决定。
     adapter_registry.register(
         DEFAULT_RUNTIME_ADAPTER_KEY,
-        static_gateway,
+        runtime_adapter,
         ready=adapter_ready,
     )
     gateway = RoutedDeviceGateway(asset_catalog, adapter_registry)

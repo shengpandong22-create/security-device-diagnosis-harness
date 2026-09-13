@@ -10,18 +10,25 @@ class DeviceAssetCatalogError(Exception):
 
 
 class DeviceAssetNotFoundError(DeviceAssetCatalogError):
-    """指定 device_id 的资产不存在。"""
+    """指定 device_id 的资产不存在。
+
+    异常文本不得包含 device_id（Phase 9C-3 异常安全契约）；
+    内部属性保留供程序判断。
+    """
 
     def __init__(self, device_id: str) -> None:
-        super().__init__(f"设备资产 {device_id} 不存在")
+        super().__init__("设备资产不存在")
         self.device_id = device_id
 
 
 class DeviceAssetAlreadyExistsError(DeviceAssetCatalogError):
-    """指定 device_id 的资产已存在（禁止静默覆盖）。"""
+    """指定 device_id 的资产已存在（禁止静默覆盖）。
+
+    异常文本不得包含 device_id（Phase 9C-3 异常安全契约）。
+    """
 
     def __init__(self, device_id: str) -> None:
-        super().__init__(f"设备资产 {device_id} 已存在")
+        super().__init__("设备资产已存在")
         self.device_id = device_id
 
 
