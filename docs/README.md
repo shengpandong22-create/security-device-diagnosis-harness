@@ -50,3 +50,7 @@
 - [Phase 3 验收标准](./04-validation/Phase%203%20验收标准.md)
 - [Phase 4 验收标准](./04-validation/Phase%204%20验收标准.md)
 - [Phase 5 验收标准](./04-validation/Phase%205%20验收标准.md)
+
+## 05-audits
+
+- [第四轮严格审计报告](./05-audits/第四轮严格审计报告.md)
