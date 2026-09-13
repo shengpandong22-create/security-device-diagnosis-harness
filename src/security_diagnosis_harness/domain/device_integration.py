@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
 class DeviceCapability(StrEnum):
@@ -61,8 +61,10 @@ class DeviceConnectionProfile(BaseModel):
     @classmethod
     def _reject_endpoint_credentials(cls, value: str) -> str:
         lowered = value.lower()
-        if "://" in value or "@" in value or any(
-            token in lowered for token in ("token=", "password=", "secret=")
+        if (
+            "://" in value
+            or "@" in value
+            or any(token in lowered for token in ("token=", "password=", "secret="))
         ):
             raise ValueError("endpoint_alias 只能是受控别名，不能包含 URL 或凭证")
         return value
@@ -79,12 +81,26 @@ class DeviceRequestContext(BaseModel):
     source: str = Field(min_length=1)
     permissions: frozenset[str] = frozenset()
 
+    @field_validator("deadline")
+    @classmethod
+    def _require_aware_deadline(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("deadline 必须包含时区")
+        return value
+
+
+class ResolvedCredential(BaseModel):
+    """只在 Adapter 边界短暂持有、默认不可打印的凭证。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    value: SecretStr
+
 
 class DeviceAdapterError(Exception):
     """可安全跨边界传递的设备 Adapter 错误。"""
 
     def __init__(self, kind: DeviceAdapterErrorKind, operation: str) -> None:
         self.kind = kind
-        self.operation = operation
-        super().__init__(f"设备只读操作失败: kind={kind.value}, operation={operation}")
-
+        self.operation = operation if operation.replace("_", "").isalnum() else "unknown"
+        super().__init__(f"设备只读操作失败: kind={kind.value}, operation={self.operation}")

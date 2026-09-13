@@ -2,13 +2,13 @@
 
 ## 1. Phase 9A 接入契约与模拟器
 
-- [ ] DeviceAsset 不含真实凭证，ConnectionProfile 只保存 credential reference
-- [ ] LLM 与工具参数不能选择 endpoint、credential 或 Adapter
-- [ ] capability、deadline、权限和稳定错误分类可表达
-- [ ] Simulator 支持正常、离线、超时、认证失败、限流、能力缺失和非法响应
-- [ ] 故障注入完全确定性，不使用随机概率
-- [ ] Simulator 调用轨迹不保存凭证或原始敏感响应
-- [ ] 现有 StaticDeviceGateway 和 Phase 0～8 回归不受影响
+- [x] DeviceAsset 不含真实凭证，ConnectionProfile 只保存 credential reference
+- [x] LLM 与工具参数不能选择 endpoint、credential 或 Adapter
+- [x] capability、deadline、权限和稳定错误分类可表达
+- [x] Simulator 支持正常、离线、超时、认证失败、限流、能力缺失和非法响应
+- [x] 故障注入完全确定性，不使用随机概率
+- [x] Simulator 调用轨迹不保存凭证或原始敏感响应
+- [x] 现有 StaticDeviceGateway 和 Phase 0～8 回归不受影响
 
 ## 2. Phase 9B HTTP Adapter
 
@@ -51,16 +51,16 @@
 
 ## 6. 质量门禁
 
-- [ ] `uv run ruff check .` 通过
-- [ ] `uv run pytest` 全量通过且无删除/跳过既有安全测试
-- [ ] Phase 0～8 固定 Demo/Eval 全部回归
-- [ ] 新增 P0 安全反例覆盖异常到 LLMRequest 的完整链路
-- [ ] `git diff --check` 通过
-- [ ] 仓库无数据库、设备响应、`.env`、密钥、证书或真实凭证残留
+- [x] `uv run ruff check .` 通过
+- [x] `uv run pytest` 全量通过且无删除/跳过既有安全测试
+- [x] Phase 0～8 固定 Demo/Eval 全部回归
+- [x] 新增 P0 安全反例覆盖异常到 LLMRequest 的完整链路
+- [x] `git diff --check` 通过
+- [x] 仓库无数据库、设备响应、`.env`、密钥、证书或真实凭证残留
 
 ## 7. 能力表述
 
-- [ ] Simulator 结果明确标注为高保真模拟
+- [x] Simulator 结果明确标注为高保真模拟
 - [ ] 真实 HTTP 契约测试不表述为真实设备准确率
 - [ ] 小样本授权联调不表述为生产稳定性或生产准确率
 - [ ] 只有真实 Adapter + 完整 Agent Loop 才可称为端到端设备诊断评测

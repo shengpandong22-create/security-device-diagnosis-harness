@@ -10,6 +10,7 @@ from security_diagnosis_harness.domain.device_integration import (
     DeviceCapability,
     DeviceConnectionProfile,
     DeviceRequestContext,
+    ResolvedCredential,
 )
 
 
@@ -59,6 +60,23 @@ def test_request_context_carries_deadline_and_permission() -> None:
     assert "device:read" in context.permissions
 
 
+def test_request_context_rejects_naive_deadline() -> None:
+    with pytest.raises(ValidationError, match="必须包含时区"):
+        DeviceRequestContext(
+            request_id="req-1",
+            diagnosis_id="diag-1",
+            deadline=datetime(2026, 9, 13),
+            source="tool_registry",
+        )
+
+
+def test_resolved_credential_does_not_reveal_secret_in_repr_or_json() -> None:
+    credential = ResolvedCredential(value="not-a-real-secret")
+    assert "not-a-real-secret" not in repr(credential)
+    assert "not-a-real-secret" not in credential.model_dump_json()
+    assert credential.value.get_secret_value() == "not-a-real-secret"
+
+
 @pytest.mark.parametrize("kind", list(DeviceAdapterErrorKind))
 def test_adapter_error_has_stable_safe_message(kind: DeviceAdapterErrorKind) -> None:
     error = DeviceAdapterError(kind, "query_status")
@@ -67,3 +85,8 @@ def test_adapter_error_has_stable_safe_message(kind: DeviceAdapterErrorKind) -> 
     assert "password" not in message.lower()
     assert "http" not in message.lower()
 
+
+def test_adapter_error_does_not_echo_unsafe_operation() -> None:
+    error = DeviceAdapterError(DeviceAdapterErrorKind.TIMEOUT, "query?token=plain")
+    assert "plain" not in str(error)
+    assert error.operation == "unknown"

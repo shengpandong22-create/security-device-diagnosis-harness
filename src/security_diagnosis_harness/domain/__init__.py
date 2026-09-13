@@ -75,6 +75,15 @@ from security_diagnosis_harness.domain.device import (
     RecordingStatus,
     StreamStatus,
 )
+from security_diagnosis_harness.domain.device_integration import (
+    DeviceAdapterError,
+    DeviceAdapterErrorKind,
+    DeviceAsset,
+    DeviceCapability,
+    DeviceConnectionProfile,
+    DeviceRequestContext,
+    ResolvedCredential,
+)
 from security_diagnosis_harness.domain.enums import (
     SecurityDiagnosisStatus,
     SecurityFaultType,
@@ -84,14 +93,6 @@ from security_diagnosis_harness.domain.evidence import (
     EvidenceSource,
     EvidenceType,
     Reliability,
-)
-from security_diagnosis_harness.domain.device_integration import (
-    DeviceAdapterError,
-    DeviceAdapterErrorKind,
-    DeviceAsset,
-    DeviceCapability,
-    DeviceConnectionProfile,
-    DeviceRequestContext,
 )
 from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidate,
@@ -154,6 +155,7 @@ __all__ = [
     "DeviceConfigSnapshot",
     "DeviceConnectionProfile",
     "DeviceRequestContext",
+    "ResolvedCredential",
     "DeviceSnapshot",
     "DeviceType",
     "DiagnosisConclusion",

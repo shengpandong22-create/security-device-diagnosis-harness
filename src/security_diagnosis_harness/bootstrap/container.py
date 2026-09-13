@@ -11,6 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from security_diagnosis_harness.adapters.device_gateway.simulator import (
+    SimulatorDeviceGateway,
+    SimulatorScenario,
+)
 from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
 from security_diagnosis_harness.adapters.llm.fake import FakeLLM, Responder
 from security_diagnosis_harness.agent.runner import ToolLoopBudget, ToolLoopRunner
@@ -20,6 +24,7 @@ from security_diagnosis_harness.application.diagnoses import (
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 from security_diagnosis_harness.domain.citation_policy import CitationPolicy
 from security_diagnosis_harness.domain.enums import SecurityFaultType
+from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 from security_diagnosis_harness.ports.llm import (
     ChatRole,
     ConclusionDraft,
@@ -209,13 +214,21 @@ class Container:
     repository: InMemoryDiagnosisRepository
     runner: ToolLoopRunner
     registry: ToolRegistry
-    gateway: StaticDeviceGateway
+    gateway: DeviceGateway
     llm: FakeLLM
     citation_policy: CitationPolicy
 
     @property
     def external_model_called(self) -> bool:
         return self.llm.external_model_called
+
+
+@dataclass
+class SimulatorContainer(Container):
+    """Phase 9A 高保真模拟器装配结果。"""
+
+    gateway: SimulatorDeviceGateway
+    static_gateway: StaticDeviceGateway
 
 
 def build_container(
@@ -387,6 +400,39 @@ def build_phase2_container(
         runner=runner,
         registry=registry,
         gateway=gateway,
+        llm=llm,
+        citation_policy=citation_policy,
+    )
+
+
+def build_phase9a_simulator_container(
+    scenario: SimulatorScenario,
+    device_data_path: str | Path | None = None,
+) -> SimulatorContainer:
+    """装配真实 Runner/Registry/Evidence 链路和确定性 Simulator。"""
+    static_gateway = StaticDeviceGateway(device_data_path or CAMERA_CASES_DATA_PATH)
+    gateway = SimulatorDeviceGateway(static_gateway, scenario)
+    registry = build_registry()
+    llm = FakeLLM(responder=build_camera_black_screen_responder(True))
+    runner = ToolLoopRunner(llm, registry, ToolLoopBudget(max_rounds=3, max_tool_calls=8))
+    repository = InMemoryDiagnosisRepository()
+    citation_policy = CitationPolicy()
+    service = SecurityDiagnosisApplicationService(
+        repository=repository,
+        runner=runner,
+        registry=registry,
+        gateway=gateway,
+        citation_policy=citation_policy,
+        tool_allowlist=list(PHASE1_TOOLS),
+        supported_fault_types=frozenset({SecurityFaultType.CAMERA_BLACK_SCREEN}),
+    )
+    return SimulatorContainer(
+        service=service,
+        repository=repository,
+        runner=runner,
+        registry=registry,
+        gateway=gateway,
+        static_gateway=static_gateway,
         llm=llm,
         citation_policy=citation_policy,
     )

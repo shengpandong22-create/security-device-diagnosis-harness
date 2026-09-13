@@ -1,6 +1,5 @@
 """DeviceGateway adapters。"""
 
-from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
 from security_diagnosis_harness.adapters.device_gateway.simulator import (
     SimulatorBehavior,
     SimulatorCallTrace,
@@ -8,6 +7,7 @@ from security_diagnosis_harness.adapters.device_gateway.simulator import (
     SimulatorDirective,
     SimulatorScenario,
 )
+from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
 
 __all__ = [
     "SimulatorBehavior",

@@ -6,6 +6,8 @@ from security_diagnosis_harness.adapters.device_gateway.simulator import (
     SimulatorDirective,
     SimulatorScenario,
 )
+from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
+from security_diagnosis_harness.bootstrap.container import CAMERA_CASES_DATA_PATH
 from security_diagnosis_harness.domain.device_integration import (
     DeviceAdapterError,
     DeviceAdapterErrorKind,
@@ -84,3 +86,11 @@ def test_unconfigured_operation_defaults_to_success(static_gateway) -> None:
         ),
     )
     assert gateway.query_status("camera-3f-001").device_id == "camera-3f-001"
+
+
+def test_simulator_preserves_offline_device_fact() -> None:
+    gateway = SimulatorDeviceGateway(
+        StaticDeviceGateway(CAMERA_CASES_DATA_PATH),
+        SimulatorScenario(scenario_id="offline-fact"),
+    )
+    assert gateway.query_status("cam-offline-01").online is False
