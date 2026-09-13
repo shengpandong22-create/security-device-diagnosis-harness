@@ -2,6 +2,14 @@
 
 from security_diagnosis_harness.ports.audit_repository import AuditRepository
 from security_diagnosis_harness.ports.credentials import CredentialResolverPort
+from security_diagnosis_harness.ports.device_adapters import (
+    AdapterNotReadyError,
+    DeviceAdapterRegistryError,
+    DeviceAdapterRegistryPort,
+    DuplicateAdapterKeyError,
+    InvalidAdapterKeyError,
+    UnknownAdapterKeyError,
+)
 from security_diagnosis_harness.ports.device_assets import DeviceAssetCatalogPort
 from security_diagnosis_harness.ports.device_gateway import (
     DeviceGateway,
@@ -23,21 +31,27 @@ from security_diagnosis_harness.ports.llm import (
 from security_diagnosis_harness.ports.observability import ObservabilityPort
 
 __all__ = [
+    "AdapterNotReadyError",
     "AuditRepository",
     "ChatMessage",
     "ChatRole",
     "ConclusionDraft",
     "CredentialResolverPort",
+    "DeviceAdapterRegistryError",
+    "DeviceAdapterRegistryPort",
     "DeviceAssetCatalogPort",
     "DeviceGateway",
     "DeviceGatewayDataError",
     "DeviceGatewayError",
     "DeviceNotFoundError",
     "DiagnosisRepository",
+    "DuplicateAdapterKeyError",
     "FinishReason",
+    "InvalidAdapterKeyError",
     "LLMClient",
     "LLMRequest",
     "LLMResponse",
     "ObservabilityPort",
     "ToolCall",
+    "UnknownAdapterKeyError",
 ]

@@ -7,6 +7,16 @@ from security_diagnosis_harness.adapters.device_gateway.http_security_platform i
     SecurityPlatformHttpAdapter,
     SecurityPlatformHttpSettings,
 )
+from security_diagnosis_harness.adapters.device_gateway.registry import (
+    InMemoryDeviceAdapterRegistry,
+)
+from security_diagnosis_harness.adapters.device_gateway.routed import (
+    DeviceAssetDisabledError,
+    DeviceCapabilityMissingError,
+    DeviceRoutingError,
+    RoutedDeviceGateway,
+    RoutingContextRequiredError,
+)
 from security_diagnosis_harness.adapters.device_gateway.simulator import (
     SimulatorBehavior,
     SimulatorCallTrace,
@@ -17,6 +27,12 @@ from security_diagnosis_harness.adapters.device_gateway.simulator import (
 from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
 
 __all__ = [
+    "DeviceAssetDisabledError",
+    "DeviceCapabilityMissingError",
+    "DeviceRoutingError",
+    "InMemoryDeviceAdapterRegistry",
+    "RoutedDeviceGateway",
+    "RoutingContextRequiredError",
     "SecurityPlatformHttpAdapter",
     "SecurityPlatformHttpSettings",
     "SimulatorBehavior",
