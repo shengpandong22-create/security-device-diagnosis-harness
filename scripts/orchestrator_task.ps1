@@ -127,6 +127,17 @@ function Test-ExternalResultOk {
     return (-not $Result.TimedOut -and $Result.ExitCode -eq 0 -and $null -eq $falseSuccess)
 }
 
+function Test-ReviewResultOk {
+    param([Parameter(Mandatory = $true)]$Result)
+
+    if ($Result.TimedOut -or $Result.ExitCode -ne 0) {
+        return $false
+    }
+    $passedAt = $Result.Output.LastIndexOf("REVIEW_PASSED", [System.StringComparison]::Ordinal)
+    $failedAt = $Result.Output.LastIndexOf("REVIEW_FAILED", [System.StringComparison]::Ordinal)
+    return ($passedAt -ge 0 -and $passedAt -gt $failedAt)
+}
+
 function Test-MaxTurnsOutput {
     param([string]$Text)
 
@@ -441,7 +452,7 @@ if ($implOk -and -not $SkipCodexReview) {
         -TimeoutSeconds $CodexTimeoutSeconds
     Write-TextFile -Path $reviewLogPath -Text $reviewResult.Output
     Write-TextFile -Path $reviewPath -Text $reviewResult.Output
-    $reviewOk = Test-ExternalResultOk $reviewResult
+    $reviewOk = Test-ReviewResultOk $reviewResult
 }
 elseif ($implOk -and $SkipCodexReview) {
     Write-TextFile -Path $reviewPath -Text "# Review skipped`n`nSkipCodexReview was set for this run."

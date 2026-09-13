@@ -117,6 +117,19 @@ function Assert-ExternalResult {
     }
 }
 
+function Assert-ReviewResult {
+    param(
+        [Parameter(Mandatory = $true)]$Result,
+        [Parameter(Mandatory = $true)][string]$StepName
+    )
+
+    $passedAt = $Result.Output.LastIndexOf("REVIEW_PASSED", [System.StringComparison]::Ordinal)
+    $failedAt = $Result.Output.LastIndexOf("REVIEW_FAILED", [System.StringComparison]::Ordinal)
+    if ($Result.TimedOut -or $Result.ExitCode -ne 0 -or $passedAt -lt 0 -or $passedAt -le $failedAt) {
+        throw "$StepName failed. exit=$($Result.ExitCode), timed_out=$($Result.TimedOut), final_review_passed=$($passedAt -gt $failedAt)"
+    }
+}
+
 $codebuddy = Resolve-CommandPath `
     -Name "codebuddy" `
     -Fallback (Join-Path $env:LOCALAPPDATA "codebuddy\bin\codebuddy.exe")
@@ -248,6 +261,7 @@ $codexReviewPrompt = @(
     "- Do not modify any files.",
     "- Output the content of REVIEW.md.",
     "- Include: conclusion, critical issues, important issues, suggestions, and final pass/fail.",
+    "- End with exactly REVIEW_PASSED or REVIEW_FAILED.",
     "- If the only change is CODEBUDDY_PROBE_RESULT.md and it contains probe: ok, mark it as passed.",
     "- If src/, tests/, or docs/ were modified, mark it as failed."
 ) -join [Environment]::NewLine
@@ -265,7 +279,7 @@ $reviewResult = Invoke-ExternalWithExitEvent `
     -WorkingDirectory $worktreeRoot `
     -TimeoutSeconds $CodexTimeoutSeconds
 $reviewResult.Output | Set-Content -Path $reviewPath -Encoding UTF8
-Assert-ExternalResult -Result $reviewResult -StepName "Codex review"
+Assert-ReviewResult -Result $reviewResult -StepName "Codex review"
 
 $summary = @(
     "# Orchestrator Probe Summary",
