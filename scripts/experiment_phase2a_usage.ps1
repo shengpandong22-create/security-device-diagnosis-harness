@@ -98,12 +98,29 @@ function Test-FixtureCompletion {
 }
 
 function Complete-FixtureCommit {
-    param([string]$Root)
+    param([string]$Root, [string]$BaseCommit, [string]$PythonExecutable)
+    Push-Location $Root
+    try {
+        $previousErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $testOutput = & $PythonExecutable -m unittest -v 2>&1 | Out-String
+        $testExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+        Pop-Location
+    }
+    $match = [regex]::Match($testOutput, 'Ran (\d+) tests?')
+    $passedTests = if ($match.Success -and $testExitCode -eq 0) { [int]$match.Groups[1].Value } else { 0 }
+    $changedFiles = @(git -C $Root status --porcelain | ForEach-Object { $_.Substring(3) })
     [ordered]@{
+        schema_version = 1
         command = "python -m unittest -v"
-        exit_code = 0
-        passed_tests = 10
-        changed_files_before_commit = @("asset_alias.py")
+        exit_code = $testExitCode
+        passed_tests = $passedTests
+        changed_files_before_commit = $changedFiles
+        base_commit = $BaseCommit
+        asset_alias_sha256 = (Get-FileHash (Join-Path $Root "asset_alias.py") -Algorithm SHA256).Hash.ToLowerInvariant()
+        tests_sha256 = (Get-FileHash (Join-Path $Root "test_asset_alias.py") -Algorithm SHA256).Hash.ToLowerInvariant()
         generated_by = "experiment_harness"
     } | ConvertTo-Json | Set-Content (Join-Path $Root ".experiment-validation.json") -Encoding UTF8
     git -C $Root add -- asset_alias.py .experiment-validation.json
@@ -180,7 +197,7 @@ $completionA = Test-FixtureCompletion $a.Root $a.BaseCommit $python
 if (-not ($completionA.TestsPassed -and $completionA.OnlyExpectedChange)) {
     throw "CodeBuddy A did not satisfy completion gates"
 }
-Complete-FixtureCommit $a.Root
+Complete-FixtureCommit $a.Root $a.BaseCommit $python
 Invoke-Review $a.Root "A"
 
 $b = New-FixtureRepo "B"
@@ -193,7 +210,7 @@ $completionB = Test-FixtureCompletion $b.Root $b.BaseCommit $python
 if (-not ($completionB.TestsPassed -and $completionB.OnlyExpectedChange)) {
     throw "CodeBuddy B did not satisfy completion gates"
 }
-Complete-FixtureCommit $b.Root
+Complete-FixtureCommit $b.Root $b.BaseCommit $python
 Invoke-Review $b.Root "B"
 
 $summary = [ordered]@{

@@ -1,0 +1,10 @@
+﻿{
+    "executed_real_models":  false,
+    "valid_attestation_accepted":  true,
+    "source_tamper_rejected":  true,
+    "test_tamper_rejected":  true,
+    "failed_exit_rejected":  true,
+    "scope_tamper_rejected":  true,
+    "test_exit_code":  0,
+    "passed_tests":  10
+}
