@@ -75,16 +75,31 @@ function Test-FixtureCompletion {
     param([string]$Root, [string]$BaseCommit)
     Push-Location $Root
     try {
+        $previousErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
         python -m unittest -v 2>&1 | Out-Null
         $testsPassed = $LASTEXITCODE -eq 0
-    } finally { Pop-Location }
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+        Pop-Location
+    }
     $head = (git -C $Root rev-parse HEAD).Trim()
     $status = @(git -C $Root status --porcelain)
     return [pscustomobject]@{
         TestsPassed = $testsPassed
         CommitCreated = $head -ne $BaseCommit
-        WorktreeClean = $status.Count -eq 0
+        OnlyExpectedChange = ($status.Count -eq 1) -and ($status[0] -match '^ M asset_alias\.py$')
         Head = $head
+    }
+}
+
+function Complete-FixtureCommit {
+    param([string]$Root)
+    git -C $Root add -- asset_alias.py
+    git -C $Root commit -q -m "feat: normalize asset aliases"
+    if ($LASTEXITCODE -ne 0) { throw "Harness could not create fixture commit" }
+    if (@(git -C $Root status --porcelain).Count -ne 0) {
+        throw "Fixture worktree is not clean after harness commit"
     }
 }
 
@@ -94,7 +109,7 @@ function Start-CodeBuddyJob {
         "Implement normalize_asset_alias in asset_alias.py.",
         "Exact rules: strip outer whitespace, lowercase, length 1..64, first character a-z, remaining characters only a-z 0-9 dot underscore dash.",
         "Raise ValueError for invalid input. Do not change tests.",
-        "Run python -m unittest -v, then git add asset_alias.py and commit with message feat: normalize asset aliases.",
+        "Run python -m unittest -v. Do not commit; the experiment harness owns the deterministic handoff commit.",
         "Do not access network tools or any files outside this fixture repository."
     ) -join [Environment]::NewLine
     Start-Job -ScriptBlock {
@@ -141,9 +156,10 @@ if ($null -eq $doneA) { Stop-Job $jobA; throw "CodeBuddy A timeout" }
 $resultA = Receive-Job $jobA; Remove-Job $jobA -Force
 if ($resultA.exit_code -ne 0) { throw "CodeBuddy A failed" }
 $completionA = Test-FixtureCompletion $a.Root $a.BaseCommit
-if (-not ($completionA.TestsPassed -and $completionA.CommitCreated -and $completionA.WorktreeClean)) {
+if (-not ($completionA.TestsPassed -and $completionA.OnlyExpectedChange)) {
     throw "CodeBuddy A did not satisfy completion gates"
 }
+Complete-FixtureCommit $a.Root
 Invoke-Review $a.Root "A"
 
 $b = New-FixtureRepo "B"
@@ -153,9 +169,10 @@ if ($null -eq $doneB) { Stop-Job $jobB; throw "CodeBuddy B timeout" }
 $resultB = Receive-Job $jobB; Remove-Job $jobB -Force
 if ($resultB.exit_code -ne 0) { throw "CodeBuddy B failed" }
 $completionB = Test-FixtureCompletion $b.Root $b.BaseCommit
-if (-not ($completionB.TestsPassed -and $completionB.CommitCreated -and $completionB.WorktreeClean)) {
+if (-not ($completionB.TestsPassed -and $completionB.OnlyExpectedChange)) {
     throw "CodeBuddy B did not satisfy completion gates"
 }
+Complete-FixtureCommit $b.Root
 Invoke-Review $b.Root "B"
 
 $summary = [ordered]@{

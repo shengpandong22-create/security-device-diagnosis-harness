@@ -43,3 +43,11 @@ CodeBuddy 的 A、B 两个实现都通过了 6/6 测试，但均未创建任务�
 ## 下一次复跑的单变量约束
 
 保持模型、fixture、prompt、max turns、超时和验收命令不变。只修复实验编排器的门禁与取数错误。若 CodeBuddy 再次未提交，实验应在实现阶段终止并保留现场，不调用 Codex 审核。
+
+## 第二次运行记录
+
+第二次运行同样没有形成有效对照。CodeBuddy A 已正确修改目标文件并通过 9/9 测试，但 PowerShell 7 将 `unittest -v` 写往 stderr 的正常进度转换为 `NativeCommandError`；全局 `ErrorActionPreference=Stop` 导致门禁提前终止。Codex 审核与 B 变体均未执行。
+
+本次仅产生两次 A 轮询调用，实测分别为 31,001 与 62,429 input tokens，合计 93,430；cached input 分别为 26,112 与 52,224。它们属于第二次失败运行成本，不计入成功基线。
+
+进一步的流程修正是把职责放回确定性脚本：CodeBuddy 负责改代码并跑测试；脚本验证“测试通过且只改预期文件”后创建 handoff commit；Codex 只审已经形成的 commit diff。这样不会把 Git 提交这一机械步骤继续交给模型碰运气，也不会放宽代码验收。
