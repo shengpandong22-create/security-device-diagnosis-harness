@@ -18,7 +18,9 @@ $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 $codebuddy = Join-Path $env:APPDATA "npm\codebuddy.cmd"
 $codex = (Get-Command codex).Source
+$python = (Get-Command python).Source
 if (-not (Test-Path $codebuddy)) { throw "Signed npm CodeBuddy entry not found" }
+if (-not (Test-Path $python)) { throw "Python executable not found" }
 
 function New-FixtureRepo {
     param([string]$Variant)
@@ -54,6 +56,8 @@ class AliasTests(unittest.TestCase):
         with self.assertRaises(ValueError): normalize_asset_alias("_camera")
     def test_rejects_leading_dash(self):
         with self.assertRaises(ValueError): normalize_asset_alias("-camera")
+    def test_rejects_leading_digit(self):
+        with self.assertRaises(ValueError): normalize_asset_alias("1camera")
 
 
 if __name__ == "__main__": unittest.main()
@@ -72,12 +76,12 @@ if __name__ == "__main__": unittest.main()
 }
 
 function Test-FixtureCompletion {
-    param([string]$Root, [string]$BaseCommit)
+    param([string]$Root, [string]$BaseCommit, [string]$PythonExecutable)
     Push-Location $Root
     try {
         $previousErrorAction = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        python -m unittest -v 2>&1 | Out-Null
+        & $PythonExecutable -m unittest -v 2>&1 | Out-Null
         $testsPassed = $LASTEXITCODE -eq 0
     } finally {
         $ErrorActionPreference = $previousErrorAction
@@ -139,8 +143,8 @@ function Get-ThreadId {
 }
 
 function Invoke-Review {
-    param([string]$Root, [string]$Variant)
-    $prompt = "Review HEAD relative to HEAD~1. Verify normalize_asset_alias strips outer whitespace, lowercases, requires length 1..64, requires first character a-z, and permits only a-z 0-9 dot underscore dash afterwards. Run python -m unittest -v, then answer APPROVED or REJECTED with one sentence. Do not modify files."
+    param([string]$Root, [string]$Variant, [string]$PythonExecutable)
+    $prompt = "Review HEAD relative to HEAD~1. Verify normalize_asset_alias strips outer whitespace, lowercases, requires length 1..64, requires first character a-z, and permits only a-z 0-9 dot underscore dash afterwards. Run & '$PythonExecutable' -m unittest -v, then answer APPROVED or REJECTED with one sentence. Do not modify files."
     Invoke-CodexJson @("exec", "--json", "--model", $CodexModel, "--sandbox", "read-only", "--cd", $Root, $prompt) $Root "codex-$Variant-review.jsonl" | Out-Null
 }
 
@@ -155,12 +159,12 @@ $doneA = Wait-Job $jobA -Timeout 600
 if ($null -eq $doneA) { Stop-Job $jobA; throw "CodeBuddy A timeout" }
 $resultA = Receive-Job $jobA; Remove-Job $jobA -Force
 if ($resultA.exit_code -ne 0) { throw "CodeBuddy A failed" }
-$completionA = Test-FixtureCompletion $a.Root $a.BaseCommit
+$completionA = Test-FixtureCompletion $a.Root $a.BaseCommit $python
 if (-not ($completionA.TestsPassed -and $completionA.OnlyExpectedChange)) {
     throw "CodeBuddy A did not satisfy completion gates"
 }
 Complete-FixtureCommit $a.Root
-Invoke-Review $a.Root "A"
+Invoke-Review $a.Root "A" $python
 
 $b = New-FixtureRepo "B"
 $jobB = Start-CodeBuddyJob $b.Root "B"
@@ -168,12 +172,12 @@ $doneB = Wait-Job $jobB -Timeout 600
 if ($null -eq $doneB) { Stop-Job $jobB; throw "CodeBuddy B timeout" }
 $resultB = Receive-Job $jobB; Remove-Job $jobB -Force
 if ($resultB.exit_code -ne 0) { throw "CodeBuddy B failed" }
-$completionB = Test-FixtureCompletion $b.Root $b.BaseCommit
+$completionB = Test-FixtureCompletion $b.Root $b.BaseCommit $python
 if (-not ($completionB.TestsPassed -and $completionB.OnlyExpectedChange)) {
     throw "CodeBuddy B did not satisfy completion gates"
 }
 Complete-FixtureCommit $b.Root
-Invoke-Review $b.Root "B"
+Invoke-Review $b.Root "B" $python
 
 $summary = [ordered]@{
     experiment_id = Split-Path $OutputRoot -Leaf
