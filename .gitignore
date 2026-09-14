@@ -36,3 +36,8 @@ demo-output/
 *.p12
 secrets/
 credentials/
+# Retain Phase 2A raw traces and fixture repositories locally. Raw CLI JSONL can
+# contain workstation paths and session identifiers, so only sanitized reports
+# are eligible for source control.
+docs/experiments/codex-codebuddy-usage/raw/phase2a-*/
+docs/experiments/codex-codebuddy-usage/raw/phase2a-controller-*.json
