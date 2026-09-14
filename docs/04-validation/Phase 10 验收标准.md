@@ -20,7 +20,10 @@
 
 ## Phase 10C
 
-- [ ] authorization_dry_run 与 authorized_device_e2e 明确分离
-- [ ] 试接入 Runbook 与真实报告空模板齐备
-- [ ] Phase 0～10 全量回归和安全审计通过
-- [ ] 未访问真实设备、真实模型、BGE 或外部网络
+- [x] authorization_dry_run 与 authorized_device_e2e 明确分离
+- [x] 试接入 Runbook 与真实报告空模板齐备
+- [x] Phase 0～10 全量回归和安全审计通过
+- [x] 未访问真实设备、真实模型、BGE 或外部网络
+
+最终证据：全量 pytest 与 ruff 通过；两个 Phase 10 固定脚本均退出 0；仓库没有
+数据库残留或真实凭证文件。本阶段未启用任何真实 HTTP Adapter。

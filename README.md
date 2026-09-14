@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0～9 工程基线已完成；真实设备授权联调仍保持未验收。
+- 当前阶段：Phase 0～10 工程基线已完成；真实设备授权联调仍保持未验收。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -44,6 +44,9 @@
 | Phase 9B | 本机 HTTP 契约服务与严格只读 HTTP Adapter | 已完成 |
 | Phase 9C | 资产路由、能力驱动 Runtime 与受控降级 | 已完成 |
 | Phase 9D | 低基数可观测指标与 Simulator 影子评测 | 工程基线已完成 |
+| Phase 10A | Simulator History 与逐项发布 Gate | 已完成 |
+| Phase 10B | 只读授权清单与不可变调用预算预检 | 已完成（尚未接真实 Adapter） |
+| Phase 10C | 授权协议 dry-run 与试接入 Runbook | 已完成 |
 
 Phase 9A 新增供应商无关的资产、能力、连接引用、请求上下文和稳定错误分类，
 并通过确定性 Simulator 验证真实 Runner、Registry、Evidence、CitationPolicy
