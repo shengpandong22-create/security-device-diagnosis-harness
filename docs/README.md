@@ -20,6 +20,7 @@
 - [Phase 4 报警误报深化实施规格说明](./02-specifications/Phase%204%20报警误报深化实施规格说明.md)
 - [Phase 5 知识沉淀与 RAG 增强实施规格说明](./02-specifications/Phase%205%20知识沉淀与RAG增强实施规格说明.md)
 - [Phase 9 真实设备接入与可观测运行实施规格](./02-specifications/Phase%209%20真实设备接入与可观测运行实施规格.md)
+- [Phase 10 评测发布闭环与试接入准备实施规格](./02-specifications/Phase%2010%20评测发布闭环与试接入准备实施规格.md)
 
 ## 03-progress
 
@@ -46,6 +47,7 @@
 - [Phase 8 开发总结](./03-progress/Phase%208%20开发总结.md)
 - [Phase 9 开发总结](./03-progress/Phase%209%20开发总结.md)
 - [Phase 9 验收标准](./04-validation/Phase%209%20验收标准.md)
+- [Phase 10 验收标准](./04-validation/Phase%2010%20验收标准.md)
 - [Phase 9 专项严格审计](./05-audits/Phase%209%20专项严格审计报告.md)
 - [Phase 7 诊断质量评测体系实施规格](./02-specifications/Phase%207%20诊断质量评测体系实施规格.md)
 - [Phase 8 评测运营与标注可信度实施规格](./02-specifications/Phase%208%20评测运营与标注可信度实施规格.md)
