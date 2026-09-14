@@ -127,3 +127,16 @@ input、cached input、output 与 reasoning output。JSONL 缺少 thread、最�
 
 真实设备授权、密钥使用、破坏性操作、需求方向选择和生产合并必须由用户决定。
 编排器解决的是“可靠接力”，不是把业务责任交给模型，也不保证 Agent 判断永远正确。
+
+## 8. 使用边界：可靠接力不等于经济
+
+后续真实 A/B 实验表明，这套编排器可以完成隔离、终态通知、证据保存和独立审核，但尚未
+证明能够降低成功任务的 Codex token。两个实验路径都在质量门禁发现 P1，因此只能形成
+`cost per attempt`，不能形成 `cost per success`。
+
+项目现已把默认策略修正为：小任务、架构、安全和高耦合改动由 Codex 直接完成；只有需求
+稳定、确定性验收充分、实现工作显著大于审核工作的中型机械任务才允许委派给 CodeBuddy；
+独立研究或专项审计才考虑并行多 Agent。
+
+完整的外部资料、适用场景、实测数据、委派准入卡和止损规则见：
+[双 Agent 适用边界与 Codex / CodeBuddy 实验复盘](../experiments/codex-codebuddy-usage/双Agent适用边界与Codex-CodeBuddy实验复盘.md)。
