@@ -44,6 +44,7 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "collab_process.ps1")
 . (Join-Path $PSScriptRoot "collab_protocol.ps1")
 . (Join-Path $PSScriptRoot "collab_attestation.ps1")
+. (Join-Path $PSScriptRoot "collab_codex_usage.ps1")
 
 function Resolve-CommandPath {
     param(
@@ -129,7 +130,11 @@ function Test-ExternalResultOk {
     param([Parameter(Mandatory = $true)]$Result)
 
     $falseSuccess = Test-FalseSuccessOutput $Result.Output
-    return (-not $Result.TimedOut -and $Result.ExitCode -eq 0 -and $null -eq $falseSuccess)
+    $jsonComplete = if ($Result.PSObject.Properties.Name -contains "JsonComplete") {
+        $Result.JsonComplete
+    } else { $true }
+    return (-not $Result.TimedOut -and $Result.ExitCode -eq 0 -and `
+        $jsonComplete -and $null -eq $falseSuccess)
 }
 
 function Test-ReviewResultOk {
@@ -259,6 +264,7 @@ $handoffPath = Join-Path $runDir "HANDOFF.json"
 $reviewResultPath = Join-Path $runDir "REVIEW_RESULT.json"
 $takeoverPath = Join-Path $runDir "CODEX_TAKEOVER.json"
 $attestationPath = Join-Path $runDir "HOST_VALIDATION.json"
+$usageLogPath = Join-Path $runDir "CODEX_USAGE.jsonl"
 
 $reqText = Get-Content $ReqFile -Raw -Encoding UTF8
 $resolvedTaskSize = Resolve-TaskSize -ExplicitSize $TaskSize -RequirementText $reqText
@@ -289,18 +295,20 @@ else {
 
     $codexPlanArgs = @(
         "exec",
+        "--json",
         "--model", $CodexModel,
         "--sandbox", "read-only",
         "--color", "never",
         "--cd", $ProjectRoot,
         $codexPlanPrompt
     )
-    $planResult = Invoke-ExternalWithExitEvent `
+    $planResult = Invoke-MeasuredCodex `
         -FilePath $codex `
         -CommandArguments $codexPlanArgs `
         -WorkingDirectory $ProjectRoot `
-        -TimeoutSeconds $CodexTimeoutSeconds
-    Write-TextFile -Path $planLogPath -Text $planResult.Output
+        -TimeoutSeconds $CodexTimeoutSeconds `
+        -RawLogPath $planLogPath -UsageLogPath $usageLogPath `
+        -TaskId $runId -Purpose "plan" -Trigger "task_started"
 
     if (Test-ExternalResultOk $planResult) {
         Write-TextFile -Path $planPath -Text $planResult.Output
@@ -514,6 +522,7 @@ if ($implOk -and -not $SkipCodexReview) {
         "- Include sections: conclusion, critical issues, important issues, suggestions, validation verdict.",
         "- If there are critical issues, say REVIEW_FAILED.",
         "- If there are no critical issues, say REVIEW_PASSED.",
+        "- Put the final verdict on its own final line, exactly REVIEW_PASSED or REVIEW_FAILED.",
         "",
         "Requirement file: $ReqFile",
         "Plan file: $planPath"
@@ -521,18 +530,20 @@ if ($implOk -and -not $SkipCodexReview) {
 
     $reviewArgs = @(
         "exec",
+        "--json",
         "--model", $CodexModel,
         "--sandbox", "read-only",
         "--color", "never",
         "--cd", $worktreeRoot,
         $reviewPrompt
     )
-    $reviewResult = Invoke-ExternalWithExitEvent `
+    $reviewResult = Invoke-MeasuredCodex `
         -FilePath $codex `
         -CommandArguments $reviewArgs `
         -WorkingDirectory $worktreeRoot `
-        -TimeoutSeconds $CodexTimeoutSeconds
-    Write-TextFile -Path $reviewLogPath -Text $reviewResult.Output
+        -TimeoutSeconds $CodexTimeoutSeconds `
+        -RawLogPath $reviewLogPath -UsageLogPath $usageLogPath `
+        -TaskId $runId -Purpose "review" -Trigger "ready_for_review"
     Write-TextFile -Path $reviewPath -Text $reviewResult.Output
     $reviewOk = Test-ReviewResultOk $reviewResult
     Write-CollabJson $reviewResultPath ([ordered]@{
@@ -590,14 +601,17 @@ if ($implOk -and -not $SkipCodexReview) {
                 "Verify every P0/P1 finding, tests, scope and safety. Do not modify files.",
                 "End with REVIEW_PASSED only if no blocking issue remains; otherwise REVIEW_FAILED."
             ) -join [Environment]::NewLine
-            $finalReview = Invoke-ExternalWithExitEvent `
+            $finalReview = Invoke-MeasuredCodex `
                 -FilePath $codex `
                 -CommandArguments @(
-                    "exec", "--model", $CodexModel, "--sandbox", "read-only",
+                    "exec", "--json", "--model", $CodexModel, "--sandbox", "read-only",
                     "--color", "never", "--cd", $worktreeRoot, $finalPrompt
                 ) `
                 -WorkingDirectory $worktreeRoot `
-                -TimeoutSeconds $CodexTimeoutSeconds
+                -TimeoutSeconds $CodexTimeoutSeconds `
+                -RawLogPath (Join-Path $runDir "CODEX_REVIEW_FINAL.log.jsonl") `
+                -UsageLogPath $usageLogPath -TaskId $runId `
+                -Purpose "re_review" -Trigger "ready_for_re_review"
             Write-TextFile $finalReviewPath $finalReview.Output
             $reviewOk = Test-ReviewResultOk $finalReview
             Write-CollabJson $reviewResultPath ([ordered]@{
@@ -665,6 +679,7 @@ $summary = @(
     "- HANDOFF: $handoffPath",
     "- REVIEW_RESULT: $reviewResultPath",
     "- HOST_VALIDATION: $attestationPath",
+    "- CODEX_USAGE: $usageLogPath",
     "- CODEX_TAKEOVER: $takeoverPath",
     "",
     "## Worktree git status",

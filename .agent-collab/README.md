@@ -62,6 +62,7 @@ implementing -> needs_continuation -> ready_for_review
 - `HANDOFF.json`：CodeBuddy 的结构化交接，必须声明修改文件、验证、剩余项和风险；
 - `REVIEW_RESULT.json`：Codex 对指定 commit 的机器可读裁决；
 - `HOST_VALIDATION.json`：宿主脚本执行预先审定命令后产生的只读证明；
+- `CODEX_USAGE.jsonl`：Codex 每次计划、审核和复审的精确 usage；
 - `CODEX_TAKEOVER.json`：两次实现或一次返修仍失败时保留现场，禁止从头重跑；
 - `NEEDS_CONTINUATION.json`：Max Turns 的有界续作证据。
 
@@ -72,6 +73,10 @@ implementing -> needs_continuation -> ready_for_review
 编排器不会执行 CodeBuddy 临时声明的任意命令；宿主验证通过后记录 base/head、变更文件、
 文件 SHA-256、退出码和输出 hash，Codex 只读复核该证明。可用
 `scripts/orchestrator_attestation_probe.ps1` 在不调用任何模型的情况下验证协议。
+
+Codex 以 JSONL 模式运行，原始事件与给人阅读的最终消息分开保存。只有同时存在
+`thread.started`、最后一条 `agent_message` 和 `turn.completed.usage` 才是完整调用；
+可运行 `scripts/collab_codex_usage_probe.ps1` 离线验证解析和字段落盘。
 
 Windows 下编排器优先使用官方 npm 入口 `%APPDATA%\npm\codebuddy.cmd`，避免未签名
 原生 Beta 二进制被 WDAC 拦截；当前默认实现模型为 `deepseek-v4.1-flash`，仍可通过

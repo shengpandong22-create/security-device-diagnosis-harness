@@ -48,6 +48,7 @@
 | `NEEDS_CONTINUATION.json` | Max Turns 后的同现场续作凭证 |
 | `REVIEW_RESULT.json` | Codex 对精确 commit 的裁决 |
 | `HOST_VALIDATION.json` | 宿主执行可信命令后生成的 commit、文件 hash 与退出码证明 |
+| `CODEX_USAGE.jsonl` | Codex 每次计划、审核和复审的精确 session 与 token usage |
 | `CODEX_TAKEOVER.json` | 自动化预算耗尽后的人工/Codex 接管入口 |
 
 `CODEX_TAKEOVER.json` 的意义不是“失败”，而是把失败变成可恢复状态：保留 worktree、
@@ -103,6 +104,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/orchestrator_task.ps
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/orchestrator_protocol_probe.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/orchestrator_attestation_probe.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/collab_codex_usage_probe.ps1
 ```
 
 `HostValidationCommands` 必须来自用户/Codex 事先审定的需求，而不能直接执行 CodeBuddy
@@ -110,6 +112,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/orchestrator_attesta
 环境信息的完整输出交给审核模型。Codex 在新只读会话中复核 diff、测试代码、base/head、
 变更文件和 SHA-256，不重新执行宿主命令。最终裁决必须把 `REVIEW_PASSED` 或
 `REVIEW_FAILED` 单独放在一行；进程退出码 0 本身不代表审核通过。
+
+Codex CLI 使用 JSONL 模式运行。编排器把原始事件保存在本地运行目录，只把最后一条
+Agent 消息写入 `PLAN.md` 或 `REVIEW.md`；每个 `turn.completed.usage` 追加为
+`CODEX_USAGE.jsonl` 的一行，字段包括 timestamp、task_id、trigger、purpose、session_id、
+input、cached input、output 与 reasoning output。JSONL 缺少 thread、最终消息或 usage 时，
+该次调用不能被当作完整成功。这使后续可以按真实任务计算 Codex 的 cost per success，
+而不是再用运行时长猜额度消耗。
 
 结束后先看 `STATE.json`。`approved` 才进入人工合并检查；
 `codex_takeover_required` 则按文件中的 worktree 和 head commit 恢复现场。
