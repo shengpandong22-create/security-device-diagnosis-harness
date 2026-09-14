@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-09-14T22:55:24.7307340+08:00",
+  "passed": true,
+  "real_codebuddy_called": false,
+  "real_codex_called": false,
+  "cases": [
+    {"name": "completed", "terminal_state": "completed", "exit_code": 0, "running_wakeups": 0, "terminal_wakeups": 1, "heartbeat_written": true},
+    {"name": "failed", "terminal_state": "failed", "exit_code": 7, "running_wakeups": 0, "terminal_wakeups": 1, "heartbeat_written": true},
+    {"name": "max-turns", "terminal_state": "max_turns_exceeded", "exit_code": 1, "running_wakeups": 0, "terminal_wakeups": 1, "heartbeat_written": false},
+    {"name": "log-growth", "terminal_state": "completed", "exit_code": 0, "running_wakeups": 0, "terminal_wakeups": 1, "heartbeat_written": true},
+    {"name": "stalled", "terminal_state": "stalled", "exit_code": 125, "running_wakeups": 0, "terminal_wakeups": 1, "heartbeat_written": true},
+    {"name": "timeout", "terminal_state": "timeout", "exit_code": 124, "running_wakeups": 0, "terminal_wakeups": 1, "heartbeat_written": true}
+  ],
+  "protocol_probe": {
+    "valid_handoff_accepted": true,
+    "offline_validation_accepted": true,
+    "external_action_rejected": true,
+    "takeover_preserves_worktree": true,
+    "takeover_restarts_codebuddy": false
+  },
+  "ruff": "passed",
+  "pytest": {"collected": 1610, "failed": 0, "errors": 0}
+}

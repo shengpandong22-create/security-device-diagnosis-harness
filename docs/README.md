@@ -66,3 +66,8 @@
 - [第四轮严格审计报告](./05-audits/第四轮严格审计报告.md)
 - [Phase 9A 开发总结](./03-progress/Phase%209A%20开发总结.md)
 - [Phase 9B 开发总结](./03-progress/Phase%209B%20开发总结.md)
+
+## Experiments
+
+- [Codex + CodeBuddy 用量数据可得性](./experiments/codex-codebuddy-usage/phase0-data-availability.md)
+- [Codex + CodeBuddy 事件驱动监控](./experiments/codex-codebuddy-usage/phase1a-event-driven-monitoring.md)

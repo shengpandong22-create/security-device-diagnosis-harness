@@ -372,7 +372,11 @@ $implementationResult = Invoke-ExternalWithExitEvent `
     -FilePath $codebuddy `
     -CommandArguments $codebuddyArgs `
     -WorkingDirectory $worktreeRoot `
-    -TimeoutSeconds $CodeBuddyTimeoutSeconds
+    -TimeoutSeconds $CodeBuddyTimeoutSeconds `
+    -EventLogPath (Join-Path $runDir "EVENTS.jsonl") `
+    -HeartbeatPath (Join-Path $runDir "HEARTBEAT.json") `
+    -ActivityPath $worktreeRoot `
+    -IdleTimeoutSeconds ([math]::Min(900, [math]::Max(120, [int]($CodeBuddyTimeoutSeconds / 2))))
 Write-TextFile -Path $codebuddyLogPath -Text $implementationResult.Output
 
 $implOk = Test-ExternalResultOk $implementationResult
@@ -423,7 +427,11 @@ if (-not $implOk -and (Test-MaxTurnsOutput $implementationResult.Output)) {
                 -FilePath $codebuddy `
                 -CommandArguments $continuationArgs `
                 -WorkingDirectory $worktreeRoot `
-                -TimeoutSeconds $remainingSeconds
+                -TimeoutSeconds $remainingSeconds `
+                -EventLogPath (Join-Path $runDir "EVENTS.jsonl") `
+                -HeartbeatPath (Join-Path $runDir "HEARTBEAT.json") `
+                -ActivityPath $worktreeRoot `
+                -IdleTimeoutSeconds ([math]::Min(900, [math]::Max(120, [int]($remainingSeconds / 2))))
             $combinedImplementationLog = @(
                 $implementationResult.Output,
                 "`n===== CONTINUATION 1 =====`n",

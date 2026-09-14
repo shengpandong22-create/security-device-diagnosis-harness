@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-09-14T22:55:24.7307340+08:00",
+  "account_rate_limits": {
+    "plan_type": "plus",
+    "primary": {
+      "used_percent": 3,
+      "window_duration_minutes": 300,
+      "resets_at": "2026-09-15T03:32:54+08:00"
+    },
+    "secondary": {
+      "used_percent": 68,
+      "window_duration_minutes": 10080,
+      "resets_at": "2026-09-19T20:26:37+08:00"
+    },
+    "reset_credits_visible": 2,
+    "reset_credits_used_by_this_task": 0
+  },
+  "codex_cli": {
+    "version": "0.154.0-alpha.6.2",
+    "json_output_flag": true,
+    "exec_help_exposes_usage_fields": false
+  },
+  "local_session_history": {
+    "session_files": 46,
+    "sessions_with_token_events": 33,
+    "token_count_events": 8277,
+    "events_with_last_usage": 8277,
+    "events_with_cached_input_tokens": 8277,
+    "events_with_reasoning_output_tokens": 8277,
+    "unreadable_files": 0,
+    "earliest_token_event": "2026-07-12T12:17:44.511Z",
+    "latest_token_event": "2026-09-14T14:46:25.661Z"
+  },
+  "collaboration_history": {
+    "run_directories": 11,
+    "earliest_run": "2026-09-10T01:45:16.3127919+08:00",
+    "latest_run": "2026-09-14T08:41:00.5586478+08:00",
+    "files_containing_token_fields": 0,
+    "state_files": 2,
+    "needs_continuation_files": 4,
+    "codex_takeover_files": 2
+  }
+}
