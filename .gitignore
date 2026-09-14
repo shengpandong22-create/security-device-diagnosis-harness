@@ -41,3 +41,4 @@ credentials/
 # are eligible for source control.
 docs/experiments/codex-codebuddy-usage/raw/phase2a-*/
 docs/experiments/codex-codebuddy-usage/raw/phase2a-controller-*.json
+docs/experiments/codex-codebuddy-usage/raw/phase2b-*/
