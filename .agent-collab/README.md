@@ -66,3 +66,7 @@ implementing -> needs_continuation -> ready_for_review
 
 实现成功但缺少合法 `HANDOFF.json`、HEAD 未推进、工作区不干净、存在未完成项或
 验证为空时，均不得进入 Codex 审查。默认禁止真实模型、BGE、设备、网络、push 和通知。
+
+Windows 下编排器优先使用官方 npm 入口 `%APPDATA%\npm\codebuddy.cmd`，避免未签名
+原生 Beta 二进制被 WDAC 拦截；当前默认实现模型为 `deepseek-v4.1-flash`，仍可通过
+`-CodeBuddyModel` 对单次任务覆盖。

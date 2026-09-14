@@ -25,7 +25,7 @@ param(
     [string]$ProjectRoot = "",
     [string]$TaskName = "",
     [ValidateSet("", "probe", "small", "medium")][string]$TaskSize = "",
-    [string]$CodeBuddyModel = "fast-model",
+    [string]$CodeBuddyModel = "deepseek-v4.1-flash",
     [string]$CodexModel = "gpt-5.6-luna",
     [int]$CodeBuddyMaxTurns = 0,
     [int]$MaxContinuationRounds = 1,
@@ -225,9 +225,15 @@ if ($status -and -not $AllowDirty) {
     throw "Project worktree is not clean. Commit/stash changes first, or pass -AllowDirty. Current status:`n$status"
 }
 
-$codebuddy = Resolve-CommandPath `
-    -Name "codebuddy" `
-    -Fallback (Join-Path $env:LOCALAPPDATA "codebuddy\bin\codebuddy.exe")
+$npmCodeBuddy = Join-Path $env:APPDATA "npm\codebuddy.cmd"
+$codebuddy = if (Test-Path -LiteralPath $npmCodeBuddy) {
+    $npmCodeBuddy
+}
+else {
+    Resolve-CommandPath `
+        -Name "codebuddy" `
+        -Fallback (Join-Path $env:LOCALAPPDATA "codebuddy\bin\codebuddy.exe")
+}
 $codex = $null
 if (-not ($SkipCodexPlan -and $SkipCodexReview)) {
     $codex = Resolve-CommandPath -Name "codex"
