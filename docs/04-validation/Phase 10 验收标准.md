@@ -2,10 +2,13 @@
 
 ## Phase 10A
 
-- [ ] simulator_e2e 强类型运行身份与聚合摘要
-- [ ] 不可比控制变量拒绝进入同一趋势
-- [ ] P0、安全泄漏、失败 Evidence 和核心退化阻塞 Gate
-- [ ] History 原子写入且不保存案例原文与设备标识
+- [x] simulator_e2e 强类型运行身份与聚合摘要
+- [x] 不可比控制变量拒绝进入同一趋势
+- [x] P0、安全泄漏、失败 Evidence 和核心退化阻塞 Gate
+- [x] History 原子写入且不保存案例原文与设备标识
+
+验收证据：固定脚本完成 baseline → candidate → 逐项 Gate；History 加载时重算
+可比性指纹、内容哈希与 Gate 结论，拒绝格式合法但被篡改的历史。
 
 ## Phase 10B
 
