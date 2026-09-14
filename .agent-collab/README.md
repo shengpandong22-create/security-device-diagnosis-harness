@@ -61,11 +61,17 @@ implementing -> needs_continuation -> ready_for_review
 - `STATE.json`：当前状态与精确 base/head commit；
 - `HANDOFF.json`：CodeBuddy 的结构化交接，必须声明修改文件、验证、剩余项和风险；
 - `REVIEW_RESULT.json`：Codex 对指定 commit 的机器可读裁决；
+- `HOST_VALIDATION.json`：宿主脚本执行预先审定命令后产生的只读证明；
 - `CODEX_TAKEOVER.json`：两次实现或一次返修仍失败时保留现场，禁止从头重跑；
 - `NEEDS_CONTINUATION.json`：Max Turns 的有界续作证据。
 
 实现成功但缺少合法 `HANDOFF.json`、HEAD 未推进、工作区不干净、存在未完成项或
 验证为空时，均不得进入 Codex 审查。默认禁止真实模型、BGE、设备、网络、push 和通知。
+
+正式任务建议通过 `-HostValidationCommands` 传入用户/Codex 预先审定的离线命令。
+编排器不会执行 CodeBuddy 临时声明的任意命令；宿主验证通过后记录 base/head、变更文件、
+文件 SHA-256、退出码和输出 hash，Codex 只读复核该证明。可用
+`scripts/orchestrator_attestation_probe.ps1` 在不调用任何模型的情况下验证协议。
 
 Windows 下编排器优先使用官方 npm 入口 `%APPDATA%\npm\codebuddy.cmd`，避免未签名
 原生 Beta 二进制被 WDAC 拦截；当前默认实现模型为 `deepseek-v4.1-flash`，仍可通过

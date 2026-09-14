@@ -23,7 +23,9 @@
 5. `HANDOFF.json` 是否绑定相同 base/head，并包含验证证据；
 6. 是否存在剩余项或越权外部动作。
 
-只有六层全部通过，状态才能从 `implementing` 进入 `ready_for_review`。
+如果调用方提供可信的宿主验收命令，编排器还会在 CodeBuddy 退出后自行执行，并生成
+`HOST_VALIDATION.json`。只有上述门禁和宿主验收全部通过，状态才能从 `implementing`
+进入 `ready_for_review`。
 
 ## 3. Protocol v2
 
@@ -45,6 +47,7 @@
 | `HANDOFF.json` | 实现文件、验证命令、剩余项、风险 |
 | `NEEDS_CONTINUATION.json` | Max Turns 后的同现场续作凭证 |
 | `REVIEW_RESULT.json` | Codex 对精确 commit 的裁决 |
+| `HOST_VALIDATION.json` | 宿主执行可信命令后生成的 commit、文件 hash 与退出码证明 |
 | `CODEX_TAKEOVER.json` | 自动化预算耗尽后的人工/Codex 接管入口 |
 
 `CODEX_TAKEOVER.json` 的意义不是“失败”，而是把失败变成可恢复状态：保留 worktree、
@@ -91,14 +94,22 @@ external_access: forbidden
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/orchestrator_task.ps1 `
-  -ReqFile .agent-collab/inbox/my-task.md
+  -ReqFile .agent-collab/inbox/my-task.md `
+  -HostValidationCommands @("uv run ruff check .", "uv run pytest tests/path -q")
 ```
 
 仅验证协议，不调用任何模型：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/orchestrator_protocol_probe.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/orchestrator_attestation_probe.ps1
 ```
+
+`HostValidationCommands` 必须来自用户/Codex 事先审定的需求，而不能直接执行 CodeBuddy
+在 `HANDOFF.json` 中自由生成的命令。脚本只把退出码与输出 hash 写入证明，不把可能包含
+环境信息的完整输出交给审核模型。Codex 在新只读会话中复核 diff、测试代码、base/head、
+变更文件和 SHA-256，不重新执行宿主命令。最终裁决必须把 `REVIEW_PASSED` 或
+`REVIEW_FAILED` 单独放在一行；进程退出码 0 本身不代表审核通过。
 
 结束后先看 `STATE.json`。`approved` 才进入人工合并检查；
 `codex_takeover_required` 则按文件中的 worktree 和 head commit 恢复现场。

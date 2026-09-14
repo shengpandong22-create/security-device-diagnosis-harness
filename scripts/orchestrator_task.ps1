@@ -32,6 +32,7 @@ param(
     [int]$MaxFixRounds = 1,
     [int]$CodexTimeoutSeconds = 300,
     [int]$CodeBuddyTimeoutSeconds = 1800,
+    [string[]]$HostValidationCommands = @(),
     [switch]$UseReqAsPlanOnCodexFailure,
     [switch]$SkipCodexPlan,
     [switch]$SkipCodexReview,
@@ -42,6 +43,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "collab_process.ps1")
 . (Join-Path $PSScriptRoot "collab_protocol.ps1")
+. (Join-Path $PSScriptRoot "collab_attestation.ps1")
 
 function Resolve-CommandPath {
     param(
@@ -136,9 +138,9 @@ function Test-ReviewResultOk {
     if ($Result.TimedOut -or $Result.ExitCode -ne 0) {
         return $false
     }
-    $passedAt = $Result.Output.LastIndexOf("REVIEW_PASSED", [System.StringComparison]::Ordinal)
-    $failedAt = $Result.Output.LastIndexOf("REVIEW_FAILED", [System.StringComparison]::Ordinal)
-    return ($passedAt -ge 0 -and $passedAt -gt $failedAt)
+    $verdicts = @($Result.Output -split "`r?`n" | ForEach-Object { $_.Trim() } |
+        Where-Object { $_ -in @("REVIEW_PASSED", "REVIEW_FAILED") })
+    return ($verdicts.Count -gt 0 -and $verdicts[-1] -eq "REVIEW_PASSED")
 }
 
 function Test-MaxTurnsOutput {
@@ -256,6 +258,7 @@ $statePath = Join-Path $runDir "STATE.json"
 $handoffPath = Join-Path $runDir "HANDOFF.json"
 $reviewResultPath = Join-Path $runDir "REVIEW_RESULT.json"
 $takeoverPath = Join-Path $runDir "CODEX_TAKEOVER.json"
+$attestationPath = Join-Path $runDir "HOST_VALIDATION.json"
 
 $reqText = Get-Content $ReqFile -Raw -Encoding UTF8
 $resolvedTaskSize = Resolve-TaskSize -ExplicitSize $TaskSize -RequirementText $reqText
@@ -462,6 +465,21 @@ $handoffResult = Test-CodeBuddyHandoff `
 $implOk = ($implOk -and $implementationCommitted -and $implementationClean -and `
     $handoffResult.Ok)
 
+if ($implOk -and $HostValidationCommands.Count -gt 0) {
+    try {
+        Invoke-HostValidationAttestation -WorktreeRoot $worktreeRoot `
+            -BaseCommit $baseCommit -HeadCommit $implementationHead `
+            -Commands $HostValidationCommands -OutputPath $attestationPath | Out-Null
+        $implOk = Test-HostValidationAttestation -Path $attestationPath `
+            -WorktreeRoot $worktreeRoot -BaseCommit $baseCommit `
+            -HeadCommit $implementationHead
+    }
+    catch {
+        $implOk = $false
+        Write-TextFile (Join-Path $runDir "HOST_VALIDATION_ERROR.txt") $_.Exception.Message
+    }
+}
+
 if ($implOk) {
     Write-CollabState $statePath "ready_for_review" $TaskName $branchName `
         $baseCommit $implementationHead
@@ -487,6 +505,11 @@ if ($implOk -and -not $SkipCodexReview) {
         "- Do not modify files.",
         "- Use `git diff $baseCommit...HEAD`; do not substitute HEAD~1 or current main.",
         "- Check scope, safety boundaries, tests, docs, and git status.",
+        $(if ($HostValidationCommands.Count -gt 0) {
+            "- Inspect and independently verify host attestation: $attestationPath. Do not rerun its commands in the reviewer sandbox."
+        } else {
+            "- No host attestation was requested; treat CodeBuddy validation as untrusted evidence."
+        }),
         "- Output Markdown only.",
         "- Include sections: conclusion, critical issues, important issues, suggestions, validation verdict.",
         "- If there are critical issues, say REVIEW_FAILED.",
@@ -641,6 +664,7 @@ $summary = @(
     "- STATE: $statePath",
     "- HANDOFF: $handoffPath",
     "- REVIEW_RESULT: $reviewResultPath",
+    "- HOST_VALIDATION: $attestationPath",
     "- CODEX_TAKEOVER: $takeoverPath",
     "",
     "## Worktree git status",
