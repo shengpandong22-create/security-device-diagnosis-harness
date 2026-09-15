@@ -579,6 +579,7 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 
 ## 文档入口
 
+- [本机安防设备诊断实验室](./device-lab/README.md)
 - [项目定位与总体架构设计](./docs/00-overview/项目定位与总体架构设计.md)
 - [旧项目能力复用矩阵](./docs/00-overview/旧项目能力复用矩阵.md)
 - [架构图：安防设备诊断 Harness 总览](./docs/01-architecture/security-device-diagnosis-harness-overview.md)

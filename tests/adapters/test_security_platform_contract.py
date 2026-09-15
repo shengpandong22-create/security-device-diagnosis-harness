@@ -100,6 +100,42 @@ def test_contract_service_rejects_missing_credential() -> None:
     assert FIXTURE_CREDENTIAL not in response.text
 
 
+def test_contract_service_health_is_public_and_contains_no_fixture_details() -> None:
+    app = create_contract_app(CAMERA_CASES_DATA_PATH, SecretStr(FIXTURE_CREDENTIAL))
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "security-platform-contract",
+    }
+    assert FIXTURE_CREDENTIAL not in response.text
+
+
+def test_lab_partial_fact_route_is_disabled_by_default() -> None:
+    app = create_contract_app(CAMERA_CASES_DATA_PATH, SecretStr(FIXTURE_CREDENTIAL))
+    response = TestClient(app).get(
+        "/v1/devices/lab-partial-facts/status",
+        headers={"Authorization": f"Bearer {FIXTURE_CREDENTIAL}"},
+    )
+    assert response.status_code == 404
+
+
+def test_lab_partial_fact_route_requires_opt_in_and_authentication() -> None:
+    app = create_contract_app(
+        CAMERA_CASES_DATA_PATH,
+        SecretStr(FIXTURE_CREDENTIAL),
+        enable_lab_fault_fixtures=True,
+    )
+    client = TestClient(app)
+    assert client.get("/v1/devices/lab-partial-facts/status").status_code == 401
+    response = client.get(
+        "/v1/devices/lab-partial-facts/status",
+        headers={"Authorization": f"Bearer {FIXTURE_CREDENTIAL}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"device_id": "lab-partial-facts", "online": True}
+
+
 def test_adapter_reads_status_channel_stream_pull_alarm_and_config() -> None:
     gateway, resolver = adapter()
     try:

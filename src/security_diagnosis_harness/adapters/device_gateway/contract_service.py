@@ -10,7 +10,12 @@ from security_diagnosis_harness.domain.camera import StreamKind
 from security_diagnosis_harness.ports.device_gateway import DeviceGatewayError
 
 
-def create_contract_app(data_path: str | Path, expected_credential: SecretStr) -> FastAPI:
+def create_contract_app(
+    data_path: str | Path,
+    expected_credential: SecretStr,
+    *,
+    enable_lab_fault_fixtures: bool = False,
+) -> FastAPI:
     """创建只读契约服务；不应作为生产 API 启动。"""
     gateway = StaticDeviceGateway(data_path)
     app = FastAPI(title="Local Security Platform Contract", docs_url=None, redoc_url=None)
@@ -29,6 +34,19 @@ def create_contract_app(data_path: str | Path, expected_credential: SecretStr) -
         if isinstance(result, list):
             return [item.model_dump(mode="json") for item in result]
         return result.model_dump(mode="json")
+
+    @app.get("/health")
+    def health():
+        """无凭证的最小存活探针；不返回设备、路径或凭证信息。"""
+        return {"status": "ok", "service": "security-platform-contract"}
+
+    if enable_lab_fault_fixtures:
+
+        @app.get("/v1/devices/lab-partial-facts/status")
+        def partial_status(authorization: str | None = Header(default=None)):
+            """刻意缺字段的本机实验室响应；默认契约服务不注册该路由。"""
+            authorize(authorization)
+            return {"device_id": "lab-partial-facts", "online": True}
 
     @app.get("/v1/devices/{device_id}/status")
     def status(device_id: str, authorization: str | None = Header(default=None)):

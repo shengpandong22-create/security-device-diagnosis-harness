@@ -1,0 +1,20 @@
+[
+  {
+    "name": "security-platform-contract",
+    "listen": "0.0.0.0:28081",
+    "upstream": "host.docker.internal:28082",
+    "enabled": true
+  },
+  {
+    "name": "onvif-http",
+    "listen": "0.0.0.0:28080",
+    "upstream": "host.docker.internal:28083",
+    "enabled": true
+  },
+  {
+    "name": "onvif-rtsp",
+    "listen": "0.0.0.0:28554",
+    "upstream": "host.docker.internal:28555",
+    "enabled": true
+  }
+]

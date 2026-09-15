@@ -19,6 +19,7 @@ coverage.xml
 data/
 logs/
 demo-output/
+.device-lab/
 .agent-collab/runs/
 *.db
 *.db-journal
