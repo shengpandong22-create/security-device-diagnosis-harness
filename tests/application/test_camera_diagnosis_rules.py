@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from security_diagnosis_harness.application.camera_diagnosis_rules import (
@@ -37,6 +39,20 @@ def _evidence(evidence_type: EvidenceType, payload: dict, summary: str = "证据
         summary=summary,
         payload=payload,
     )
+
+
+def test_simultaneous_camera_conflict_is_order_independent_and_degraded() -> None:
+    captured_at = datetime(2026, 9, 15, 12, tzinfo=UTC)
+    offline = status_evidence(False)
+    online = status_evidence(True)
+    offline.captured_at = online.captured_at = captured_at
+
+    forward = infer_camera_black_screen_label([offline, online])
+    reverse = infer_camera_black_screen_label([online, offline])
+
+    assert forward.label is reverse.label is CameraDiagnosisLabel.INSUFFICIENT_CAMERA_FACTS
+    assert forward.matched_rule == reverse.matched_rule
+    assert "device_status" in forward.evidence_chain[0]
 
 
 def status_evidence(online: bool, stream_status: str = "normal") -> DiagnosisEvidence:

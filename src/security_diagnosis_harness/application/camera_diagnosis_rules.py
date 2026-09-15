@@ -14,6 +14,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from security_diagnosis_harness.application.evidence_resolution import resolve_evidence
 from security_diagnosis_harness.domain.citation_policy import DEVICE_FACT_EVIDENCE_TYPES
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence, EvidenceType
 
@@ -25,6 +26,16 @@ HIGH_RESOLUTION_PIXELS: int = 2_500_000
 ENCODER_TIMEOUT_ALARM = "ENCODER_TIMEOUT"
 
 _FAILED_PULL_STATUSES = {"failed", "timeout"}
+_CAMERA_EVIDENCE_TYPES = frozenset(
+    {
+        EvidenceType.DEVICE_STATUS,
+        EvidenceType.DEVICE_CHANNEL,
+        EvidenceType.DEVICE_STREAM,
+        EvidenceType.PLATFORM_PULL,
+        EvidenceType.DEVICE_ALARM,
+        EvidenceType.DEVICE_CONFIG,
+    }
+)
 
 
 class CameraDiagnosisLabel(StrEnum):
@@ -125,6 +136,7 @@ class CameraFacts(BaseModel):
     content_black: bool | None = None
     alarm_types: list[str] = Field(default_factory=list)
     device_fact_types: list[str] = Field(default_factory=list)
+    conflicting_evidence_types: list[str] = Field(default_factory=list)
 
     @property
     def has_any_camera_fact(self) -> bool:
@@ -192,7 +204,12 @@ def extract_camera_facts(evidence: list[DiagnosisEvidence]) -> CameraFacts:
     alarm_types: list[str] = []
     device_fact_types: list[str] = []
 
-    for item in evidence:
+    resolved = resolve_evidence(evidence, _CAMERA_EVIDENCE_TYPES)
+    facts.conflicting_evidence_types = [
+        item.value for item in resolved.conflicting_types
+    ]
+
+    for item in resolved.selected.values():
         payload = item.payload or {}
         if item.evidence_type in DEVICE_FACT_EVIDENCE_TYPES:
             device_fact_types.append(item.evidence_type.value)
@@ -266,6 +283,14 @@ def infer_camera_black_screen_label(
     规则只输出候选，不产生 confirmed，也不修改任何诊断状态。
     """
     facts = extract_camera_facts(evidence)
+
+    if facts.conflicting_evidence_types:
+        return _build_result(
+            CameraDiagnosisLabel.INSUFFICIENT_CAMERA_FACTS,
+            facts,
+            "R0 同时刻同类摄像头事实冲突",
+            [f"冲突 Evidence 类型={','.join(facts.conflicting_evidence_types)}"],
+        )
 
     if not facts.has_any_camera_fact:
         return _build_result(

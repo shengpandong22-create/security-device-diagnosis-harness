@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from security_diagnosis_harness.application.recording_diagnosis_rules import (
     RecordingDiagnosisLabel,
     extract_recording_facts,
@@ -121,6 +123,24 @@ def _case(*evidence: DiagnosisEvidence) -> SecurityDiagnosisCase:
         reporter="tester",
         evidence=list(evidence),
     )
+
+
+def test_simultaneous_recording_conflict_is_order_independent_and_degraded():
+    captured_at = datetime(2026, 9, 15, 12, tzinfo=UTC)
+    full = _storage(status="full", free_gb=0)
+    normal = _storage()
+    full.captured_at = normal.captured_at = captured_at
+    common = (_continuous_plan(), _playback())
+
+    forward = infer_recording_missing_label(_case(*common, full, normal))
+    reverse = infer_recording_missing_label(_case(*common, normal, full))
+
+    assert (
+        forward.label
+        is reverse.label
+        is RecordingDiagnosisLabel.INSUFFICIENT_RECORDING_EVIDENCE
+    )
+    assert forward.matched_rule == reverse.matched_rule
 
 
 # ---------------------------------------------------------------- 各候选根因识别

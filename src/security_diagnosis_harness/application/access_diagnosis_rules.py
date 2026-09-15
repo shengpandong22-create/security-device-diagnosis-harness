@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from security_diagnosis_harness.application.evidence_resolution import resolve_evidence
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence, EvidenceType
 
@@ -133,6 +134,7 @@ class AccessFacts:
     door_lock_issue: bool = False
 
     missing: list[str] = field(default_factory=list)
+    conflicting_evidence_types: list[str] = field(default_factory=list)
 
 
 class AccessDiagnosisRuleResult(BaseModel):
@@ -194,7 +196,21 @@ def extract_access_facts(case: SecurityDiagnosisCase) -> AccessFacts:
     """
     facts = AccessFacts()
 
-    for item in case.evidence:
+    resolved = resolve_evidence(
+        case.evidence,
+        {
+            EvidenceType.ACCESS_CONTROLLER,
+            EvidenceType.ACCESS_DOOR,
+            EvidenceType.ACCESS_CREDENTIAL,
+            EvidenceType.ACCESS_POLICY,
+            EvidenceType.ACCESS_EVENT,
+        },
+    )
+    facts.conflicting_evidence_types = [
+        item.value for item in resolved.conflicting_types
+    ]
+
+    for item in resolved.selected.values():
         if item.evidence_type is EvidenceType.ACCESS_CONTROLLER:
             facts.controller_evidence = item
         elif item.evidence_type is EvidenceType.ACCESS_DOOR:
@@ -284,6 +300,13 @@ def infer_access_card_failed_label(case: SecurityDiagnosisCase) -> AccessDiagnos
     6. 缺少关键事实或无法区分 -> insufficient_access_evidence。
     """
     facts = extract_access_facts(case)
+
+    if facts.conflicting_evidence_types:
+        return _build_result(
+            AccessDiagnosisLabel.INSUFFICIENT_ACCESS_EVIDENCE,
+            "R0 同时刻同类门禁事实冲突",
+            [f"冲突 Evidence 类型={','.join(facts.conflicting_evidence_types)}"],
+        )
     evidence_chain = [
         item.evidence_id
         for item in (

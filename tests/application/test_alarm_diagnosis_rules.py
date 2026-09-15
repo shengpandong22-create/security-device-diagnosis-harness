@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from security_diagnosis_harness.application.alarm_diagnosis_rules import (
     AlarmDiagnosisLabel,
     extract_alarm_facts,
@@ -131,6 +133,20 @@ def _case(*evidence: DiagnosisEvidence) -> SecurityDiagnosisCase:
         reporter="tester",
         evidence=list(evidence),
     )
+
+
+def test_simultaneous_alarm_conflict_is_order_independent_and_degraded():
+    captured_at = datetime(2026, 9, 15, 12, tzinfo=UTC)
+    sensitive = _rule(sensitivity="high", threshold=20, debounce_seconds=1)
+    normal = _rule(sensitivity="medium", threshold=80, debounce_seconds=60)
+    sensitive.captured_at = normal.captured_at = captured_at
+    common = (_signal(), _environment(), _verification(), _correlation())
+
+    forward = infer_alarm_false_positive_label(_case(*common, sensitive, normal))
+    reverse = infer_alarm_false_positive_label(_case(*common, normal, sensitive))
+
+    assert forward.label is reverse.label is AlarmDiagnosisLabel.INSUFFICIENT_ALARM_EVIDENCE
+    assert forward.matched_rule == reverse.matched_rule
 
 
 def test_alarm_rule_too_sensitive_detected():

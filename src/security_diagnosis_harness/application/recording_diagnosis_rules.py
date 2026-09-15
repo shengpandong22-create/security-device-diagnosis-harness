@@ -25,6 +25,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from security_diagnosis_harness.application.evidence_resolution import resolve_evidence
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence, EvidenceType
 
@@ -131,6 +132,7 @@ class RecordingFacts:
     playback_end_at: datetime | None = None
 
     missing: list[str] = field(default_factory=list)
+    conflicting_evidence_types: list[str] = field(default_factory=list)
 
 
 class RecordingDiagnosisRuleResult(BaseModel):
@@ -252,7 +254,19 @@ def extract_recording_facts(case: SecurityDiagnosisCase) -> RecordingFacts:
     storage_evidence: DiagnosisEvidence | None = None
     playback_evidence: DiagnosisEvidence | None = None
 
-    for item in case.evidence:
+    resolved = resolve_evidence(
+        case.evidence,
+        {
+            EvidenceType.RECORDING_PLAN,
+            EvidenceType.STORAGE_STATUS,
+            EvidenceType.PLAYBACK_CHECK,
+        },
+    )
+    facts.conflicting_evidence_types = [
+        item.value for item in resolved.conflicting_types
+    ]
+
+    for item in resolved.selected.values():
         if item.evidence_type is EvidenceType.RECORDING_PLAN:
             plan_evidence = item
         elif item.evidence_type is EvidenceType.STORAGE_STATUS:
@@ -360,6 +374,14 @@ def infer_recording_missing_label(case: SecurityDiagnosisCase) -> RecordingDiagn
     5. 缺少关键录像事实 -> insufficient_recording_evidence。
     """
     facts = extract_recording_facts(case)
+
+    if facts.conflicting_evidence_types:
+        return _build_result(
+            RecordingDiagnosisLabel.INSUFFICIENT_RECORDING_EVIDENCE,
+            facts,
+            "R0 同时刻同类录像事实冲突",
+            [f"冲突 Evidence 类型={','.join(facts.conflicting_evidence_types)}"],
+        )
 
     evidence_chain: list[str] = []
     if facts.recording_plan_evidence is not None:

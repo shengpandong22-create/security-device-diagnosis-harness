@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from security_diagnosis_harness.application.access_diagnosis_rules import (
     AccessDiagnosisLabel,
     extract_access_facts,
@@ -122,6 +124,20 @@ def _case(*evidence: DiagnosisEvidence) -> SecurityDiagnosisCase:
         reporter="tester",
         evidence=list(evidence),
     )
+
+
+def test_simultaneous_access_conflict_is_order_independent_and_degraded():
+    captured_at = datetime(2026, 9, 15, 12, tzinfo=UTC)
+    permission = _event(deny_reason="permission_denied")
+    time_window = _event(deny_reason="time_window_denied")
+    permission.captured_at = time_window.captured_at = captured_at
+    common = (_controller(), _door(), _credential(), _policy())
+
+    forward = infer_access_card_failed_label(_case(*common, permission, time_window))
+    reverse = infer_access_card_failed_label(_case(*common, time_window, permission))
+
+    assert forward.label is reverse.label is AccessDiagnosisLabel.INSUFFICIENT_ACCESS_EVIDENCE
+    assert forward.matched_rule == reverse.matched_rule
 
 
 def test_credential_invalid_or_frozen_detected():

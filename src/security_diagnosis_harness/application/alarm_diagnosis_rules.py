@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from security_diagnosis_harness.application.evidence_resolution import resolve_evidence
 from security_diagnosis_harness.domain.alarm import (
     BURST_ALARM_COUNT,
     HIGH_NOISE_LEVEL,
@@ -119,6 +120,7 @@ class AlarmFacts:
     correlation_burst: bool = False
 
     missing: list[str] = field(default_factory=list)
+    conflicting_evidence_types: list[str] = field(default_factory=list)
 
 
 class AlarmDiagnosisRuleResult(BaseModel):
@@ -184,7 +186,21 @@ def extract_alarm_facts(case: SecurityDiagnosisCase) -> AlarmFacts:
     """从诊断 Evidence 中提取报警误报事实。"""
     facts = AlarmFacts()
 
-    for item in case.evidence:
+    resolved = resolve_evidence(
+        case.evidence,
+        {
+            EvidenceType.ALARM_RULE,
+            EvidenceType.ALARM_SIGNAL,
+            EvidenceType.ALARM_ENVIRONMENT,
+            EvidenceType.ALARM_VERIFICATION,
+            EvidenceType.ALARM_CORRELATION,
+        },
+    )
+    facts.conflicting_evidence_types = [
+        item.value for item in resolved.conflicting_types
+    ]
+
+    for item in resolved.selected.values():
         if item.evidence_type is EvidenceType.ALARM_RULE:
             facts.rule_evidence = item
         elif item.evidence_type is EvidenceType.ALARM_SIGNAL:
@@ -281,6 +297,13 @@ def infer_alarm_false_positive_label(case: SecurityDiagnosisCase) -> AlarmDiagno
     6. 缺少关键事实或无法区分 -> insufficient_alarm_evidence。
     """
     facts = extract_alarm_facts(case)
+
+    if facts.conflicting_evidence_types:
+        return _build_result(
+            AlarmDiagnosisLabel.INSUFFICIENT_ALARM_EVIDENCE,
+            "R0 同时刻同类报警事实冲突",
+            [f"冲突 Evidence 类型={','.join(facts.conflicting_evidence_types)}"],
+        )
     evidence_chain = [
         item.evidence_id
         for item in (
