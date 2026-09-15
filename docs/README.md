@@ -5,6 +5,7 @@
 - [项目定位与总体架构设计](./00-overview/项目定位与总体架构设计.md)
 - [旧项目能力复用矩阵](./00-overview/旧项目能力复用矩阵.md)
 - [Codex 与 CodeBuddy 协作编排器设计与学习手册](./00-overview/Codex与CodeBuddy协作编排器设计与学习手册.md)
+- [从 0 到 1 构建可信诊断 Agent：我的成长、方法与反思](./00-overview/从0到1构建可信诊断Agent的成长与反思.md)
 
 ## 01-architecture
 
