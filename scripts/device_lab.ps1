@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Bootstrap", "Start", "Verify", "Status", "Stop")]
+    [ValidateSet("Bootstrap", "Start", "Verify", "Stability", "Status", "Stop")]
     [string]$Command = "Status"
 )
 
@@ -20,6 +20,7 @@ $RuntimeOnvifConfig = Join-Path $RuntimeRoot "onvif-simulator.json"
 $OnvifCredentialPath = Join-Path $RuntimeRoot "onvif-credential.txt"
 $BlackVideoPath = Join-Path $LabRoot "media/black.mp4"
 $FfmpegImage = "jrottenberg/ffmpeg:7.1-alpine@sha256:8ec1ee1f6a0fcd37c97725827b6b7832795c9596e3439b8da56d7700d61ae778"
+$PythonExe = Join-Path $RepoRoot ".venv/Scripts/python.exe"
 
 function Initialize-LabDirectories {
     New-Item -ItemType Directory -Force -Path $BinRoot, $RuntimeRoot | Out-Null
@@ -48,13 +49,12 @@ function Invoke-Bootstrap {
 function Initialize-MediaAndOnvifConfig {
     $mediaRoot = Split-Path -Parent $BlackVideoPath
     New-Item -ItemType Directory -Force -Path $mediaRoot | Out-Null
-    if (-not (Test-Path $BlackVideoPath)) {
-        docker run --rm -v "${LabRoot}:/work" $FfmpegImage `
-            -f lavfi -i "color=c=black:s=640x360:r=15" -t 5 `
-            -c:v libx264 -pix_fmt yuv420p -an -y /work/media/black.mp4 | Out-Null
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $BlackVideoPath)) {
-            throw "黑色视频夹具生成失败"
-        }
+    docker run --rm -v "${LabRoot}:/work" $FfmpegImage `
+        -loglevel error -f lavfi -i "color=c=black:s=640x360:r=15" -t 5 `
+        -c:v libx264 -g 15 -keyint_min 15 -sc_threshold 0 `
+        -pix_fmt yuv420p -an -y /work/media/black.mp4 | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $BlackVideoPath)) {
+        throw "黑色视频夹具生成失败"
     }
     $onvifPassword = [guid]::NewGuid().ToString("N")
     Set-Content -LiteralPath $OnvifCredentialPath -Value $onvifPassword -NoNewline
@@ -108,9 +108,10 @@ function Invoke-Start {
     Set-Content -LiteralPath $CredentialPath -Value $credential -NoNewline
     $env:SECURITY_DIAGNOSIS_LAB_CREDENTIAL = $credential
 
-    $contract = Start-Process -FilePath "uv" -ArgumentList @(
-        "run", "python", "scripts/run_device_lab_contract.py"
-    ) -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru `
+    if (-not (Test-Path $PythonExe)) { throw "缺少项目虚拟环境，请先执行 uv sync" }
+    $contract = Start-Process -FilePath $PythonExe `
+      -ArgumentList @("scripts/run_device_lab_contract.py") `
+      -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru `
       -RedirectStandardOutput (Join-Path $RuntimeRoot "contract.out.log") `
       -RedirectStandardError (Join-Path $RuntimeRoot "contract.err.log")
     $onvif = Start-Process -FilePath $OnvifExe -ArgumentList @(
@@ -147,6 +148,13 @@ function Invoke-Verify {
     if ($LASTEXITCODE -ne 0) { throw "Device Lab 八场景矩阵失败" }
 }
 
+function Invoke-Stability {
+    if (-not (Test-Path $CredentialPath)) { throw "Device Lab 尚未启动" }
+    $env:SECURITY_DIAGNOSIS_LAB_CREDENTIAL = Get-Content -Raw $CredentialPath
+    uv run python scripts/eval_phase11_stability.py
+    if ($LASTEXITCODE -ne 0) { throw "Phase 11 十轮稳定门禁失败" }
+}
+
 function Invoke-Status {
     $contract = $false
     $onvif = $false
@@ -165,6 +173,17 @@ function Invoke-Stop([switch]$Quiet) {
         $state = Get-Content -Raw $StatePath | ConvertFrom-Json
         Stop-Process -Id $state.contract_pid, $state.onvif_pid -Force -ErrorAction SilentlyContinue
     }
+    # 兼容旧版脚本遗留的 uv 子进程，只清理由本仓库 Device Lab 启动的明确命令。
+    Get-CimInstance Win32_Process | Where-Object {
+        $isPythonLabProcess = $_.ExecutablePath -and
+            ([System.IO.Path]::GetFileName($_.ExecutablePath) -match '^python(w)?\.exe$') -and
+            $_.CommandLine -and
+            $_.CommandLine.Contains("scripts/run_device_lab_contract.py")
+        $isOnvifLabProcess = $_.ExecutablePath -and $_.ExecutablePath -eq $OnvifExe
+        $isPythonLabProcess -or $isOnvifLabProcess
+    } | ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
     docker compose -f $ComposeFile down --remove-orphans | Out-Null
     Remove-Item -LiteralPath $StatePath, $CredentialPath, $OnvifCredentialPath, `
         $RuntimeOnvifConfig `
@@ -176,6 +195,7 @@ switch ($Command) {
     "Bootstrap" { Invoke-Bootstrap }
     "Start" { Invoke-Start }
     "Verify" { Invoke-Verify }
+    "Stability" { Invoke-Stability }
     "Status" { Invoke-Status }
     "Stop" { Invoke-Stop }
 }

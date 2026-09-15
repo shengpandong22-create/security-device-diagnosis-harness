@@ -48,6 +48,27 @@ def create_contract_app(
             authorize(authorization)
             return {"device_id": "lab-partial-facts", "online": True}
 
+        @app.get("/v1/devices/{device_id}/platform-pull")
+        def lab_platform_pull(
+            device_id: str,
+            authorization: str | None = Header(default=None),
+        ):
+            """为跨来源实验提供确定的平台拉流事实。"""
+            if not device_id.startswith("lab-"):
+                return invoke(
+                    authorization,
+                    lambda: gateway.query_platform_pull_status(device_id),
+                )
+            authorize(authorization)
+            failed = device_id == "lab-platform-pull-failed"
+            return {
+                "device_id": device_id,
+                "platform": "device-lab-platform",
+                "pull_status": "failed" if failed else "success",
+                "error_code": "PLATFORM_PULL_FAILED" if failed else None,
+                "source": "device_lab_contract",
+            }
+
     @app.get("/v1/devices/{device_id}/status")
     def status(device_id: str, authorization: str | None = Header(default=None)):
         return invoke(authorization, lambda: gateway.query_status(device_id))

@@ -35,6 +35,7 @@ class CameraDiagnosisLabel(StrEnum):
     STREAM_PUBLISH_OR_ENCODER_ISSUE = "stream_publish_or_encoder_issue"
     OVERLOADED_ENCODING_CONFIGURATION = "overloaded_encoding_configuration"
     PLATFORM_PULL_OR_ACCESS_PATH_ISSUE = "platform_pull_or_access_path_issue"
+    VIDEO_CONTENT_BLACK_OR_OBSTRUCTED = "video_content_black_or_obstructed"
     INSUFFICIENT_CAMERA_FACTS = "insufficient_camera_facts"
 
 
@@ -50,6 +51,9 @@ LABEL_EXPLANATIONS: dict[CameraDiagnosisLabel, str] = {
         "编码配置过高导致设备编码压力过大"
     ),
     CameraDiagnosisLabel.PLATFORM_PULL_OR_ACCESS_PATH_ISSUE: "平台侧拉流或接入链路异常",
+    CameraDiagnosisLabel.VIDEO_CONTENT_BLACK_OR_OBSTRUCTED: (
+        "设备与码流链路正常，但视频内容持续纯黑或镜头被遮挡"
+    ),
     CameraDiagnosisLabel.INSUFFICIENT_CAMERA_FACTS: "摄像头事实不足，无法给出可靠根因候选",
 }
 
@@ -84,6 +88,12 @@ TROUBLESHOOTING_ORDER: dict[CameraDiagnosisLabel, list[str]] = {
         "确认设备侧鉴权信息是否过期（使用脱敏配置核对）",
         "在平台侧重试拉流并观察错误码",
     ],
+    CameraDiagnosisLabel.VIDEO_CONTENT_BLACK_OR_OBSTRUCTED: [
+        "核对镜头是否被遮挡以及现场照度",
+        "检查传感器、补光灯与图像参数",
+        "对比主子码流画面并保存脱敏分析摘要",
+        "由人工确认现场画面后再关闭诊断",
+    ],
     CameraDiagnosisLabel.INSUFFICIENT_CAMERA_FACTS: [
         "补充采集设备状态、通道、码流与平台拉流事实",
         "确认只读工具是否全部执行成功",
@@ -112,6 +122,7 @@ class CameraFacts(BaseModel):
     platform_error_code: str | None = None
     bitrate_kbps: int | None = None
     resolution: str | None = None
+    content_black: bool | None = None
     alarm_types: list[str] = Field(default_factory=list)
     device_fact_types: list[str] = Field(default_factory=list)
 
@@ -201,6 +212,9 @@ def extract_camera_facts(evidence: list[DiagnosisEvidence]) -> CameraFacts:
             facts.stream_error_code = _as_str(payload.get("error_code"))
             facts.bitrate_kbps = _as_int(payload.get("bitrate_kbps"))
             facts.resolution = _as_str(payload.get("resolution"))
+            extra = payload.get("extra")
+            if isinstance(extra, dict) and "content_black" in extra:
+                facts.content_black = _as_bool(extra.get("content_black"))
         elif item.evidence_type is EvidenceType.PLATFORM_PULL:
             facts.has_platform_pull = True
             facts.platform_pull_status = _as_str(payload.get("pull_status"))
@@ -278,6 +292,8 @@ def infer_camera_black_screen_label(
         chain.append(f"分辨率={facts.resolution}")
     if facts.alarm_types:
         chain.append(f"告警={','.join(sorted(set(facts.alarm_types)))}")
+    if facts.content_black is not None:
+        chain.append(f"视频内容持续纯黑={facts.content_black}")
 
     # 规则 1：设备离线。
     if facts.online is False:
@@ -320,6 +336,15 @@ def infer_camera_black_screen_label(
             CameraDiagnosisLabel.STREAM_PUBLISH_OR_ENCODER_ISSUE,
             facts,
             "R4 码流发布失败或编码异常",
+            chain,
+        )
+
+    # 规则 4B：协议与码流正常，但内容分析确认持续纯黑；保留既有规则编号兼容性。
+    if facts.stream_pull_status == "success" and facts.content_black is True:
+        return _build_result(
+            CameraDiagnosisLabel.VIDEO_CONTENT_BLACK_OR_OBSTRUCTED,
+            facts,
+            "R4B 码流健康但视频内容持续纯黑",
             chain,
         )
 

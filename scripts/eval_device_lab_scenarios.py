@@ -11,19 +11,54 @@ import socket
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from xml.etree import ElementTree
 
 import httpx
 
+from security_diagnosis_harness.adapters.device_assets.in_memory import (
+    InMemoryDeviceAssetCatalog,
+)
+from security_diagnosis_harness.adapters.device_gateway.cross_source import (
+    CrossSourceCameraGateway,
+)
 from security_diagnosis_harness.adapters.device_gateway.http_security_platform import (
     SecurityPlatformHttpAdapter,
     SecurityPlatformHttpSettings,
 )
+from security_diagnosis_harness.adapters.device_gateway.onvif import (
+    OnvifReadOnlyAdapter,
+    OnvifReadOnlySettings,
+)
+from security_diagnosis_harness.adapters.device_gateway.registry import (
+    InMemoryDeviceAdapterRegistry,
+)
+from security_diagnosis_harness.adapters.device_gateway.routed import RoutedDeviceGateway
+from security_diagnosis_harness.adapters.llm.fake import FakeLLM
+from security_diagnosis_harness.agent.runner import ToolLoopBudget, ToolLoopRunner
+from security_diagnosis_harness.application.diagnoses import SecurityDiagnosisApplicationService
+from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
+from security_diagnosis_harness.domain.camera import PullStatus, StreamKind
+from security_diagnosis_harness.domain.citation_policy import CitationPolicy
 from security_diagnosis_harness.domain.device_integration import (
     DeviceAdapterError,
     DeviceAdapterErrorKind,
+    DeviceAsset,
+    DeviceCapability,
     ResolvedCredential,
 )
+from security_diagnosis_harness.domain.enums import SecurityFaultType
+from security_diagnosis_harness.ports.llm import (
+    ChatRole,
+    ConclusionDraft,
+    FinishReason,
+    LLMRequest,
+    LLMResponse,
+    ToolCall,
+)
+from security_diagnosis_harness.tools.device_channel import DeviceChannelTool
+from security_diagnosis_harness.tools.device_status import DeviceStatusTool
+from security_diagnosis_harness.tools.device_stream import DeviceStreamTool
+from security_diagnosis_harness.tools.platform_pull import PlatformPullStatusTool
+from security_diagnosis_harness.tools.registry import ToolRegistry
 
 _ROOT = Path(__file__).resolve().parents[1]
 _LAB_RUNTIME = _ROOT / ".device-lab" / "runtime"
@@ -37,13 +72,29 @@ _FFMPEG_IMAGE = (
 
 
 class _Resolver:
-    def __init__(self, value: str) -> None:
+    def __init__(self, value: str, reference: str = "device-lab/runtime") -> None:
         self._value = value
+        self._reference = reference
 
     def resolve(self, credential_reference: str) -> ResolvedCredential:
-        if credential_reference != "device-lab/runtime":
+        if credential_reference != self._reference:
             raise ValueError("未知凭证引用")
         return ResolvedCredential(value=self._value)
+
+
+def _onvif_adapter(password: str) -> OnvifReadOnlyAdapter:
+    return OnvifReadOnlyAdapter(
+        OnvifReadOnlySettings(
+            base_url="http://127.0.0.1:28080",
+            allowed_hosts={"127.0.0.1"},
+            credential_reference="device-lab/onvif",
+            rtsp_probe_host="127.0.0.1",
+            rtsp_probe_port=28554,
+            connect_timeout_seconds=1,
+            read_timeout_seconds=2,
+        ),
+        _Resolver(f"device-lab:{password}", "device-lab/onvif"),
+    )
 
 
 def _adapter(credential: str, timeout: float = 2.0) -> SecurityPlatformHttpAdapter:
@@ -157,23 +208,6 @@ def _is_valid_onvif_auth(password: str) -> bool:
     return response.status_code == 200 and "SimCam-Lab" in response.text
 
 
-def _profile_tokens(password: str) -> set[str]:
-    response = _soap_request(
-        28080,
-        '<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl"/>',
-        username="device-lab",
-        password=password,
-        service="media",
-    )
-    response.raise_for_status()
-    root = ElementTree.fromstring(response.content)
-    return {
-        element.attrib["token"]
-        for element in root.iter()
-        if element.tag.endswith("Profiles") and "token" in element.attrib
-    }
-
-
 def _is_black_rtsp_stream(username: str, password: str) -> bool:
     url = f"rtsp://{username}:{password}@host.docker.internal:28554/profile_main"
     completed = subprocess.run(
@@ -205,6 +239,164 @@ def _is_black_rtsp_stream(username: str, password: str) -> bool:
     return completed.returncode == 0 and "black_start:" in combined
 
 
+def _evaluate_agent_loop(
+    control: httpx.Client,
+    contract_credential: str,
+    onvif_password: str,
+) -> list[dict[str, object]]:
+    """让四个核心案例进入正式 Runner/Registry/Gateway/Evidence/Citation 链路。"""
+    onvif = _onvif_adapter(onvif_password)
+    platform = _adapter(contract_credential)
+    device_ids = (
+        "lab-rtsp-unreachable",
+        "lab-platform-pull-failed",
+        "lab-sub-stream-missing",
+        "lab-black-video",
+    )
+    composite = CrossSourceCameraGateway(
+        onvif,
+        platform,
+        content_probe=lambda: _is_black_rtsp_stream("device-lab", onvif_password),
+        content_probe_device_ids=frozenset({"lab-black-video"}),
+    )
+    assets = InMemoryDeviceAssetCatalog(
+        DeviceAsset(
+            device_id=device_id,
+            device_type="camera",
+            adapter_key=composite.adapter_key,
+            capabilities=frozenset(
+                {
+                    DeviceCapability.STATUS,
+                    DeviceCapability.CHANNEL,
+                    DeviceCapability.STREAM,
+                }
+            ),
+        )
+        for device_id in device_ids
+    )
+    adapters = InMemoryDeviceAdapterRegistry()
+    adapters.register(composite.adapter_key, composite, ready=True)
+    gateway = RoutedDeviceGateway(assets, adapters)
+    tools = ToolRegistry()
+    for tool_type in (
+        DeviceStatusTool,
+        DeviceChannelTool,
+        DeviceStreamTool,
+        PlatformPullStatusTool,
+    ):
+        tools.register(tool_type())
+
+    expected = {
+        "lab-rtsp-unreachable": "stream_publish_or_encoder_issue",
+        "lab-platform-pull-failed": "platform_pull_or_access_path_issue",
+        "lab-sub-stream-missing": "stream_publish_or_encoder_issue",
+        "lab-black-video": "video_content_black_or_obstructed",
+    }
+
+    def responder(request: LLMRequest) -> LLMResponse:
+        device_id = str(request.metadata.get("device_id", ""))
+        if not any(message.role is ChatRole.TOOL for message in request.messages):
+            calls = [
+                ToolCall(
+                    call_id="status",
+                    tool_name="device__query_status",
+                    arguments={"device_id": device_id},
+                ),
+                ToolCall(
+                    call_id="channel",
+                    tool_name="device__query_channel",
+                    arguments={"device_id": device_id},
+                ),
+                ToolCall(
+                    call_id="main",
+                    tool_name="device__query_stream",
+                    arguments={"device_id": device_id, "stream_kind": "main"},
+                ),
+                ToolCall(
+                    call_id="platform",
+                    tool_name="platform__query_pull_status",
+                    arguments={"device_id": device_id},
+                ),
+            ]
+            if device_id == "lab-sub-stream-missing":
+                calls.append(
+                    ToolCall(
+                        call_id="sub",
+                        tool_name="device__query_stream",
+                        arguments={"device_id": device_id, "stream_kind": "sub"},
+                    )
+                )
+            return LLMResponse(tool_calls=calls, finish_reason=FinishReason.TOOL_CALLS)
+        return LLMResponse(
+            final_conclusion=ConclusionDraft(
+                fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
+                summary="根据受控设备、码流和平台事实生成候选结论",
+                confidence="probable",
+                cited_evidence_ids=[],
+                next_steps=["由人工核对跨来源证据后确认"],
+            ),
+            finish_reason=FinishReason.STOP,
+        )
+
+    llm = FakeLLM(responder=responder)
+    runner = ToolLoopRunner(llm, tools, ToolLoopBudget(max_rounds=3, max_tool_calls=6))
+    repository = InMemoryDiagnosisRepository()
+    service = SecurityDiagnosisApplicationService(
+        repository=repository,
+        runner=runner,
+        registry=tools,
+        gateway=gateway,
+        citation_policy=CitationPolicy(),
+        tool_allowlist=[
+            "device__query_status",
+            "device__query_channel",
+            "device__query_stream",
+            "platform__query_pull_status",
+        ],
+        supported_fault_types=frozenset({SecurityFaultType.CAMERA_BLACK_SCREEN}),
+    )
+    outcomes: list[dict[str, object]] = []
+    try:
+        for device_id in device_ids:
+            # 故障只在当前案例采集期间生效；案例结束立即恢复，避免污染后续案例。
+            _set_proxy_enabled(
+                control,
+                _ONVIF_RTSP_PROXY,
+                device_id != "lab-rtsp-unreachable",
+            )
+            case = service.create_diagnosis(
+                device_id,
+                SecurityFaultType.CAMERA_BLACK_SCREEN,
+                reporter="device-lab",
+                description="Device Lab 跨来源影子诊断",
+            )
+            result = service.run_diagnosis(case.diagnosis_id)
+            label = result.candidate_label.value if result.candidate_label else None
+            saved = service.get_diagnosis(case.diagnosis_id)
+            outcomes.append(
+                {
+                    "device_alias": device_id,
+                    "candidate_label": label,
+                    "expected_label": expected[device_id],
+                    "evidence_count": len(saved.evidence),
+                    "citation_count": len(saved.conclusion.cited_evidence_ids)
+                    if saved.conclusion
+                    else 0,
+                    "status": saved.status.value,
+                    "passed": label == expected[device_id]
+                    and len(saved.evidence) >= 3
+                    and saved.conclusion is not None
+                    and len(saved.conclusion.cited_evidence_ids) >= 2
+                    and saved.status.value == "waiting_for_confirmation",
+                }
+            )
+    finally:
+        _set_proxy_enabled(control, _ONVIF_RTSP_PROXY, True)
+        onvif.close()
+        platform.close()
+    return outcomes
+
+
 def main() -> None:
     contract_credential = os.environ.get("SECURITY_DIAGNOSIS_LAB_CREDENTIAL")
     if not contract_credential:
@@ -215,10 +407,15 @@ def main() -> None:
     try:
         # 1. ONVIF 正常，但经代理的 RTSP 被关闭。
         _set_proxy_enabled(control, _ONVIF_RTSP_PROXY, False)
+        with _onvif_adapter(onvif_password) as onvif:
+            device = onvif.query_status("lab-camera")
+            main = onvif.query_stream_snapshot("lab-camera", StreamKind.MAIN)
         results.append(
             {
                 "scenario": "onvif_ok_rtsp_unreachable",
-                "passed": _is_valid_onvif_auth(onvif_password)
+                "passed": device.online
+                and main.pull_status is PullStatus.FAILED
+                and main.error_code == "RTSP_UNREACHABLE"
                 and _rtsp_responds(28555)
                 and not _rtsp_responds(28554),
             }
@@ -226,22 +423,31 @@ def main() -> None:
         _set_proxy_enabled(control, _ONVIF_RTSP_PROXY, True)
 
         # 2. 错误密码被拒，正确的一次性密码可用。
+        authentication_rejected = False
+        try:
+            with _onvif_adapter("deliberately-wrong") as onvif:
+                onvif.query_status("lab-camera")
+        except DeviceAdapterError as exc:
+            authentication_rejected = exc.kind is DeviceAdapterErrorKind.AUTHENTICATION
+        with _onvif_adapter(onvif_password) as onvif:
+            correct_credential_accepted = onvif.query_status("lab-camera").online
         results.append(
             {
                 "scenario": "onvif_authentication_failed",
-                "passed": not _is_valid_onvif_auth("deliberately-wrong")
-                and _is_valid_onvif_auth(onvif_password),
+                "passed": authentication_rejected and correct_credential_accepted,
             }
         )
 
         # 3. 只有可用 main Profile，明确缺少 sub Profile。
-        tokens = _profile_tokens(onvif_password)
+        with _onvif_adapter(onvif_password) as onvif:
+            main = onvif.query_stream_snapshot("lab-camera", StreamKind.MAIN)
+            sub = onvif.query_stream_snapshot("lab-camera", StreamKind.SUB)
         results.append(
             {
                 "scenario": "main_stream_ok_sub_stream_missing",
-                "passed": "profile_main" in tokens
-                and "profile_sub" not in tokens
-                and _rtsp_responds(28554),
+                "passed": main.pull_status is PullStatus.SUCCESS
+                and sub.pull_status is PullStatus.FAILED
+                and sub.error_code == "PROFILE_NOT_FOUND",
             }
         )
 
@@ -331,6 +537,11 @@ def main() -> None:
                 and _is_black_rtsp_stream("device-lab", onvif_password),
             }
         )
+        agent_loop = _evaluate_agent_loop(
+            control,
+            contract_credential,
+            onvif_password,
+        )
     finally:
         for proxy, toxic in (
             (_CONTRACT_PROXY, "intermittent-latency"),
@@ -345,6 +556,12 @@ def main() -> None:
         "passed": sum(bool(item["passed"]) for item in results),
         "failed": [item["scenario"] for item in results if not item["passed"]],
         "scenarios": results,
+        "agent_loop_total": len(agent_loop),
+        "agent_loop_passed": sum(bool(item["passed"]) for item in agent_loop),
+        "agent_loop_failed": [
+            item["device_alias"] for item in agent_loop if not item["passed"]
+        ],
+        "agent_loop": agent_loop,
         "external_model_called": False,
         "real_device_accessed": False,
     }
@@ -353,7 +570,10 @@ def main() -> None:
         encoding="utf-8",
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    if report["passed"] != report["total"]:
+    if (
+        report["passed"] != report["total"]
+        or report["agent_loop_passed"] != report["agent_loop_total"]
+    ):
         raise SystemExit(1)
 
 
