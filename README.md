@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0～10 工程基线已完成；真实设备授权联调仍保持未验收。
+- 当前阶段：Phase 0～11C 工程基线已完成；Phase 11D 真实设备授权联调待设备到位。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -47,6 +47,21 @@
 | Phase 10A | Simulator History 与逐项发布 Gate | 已完成 |
 | Phase 10B | 只读授权清单与不可变调用预算预检 | 已完成（尚未接真实 Adapter） |
 | Phase 10C | 授权协议 dry-run 与试接入 Runbook | 已完成 |
+| Phase 11A | 严格只读 ONVIF Adapter | 已完成 |
+| Phase 11B | ONVIF、RTSP、平台与内容事实的完整 Agent Loop | 已完成 |
+| Phase 11C | 十轮 Device Lab 稳定门禁 | 已完成（80/80，Agent Loop 40/40） |
+| Phase 11D | Wi-Fi / 有线授权真机只读联调与项目封版 | 待真实设备 |
+
+Phase 11 将 ONVIF 设备事实、RTSP 可达性、平台拉流事实和受控视频内容分析接入
+正式 Runner、Tool Registry、Routed Gateway、Evidence 与 CitationPolicy 链路。
+十轮门禁固定标记为 `simulator_stability`，不代表真机联调或线上准确率：
+
+```powershell
+.\scripts\device_lab.ps1 Start
+.\scripts\device_lab.ps1 Verify
+.\scripts\device_lab.ps1 Stability
+.\scripts\device_lab.ps1 Stop
+```
 
 Phase 9A 新增供应商无关的资产、能力、连接引用、请求上下文和稳定错误分类，
 并通过确定性 Simulator 验证真实 Runner、Registry、Evidence、CitationPolicy
@@ -580,6 +595,8 @@ uv run python scripts/demo_phase0_camera_black_screen.py
 ## 文档入口
 
 - [本机安防设备诊断实验室](./device-lab/README.md)
+- [Phase 11 ONVIF 跨来源诊断与稳定封版实施规格](./docs/02-specifications/Phase%2011%20ONVIF跨来源诊断与稳定封版实施规格.md)
+- [Phase 11 验收标准](./docs/04-validation/Phase%2011%20验收标准.md)
 - [项目定位与总体架构设计](./docs/00-overview/项目定位与总体架构设计.md)
 - [旧项目能力复用矩阵](./docs/00-overview/旧项目能力复用矩阵.md)
 - [架构图：安防设备诊断 Harness 总览](./docs/01-architecture/security-device-diagnosis-harness-overview.md)

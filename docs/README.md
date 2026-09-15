@@ -22,6 +22,7 @@
 - [Phase 9 真实设备接入与可观测运行实施规格](./02-specifications/Phase%209%20真实设备接入与可观测运行实施规格.md)
 - [Phase 10 评测发布闭环与试接入准备实施规格](./02-specifications/Phase%2010%20评测发布闭环与试接入准备实施规格.md)
 - [Phase 10 授权设备试接入运行手册](./02-specifications/Phase%2010%20授权设备试接入运行手册.md)
+- [Phase 11 ONVIF 跨来源诊断与稳定封版实施规格](./02-specifications/Phase%2011%20ONVIF跨来源诊断与稳定封版实施规格.md)
 
 ## 03-progress
 
@@ -29,6 +30,7 @@
 - [2026-09-09：Phase 1 开发总结与 Phase 2 录像缺失深化计划](./03-progress/2026-09-09-Phase1开发总结与Phase2录像缺失深化计划.md)
 - [2026-09-11：Phase 3 开发总结与 Phase 4 报警误报深化计划](./03-progress/2026-09-11-Phase3开发总结与Phase4报警误报深化计划.md)
 - [2026-09-11：Phase 4 开发总结与 Phase 5 知识沉淀计划](./03-progress/2026-09-11-Phase4开发总结与Phase5知识沉淀计划.md)
+- [Phase 11 开发总结与真机封版计划](./03-progress/Phase%2011%20开发总结与真机封版计划.md)
 
 ## 04-validation
 
@@ -50,6 +52,7 @@
 - [Phase 10 开发总结](./03-progress/Phase%2010%20开发总结.md)
 - [Phase 9 验收标准](./04-validation/Phase%209%20验收标准.md)
 - [Phase 10 验收标准](./04-validation/Phase%2010%20验收标准.md)
+- [Phase 11 验收标准](./04-validation/Phase%2011%20验收标准.md)
 - [Phase 9 专项严格审计](./05-audits/Phase%209%20专项严格审计报告.md)
 - [Phase 7 诊断质量评测体系实施规格](./02-specifications/Phase%207%20诊断质量评测体系实施规格.md)
 - [Phase 8 评测运营与标注可信度实施规格](./02-specifications/Phase%208%20评测运营与标注可信度实施规格.md)
