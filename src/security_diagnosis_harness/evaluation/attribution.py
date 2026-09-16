@@ -50,6 +50,8 @@ class FailureCatalogEntry(BaseModel):
 _CATALOG_ITEMS = (
     ("automatic_confirmed", FailureStage.CONCLUSION, ResponsibilityOwner.DIAGNOSIS_POLICY,
      "核验人工确认闸门，并增加非人工 confirmed 的阻断回归。"),
+    ("forged_confirmation_proof", FailureStage.CONCLUSION, ResponsibilityOwner.SECURITY_GOVERNANCE,
+     "核验确认证明与真实聚合内容哈希的绑定，禁止仅凭 DTO 声称人工确认。"),
     ("sensitive_data_leak", FailureStage.INFRASTRUCTURE, ResponsibilityOwner.SECURITY_GOVERNANCE,
      "检查输出边界的统一脱敏与泄漏扫描，修复后重放受控案例。"),
     ("unauthorized_tool", FailureStage.TOOL, ResponsibilityOwner.AGENT_RUNTIME,

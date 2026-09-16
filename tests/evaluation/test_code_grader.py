@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.conclusion import DiagnosisConclusion
@@ -15,6 +16,7 @@ from security_diagnosis_harness.domain.evidence import (
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 from security_diagnosis_harness.evaluation import (
     CodeBasedGrader,
+    ConfirmedAggregateProof,
     DatasetCase,
     DatasetRegistry,
     DatasetSplit,
@@ -23,6 +25,7 @@ from security_diagnosis_harness.evaluation import (
     FindingLevel,
     ToolCallTrace,
 )
+from security_diagnosis_harness.evaluation.grader import aggregate_content_hash
 
 DATASET_ROOT = (
     Path(__file__).resolve().parents[2] / "datasets" / "security-diagnosis" / "1.0.0"
@@ -114,23 +117,20 @@ def test_p0_failures_always_block(cases, changes, code):
     assert any(item.level is FindingLevel.P0 for item in grade.findings)
 
 
-def test_human_confirmed_result_is_not_treated_as_automatic(cases):
-    review = HumanReview(
-        diagnosis_id=cases[0].case_id,
-        action=HumanReviewAction.CONFIRM,
-        reviewer="reviewer-a",
+def _confirmation_proof(
+    case: DatasetCase, *, diagnosis_id: str | None = None
+) -> ConfirmedAggregateProof:
+    return ConfirmedAggregateProof(
+        diagnosis_id=diagnosis_id or case.case_id,
+        aggregate_content_hash="a" * 64,
+        confirm_review_id="krev-proof",
     )
-    output = _successful_output(cases[0]).model_copy(
-        update={"final_status": SecurityDiagnosisStatus.CONFIRMED, "reviews": (review,)}
-    )
-    grade = CodeBasedGrader().grade_case(cases[0], output)
-    assert "automatic_confirmed" not in _finding_codes(grade)
 
 
-def test_evaluation_output_is_derived_from_case_and_real_review(cases):
-    dataset_case = cases[0]
+def _confirmed_diagnosis(dataset_case: DatasetCase) -> SecurityDiagnosisCase:
+    """构造一个真实的人工确认聚合（状态/结论/最终 CONFIRM review 齐备）。"""
     diagnosis = SecurityDiagnosisCase(
-        diagnosis_id="diag-evaluation",
+        diagnosis_id="diag-confirmed",
         fault_type=dataset_case.fault_type,
         device_id="dataset-device",
         reporter="evaluation",
@@ -161,6 +161,86 @@ def test_evaluation_output_is_derived_from_case_and_real_review(cases):
             reviewer="reviewer-a",
         )
     )
+    return diagnosis
+
+
+def test_confirmed_with_aggregate_proof_is_not_treated_as_automatic(cases):
+    output = _successful_output(cases[0]).model_copy(
+        update={
+            "final_status": SecurityDiagnosisStatus.CONFIRMED,
+            "confirmed_by_aggregate": _confirmation_proof(cases[0]),
+        }
+    )
+    grade = CodeBasedGrader().grade_case(cases[0], output)
+    assert "automatic_confirmed" not in _finding_codes(grade)
+
+
+def test_confirmed_without_proof_is_p0(cases):
+    output = _successful_output(cases[0]).model_copy(
+        update={"final_status": SecurityDiagnosisStatus.CONFIRMED}
+    )
+    grade = CodeBasedGrader().grade_case(cases[0], output)
+    assert "automatic_confirmed" in _finding_codes(grade)
+    assert grade.p0_blocked is True
+
+
+def test_cross_diagnosis_confirmation_proof_is_rejected_at_construction(cases):
+    # 裸构造一条"属于别的 diagnosis_id"的证明在模型层即被拒绝。
+    with pytest.raises(ValidationError, match="diagnosis_id"):
+        EvaluationOutput.model_validate(
+            _successful_output(cases[0])
+            .model_copy(
+                update={
+                    "final_status": SecurityDiagnosisStatus.CONFIRMED,
+                    "confirmed_by_aggregate": _confirmation_proof(
+                        cases[0], diagnosis_id="diag-other"
+                    ),
+                }
+            )
+            .model_dump()
+        )
+
+
+def test_forged_confirmation_proof_against_real_aggregate_is_p0(cases):
+    dataset_case = cases[0]
+    diagnosis = _confirmed_diagnosis(dataset_case)
+    genuine = EvaluationOutput.from_case(
+        case_id=dataset_case.case_id,
+        diagnosis=diagnosis,
+        completed=True,
+        candidate_label=dataset_case.expected_candidate,
+    )
+    forged = genuine.model_copy(
+        update={
+            "confirmed_by_aggregate": ConfirmedAggregateProof(
+                diagnosis_id=diagnosis.diagnosis_id,
+                aggregate_content_hash="b" * 64,
+                confirm_review_id="forged-review",
+            )
+        }
+    )
+    grade = CodeBasedGrader().grade_case(dataset_case, forged, diagnosis=diagnosis)
+    assert "forged_confirmation_proof" in _finding_codes(grade)
+    assert grade.p0_blocked is True
+
+
+def test_real_confirmed_aggregate_passes_confirmation_check(cases):
+    dataset_case = cases[0]
+    diagnosis = _confirmed_diagnosis(dataset_case)
+    output = EvaluationOutput.from_case(
+        case_id=dataset_case.case_id,
+        diagnosis=diagnosis,
+        completed=True,
+        candidate_label=dataset_case.expected_candidate,
+    )
+    grade = CodeBasedGrader().grade_case(dataset_case, output, diagnosis=diagnosis)
+    assert "automatic_confirmed" not in _finding_codes(grade)
+    assert "forged_confirmation_proof" not in _finding_codes(grade)
+
+
+def test_evaluation_output_is_derived_from_case_and_real_review(cases):
+    dataset_case = cases[0]
+    diagnosis = _confirmed_diagnosis(dataset_case)
 
     output = EvaluationOutput.from_case(
         case_id=dataset_case.case_id,
@@ -170,9 +250,14 @@ def test_evaluation_output_is_derived_from_case_and_real_review(cases):
     )
 
     assert output.final_status is SecurityDiagnosisStatus.CONFIRMED
-    assert output.reviews == tuple(diagnosis.reviews)
-    assert output.cited_evidence_ids == (evidence.evidence_id,)
-    assert output.evidence[0].evidence_id == evidence.evidence_id
+    proof = output.confirmed_by_aggregate
+    assert proof is not None
+    assert proof.diagnosis_id == diagnosis.diagnosis_id
+    assert proof.aggregate_content_hash == aggregate_content_hash(diagnosis)
+    assert output.cited_evidence_ids == tuple(
+        item.evidence_id for item in diagnosis.evidence
+    )
+    assert output.evidence[0].evidence_id == diagnosis.evidence[0].evidence_id
 
 
 def test_unauthorized_tool_is_p0_and_reduces_precision(cases):

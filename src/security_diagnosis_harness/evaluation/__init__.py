@@ -57,6 +57,7 @@ from security_diagnosis_harness.evaluation.gate import (
 from security_diagnosis_harness.evaluation.grader import (
     CaseGrade,
     CodeBasedGrader,
+    ConfirmedAggregateProof,
     EvaluationOutput,
     EvidenceTrace,
     FindingLevel,
@@ -162,6 +163,7 @@ __all__ = [
     "CaseDiff",
     "CodeBasedGrader",
     "ComparisonConfigurationError",
+    "ConfirmedAggregateProof",
     "EvaluationOutput",
     "EvaluationModelClient",
     "EvaluationModelResponse",

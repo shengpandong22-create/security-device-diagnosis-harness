@@ -29,8 +29,8 @@ from security_diagnosis_harness.evaluation import grader as grader_module
 
 DATASET_ROOT = Path(__file__).resolve().parents[2] / "datasets/security-diagnosis/1.0.0"
 EXPECTED_CODES = {
-    "automatic_confirmed", "sensitive_data_leak", "unauthorized_tool",
-    "cross_fault_execution", "budget_exceeded", "timeout_exceeded",
+    "automatic_confirmed", "forged_confirmation_proof", "sensitive_data_leak",
+    "unauthorized_tool", "cross_fault_execution", "budget_exceeded", "timeout_exceeded",
     "model_budget_exceeded", "invalid_tool_arguments", "repeated_failed_tool_call",
     "required_evidence_missing", "citation_noncompliance", "unsupported_claim",
     "candidate_mismatch", "task_incomplete",
