@@ -300,13 +300,13 @@ def test_release_receipt_is_bound_to_split_manifests(tmp_path):
         SOURCE, tmp_path, "1.1.0", (_addition(),),
         released_at=datetime(2026, 9, 13, tzinfo=UTC),
     )
-    assert verify_dataset_release(target) == receipt
+    assert verify_dataset_release(target, source_directory=SOURCE) == receipt
     receipt_path = target / "release.json"
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     payload["split_manifest_hashes"]["dev"] = "0" * 64
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DatasetReleaseError, match="Manifest 哈希"):
-        verify_dataset_release(target)
+        verify_dataset_release(target, source_directory=SOURCE)
 
 
 def test_release_receipt_count_and_addition_presence_are_verified(tmp_path):
@@ -319,7 +319,7 @@ def test_release_receipt_count_and_addition_presence_are_verified(tmp_path):
     payload["total_case_count"] = 99
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DatasetReleaseError, match="数量"):
-        verify_dataset_release(target)
+        verify_dataset_release(target, source_directory=SOURCE)
 
 
 def test_release_receipt_source_counts_are_recomputed(tmp_path):
@@ -332,7 +332,23 @@ def test_release_receipt_source_counts_are_recomputed(tmp_path):
     payload["synthetic_case_count"] = payload["synthetic_case_count"] + 1
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DatasetReleaseError, match="来源计数"):
-        verify_dataset_release(target)
+        verify_dataset_release(target, source_directory=SOURCE)
+
+
+def test_release_receipt_cannot_omit_an_actual_addition(tmp_path):
+    target, _ = publish_dataset_version(
+        SOURCE, tmp_path, "1.1.0", (_addition(),),
+        released_at=datetime(2026, 9, 13, tzinfo=UTC),
+    )
+    receipt_path = target / "release.json"
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    payload["additions"] = []
+    payload["synthetic_case_count"] = 0
+    payload["authorized_case_count"] = 0
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(DatasetReleaseError, match="新增案例清单不完整"):
+        verify_dataset_release(target, source_directory=SOURCE)
 
 
 def test_release_receipt_source_kind_must_match_case_source(tmp_path):
@@ -348,7 +364,7 @@ def test_release_receipt_source_kind_must_match_case_source(tmp_path):
     )
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DatasetReleaseError, match="标记"):
-        verify_dataset_release(target)
+        verify_dataset_release(target, source_directory=SOURCE)
 
 
 def test_release_receipt_source_record_must_match_case(tmp_path):
@@ -361,4 +377,5 @@ def test_release_receipt_source_record_must_match_case(tmp_path):
     payload["additions"][0]["source_record_id"] = "forged-record"
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DatasetReleaseError, match="来源记录"):
-        verify_dataset_release(target)
+        verify_dataset_release(target, source_directory=SOURCE)
+

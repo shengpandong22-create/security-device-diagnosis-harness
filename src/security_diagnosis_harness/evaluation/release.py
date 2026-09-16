@@ -100,6 +100,7 @@ class DatasetReleaseReceipt(BaseModel):
     authorized_case_count: int = Field(ge=0)
     total_case_count: int = Field(ge=1)
     split_counts: dict[DatasetSplit, int]
+    source_split_manifest_hashes: dict[DatasetSplit, str]
     split_manifest_hashes: dict[DatasetSplit, str]
     dataset_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     additions: tuple[ReleasedAddition, ...]
@@ -169,7 +170,15 @@ def publish_dataset_version(
     # Re-run the complete physical isolation protocol before writing anything.
     DatasetRegistry(cases_by_split)
 
-    receipt = _receipt(source_version, target_version, cases_by_split, validated, released_at)
+    source_manifest_hashes = _manifest_hashes(source_directory)
+    receipt = _receipt(
+        source_version,
+        target_version,
+        cases_by_split,
+        validated,
+        released_at,
+        source_manifest_hashes,
+    )
     dataset_root.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=f".{target_version}-", dir=dataset_root) as temporary:
         staging = Path(temporary) / target_version
@@ -178,7 +187,7 @@ def publish_dataset_version(
             _write_split(staging / split.value, target_version, split, cases)
         _write_json(staging / "release.json", receipt.model_dump(mode="json"))
         # Verify staging fully before the immutable target becomes visible.
-        verify_dataset_release(staging)
+        verify_dataset_release(staging, source_directory=source_directory)
         try:
             staging.rename(target)
         except FileExistsError as exc:
@@ -294,6 +303,7 @@ def _receipt(
     cases: dict[DatasetSplit, tuple[DatasetCase, ...]],
     validated: tuple[tuple[DatasetCase, DatasetReleaseAddition], ...],
     released_at: datetime,
+    source_manifest_hashes: dict[DatasetSplit, str],
 ) -> DatasetReleaseReceipt:
     additions = tuple(
         ReleasedAddition(
@@ -338,6 +348,7 @@ def _receipt(
         ),
         total_case_count=sum(len(items) for items in cases.values()),
         split_counts={split: len(items) for split, items in cases.items()},
+        source_split_manifest_hashes=source_manifest_hashes,
         split_manifest_hashes=manifest_hashes,
         dataset_content_hash=sha256_text(
             canonical_json({split.value: value for split, value in manifest_hashes.items()})
@@ -376,7 +387,27 @@ def write_dataset_release_report(
     return json_path, markdown_path
 
 
-def verify_dataset_release(directory: Path) -> DatasetReleaseReceipt:
+def _manifest_hashes(directory: Path) -> dict[DatasetSplit, str]:
+    try:
+        return {
+            split: sha256_text(
+                canonical_json(
+                    json.loads(
+                        (directory / split.value / "manifest.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                )
+            )
+            for split in DatasetSplit
+        }
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DatasetReleaseError("数据集 Manifest 无法读取") from exc
+
+
+def verify_dataset_release(
+    directory: Path, *, source_directory: Path
+) -> DatasetReleaseReceipt:
     """Verify release receipt, manifests, case hashes, counts, and addition presence."""
     root = directory.resolve()
     try:
@@ -387,6 +418,12 @@ def verify_dataset_release(directory: Path) -> DatasetReleaseReceipt:
         raise DatasetReleaseError("发布回执不存在或协议不合法") from exc
     if root.name != receipt.released_version:
         raise DatasetReleaseError("发布目录名与回执版本不一致")
+    source_root = source_directory.resolve()
+    if source_root.name != receipt.source_version:
+        raise DatasetReleaseError("来源目录名与回执版本不一致")
+    source_registry = DatasetRegistry.load(source_root)
+    if _manifest_hashes(source_root) != receipt.source_split_manifest_hashes:
+        raise DatasetReleaseError("发布回执与来源 split Manifest 哈希不一致")
     registry = DatasetRegistry.load(root)
     actual_hashes: dict[DatasetSplit, str] = {}
     for split in DatasetSplit:
@@ -416,6 +453,21 @@ def verify_dataset_release(directory: Path) -> DatasetReleaseReceipt:
     }
     if any(item.case_id not in by_split[item.split] for item in receipt.additions):
         raise DatasetReleaseError("发布回执包含数据集中不存在的新增案例")
+    source_ids = {
+        split: {
+            case.case_id
+            for case in source_registry.cases(split, allow_test=True)
+        }
+        for split in DatasetSplit
+    }
+    actual_additions = {
+        (split, case_id)
+        for split in DatasetSplit
+        for case_id in set(by_split[split]) - source_ids[split]
+    }
+    declared_additions = {(item.split, item.case_id) for item in receipt.additions}
+    if actual_additions != declared_additions:
+        raise DatasetReleaseError("发布回执的新增案例清单不完整")
 
     # 从受控新增案例重算来源计数与来源类型，不信任回执自报值。
     recomputed_synthetic = 0
