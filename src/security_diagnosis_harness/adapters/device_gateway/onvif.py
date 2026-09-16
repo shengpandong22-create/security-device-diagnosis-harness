@@ -6,6 +6,7 @@ import base64
 import hashlib
 import secrets
 import socket
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
@@ -35,6 +36,28 @@ from security_diagnosis_harness.domain.device_integration import (
 from security_diagnosis_harness.ports.credentials import CredentialResolverPort
 
 __all__ = ["OnvifReadOnlyAdapter", "OnvifReadOnlySettings"]
+
+
+@dataclass(frozen=True)
+class _MediaProfile:
+    token: str
+    name: str
+    encoding: str | None = None
+    width: int | None = None
+    height: int | None = None
+    frame_rate: int | None = None
+    bitrate_kbps: int | None = None
+
+    @property
+    def resolution(self) -> str | None:
+        if self.width is None or self.height is None:
+            return None
+        return f"{self.width}x{self.height}"
+
+    @property
+    def media_rank(self) -> tuple[int, int, int]:
+        pixels = (self.width or 0) * (self.height or 0)
+        return (pixels, self.bitrate_kbps or 0, self.frame_rate or 0)
 
 
 class OnvifReadOnlySettings(BaseModel):
@@ -192,34 +215,71 @@ class OnvifReadOnlyAdapter:
             "firmware": self._text(root, "FirmwareVersion"),
         }
 
-    def _profiles(self) -> dict[str, str]:
+    @staticmethod
+    def _integer(root: ElementTree.Element, local_name: str) -> int | None:
+        value = OnvifReadOnlyAdapter._text(root, local_name)
+        if value is None:
+            return None
+        try:
+            return int(float(value))
+        except ValueError:
+            return None
+
+    def _profiles(self) -> tuple[_MediaProfile, ...]:
         root = self._soap(
             "media",
             '<trt:GetProfiles xmlns:trt="http://www.onvif.org/ver10/media/wsdl"/>',
             "get_profiles",
         )
-        profiles: dict[str, str] = {}
+        profiles: list[_MediaProfile] = []
         for element in root.iter():
             if (
                 element.tag.rsplit("}", 1)[-1] == "Profiles"
                 and (token := element.attrib.get("token"))
             ):
-                name = self._text(element, "Name") or token
-                profiles[token] = name
-        return profiles
+                profiles.append(
+                    _MediaProfile(
+                        token=token,
+                        name=self._text(element, "Name") or token,
+                        encoding=self._text(element, "Encoding"),
+                        width=self._integer(element, "Width"),
+                        height=self._integer(element, "Height"),
+                        frame_rate=self._integer(element, "FrameRateLimit"),
+                        bitrate_kbps=self._integer(element, "BitrateLimit"),
+                    )
+                )
+        return tuple(profiles)
 
     @staticmethod
-    def _profile_token(profiles: dict[str, str], stream_kind: StreamKind) -> str | None:
-        candidates = (
-            ("profile_main", "main")
+    def _profile(
+        profiles: tuple[_MediaProfile, ...], stream_kind: StreamKind
+    ) -> _MediaProfile | None:
+        keywords = (
+            ("profile_main", "main", "primary", "主码流", "高清")
             if stream_kind is StreamKind.MAIN
-            else ("profile_sub", "sub")
+            else ("profile_sub", "sub", "secondary", "子码流", "辅码流")
         )
-        for token, name in profiles.items():
-            lowered = f"{token} {name}".lower()
-            if any(candidate in lowered for candidate in candidates):
-                return token
-        return None
+        named = [
+            profile
+            for profile in profiles
+            if any(
+                keyword in f"{profile.token} {profile.name}".lower()
+                for keyword in keywords
+            )
+        ]
+        if named:
+            return min(named, key=lambda item: item.token)
+
+        ranked = [profile for profile in profiles if profile.media_rank[0] > 0]
+        if not ranked or (stream_kind is StreamKind.SUB and len(ranked) < 2):
+            return None
+        distinct_ranks = {profile.media_rank for profile in ranked}
+        if len(ranked) > 1 and len(distinct_ranks) == 1:
+            return None
+        chooser = max if stream_kind is StreamKind.MAIN else min
+        target_rank = chooser(distinct_ranks)
+        matches = [profile for profile in ranked if profile.media_rank == target_rank]
+        return min(matches, key=lambda item: item.token)
 
     def _stream_uri(self, profile_token: str) -> str:
         """取得并约束设备返回的 RTSP URI，返回不含 userinfo 的内存探针目标。"""
@@ -316,8 +376,8 @@ class OnvifReadOnlyAdapter:
     def query_stream_snapshot(
         self, device_id: str, stream_kind: StreamKind = StreamKind.MAIN
     ) -> StreamSnapshot:
-        token = self._profile_token(self._profiles(), stream_kind)
-        if token is None:
+        profile = self._profile(self._profiles(), stream_kind)
+        if profile is None:
             return StreamSnapshot(
                 device_id=device_id,
                 stream_kind=stream_kind,
@@ -325,12 +385,16 @@ class OnvifReadOnlyAdapter:
                 error_code="PROFILE_NOT_FOUND",
                 source=self.adapter_key,
             )
-        stream_uri = self._stream_uri(token)
+        stream_uri = self._stream_uri(profile.token)
         available = self._rtsp_available(stream_uri)
         return StreamSnapshot(
             device_id=device_id,
             stream_kind=stream_kind,
             pull_status=PullStatus.SUCCESS if available else PullStatus.FAILED,
+            encoding=profile.encoding,
+            resolution=profile.resolution,
+            frame_rate=profile.frame_rate,
+            bitrate_kbps=profile.bitrate_kbps,
             error_code=None if available else "RTSP_UNREACHABLE",
             source=self.adapter_key,
         )

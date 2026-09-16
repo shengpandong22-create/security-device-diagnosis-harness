@@ -22,6 +22,17 @@ _DEVICE_RESPONSE = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelo
 _PROFILES_RESPONSE = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
 <s:Body><GetProfilesResponse><Profiles token="profile_main"><Name>main</Name></Profiles>
 </GetProfilesResponse></s:Body></s:Envelope>"""
+_GENERIC_PROFILES_RESPONSE = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
+<s:Body><GetProfilesResponse>
+<Profiles token="Profile_1"><Name>Profile 1</Name><VideoEncoderConfiguration>
+<Encoding>H265</Encoding><Resolution><Width>1920</Width><Height>1080</Height></Resolution>
+<RateControl><FrameRateLimit>25</FrameRateLimit><BitrateLimit>4096</BitrateLimit></RateControl>
+</VideoEncoderConfiguration></Profiles>
+<Profiles token="Profile_2"><Name>Profile 2</Name><VideoEncoderConfiguration>
+<Encoding>H264</Encoding><Resolution><Width>640</Width><Height>360</Height></Resolution>
+<RateControl><FrameRateLimit>15</FrameRateLimit><BitrateLimit>512</BitrateLimit></RateControl>
+</VideoEncoderConfiguration></Profiles>
+</GetProfilesResponse></s:Body></s:Envelope>"""
 _URI_RESPONSE = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
 <s:Body><GetStreamUriResponse><MediaUri>
 <Uri>rtsp://unit-user:do-not-store@127.0.0.1:28554/profile_main</Uri>
@@ -113,6 +124,54 @@ def test_missing_sub_profile_is_a_traceable_fact(monkeypatch) -> None:
     with _adapter() as adapter:
         monkeypatch.setattr(adapter, "_rtsp_available", lambda stream_uri: True)
         stream = adapter.query_stream_snapshot("lab-camera", StreamKind.SUB)
+    assert stream.pull_status is PullStatus.FAILED
+    assert stream.error_code == "PROFILE_NOT_FOUND"
+
+
+@pytest.mark.parametrize(
+    ("kind", "token", "encoding", "resolution", "frame_rate", "bitrate"),
+    [
+        (StreamKind.MAIN, "Profile_1", "H265", "1920x1080", 25, 4096),
+        (StreamKind.SUB, "Profile_2", "H264", "640x360", 15, 512),
+    ],
+)
+def test_generic_profile_names_use_encoder_facts(
+    monkeypatch, kind, token, encoding, resolution, frame_rate, bitrate
+) -> None:
+    requested: list[str] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "GetProfiles" in body:
+            content = _GENERIC_PROFILES_RESPONSE
+        else:
+            requested.append(body)
+            content = _URI_RESPONSE
+        return httpx.Response(200, text=content, request=request)
+
+    with _adapter(httpx.MockTransport(transport)) as adapter:
+        monkeypatch.setattr(adapter, "_rtsp_available", lambda stream_uri: True)
+        stream = adapter.query_stream_snapshot("lab-camera", kind)
+
+    assert token in requested[0]
+    assert stream.encoding == encoding
+    assert stream.resolution == resolution
+    assert stream.frame_rate == frame_rate
+    assert stream.bitrate_kbps == bitrate
+
+
+def test_ambiguous_generic_profiles_are_not_guessed(monkeypatch) -> None:
+    response = _GENERIC_PROFILES_RESPONSE.replace("1920", "640").replace(
+        "1080", "360"
+    ).replace("4096", "512").replace("25", "15")
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=response, request=request)
+
+    with _adapter(httpx.MockTransport(transport)) as adapter:
+        monkeypatch.setattr(adapter, "_rtsp_available", lambda stream_uri: True)
+        stream = adapter.query_stream_snapshot("lab-camera", StreamKind.MAIN)
+
     assert stream.pull_status is PullStatus.FAILED
     assert stream.error_code == "PROFILE_NOT_FOUND"
 
