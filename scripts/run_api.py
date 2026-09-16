@@ -48,6 +48,8 @@ DEFAULT_PORT = 8000
 API_HOST_ENV_VAR = "SECURITY_DIAGNOSIS_API_HOST"
 API_TOKEN_ENV_VAR = "SECURITY_DIAGNOSIS_API_TOKEN"
 API_ACTOR_ENV_VAR = "SECURITY_DIAGNOSIS_API_ACTOR"
+API_REVIEWER_TOKEN_ENV_VAR = "SECURITY_DIAGNOSIS_API_REVIEWER_TOKEN"
+API_REVIEWER_ACTOR_ENV_VAR = "SECURITY_DIAGNOSIS_API_REVIEWER_ACTOR"
 
 
 def resolve_api_security() -> tuple[str, BearerAuthenticator | None]:
@@ -55,21 +57,31 @@ def resolve_api_security() -> tuple[str, BearerAuthenticator | None]:
     host = os.environ.get(API_HOST_ENV_VAR, DEFAULT_HOST).strip() or DEFAULT_HOST
     token = os.environ.get(API_TOKEN_ENV_VAR, "")
     actor = os.environ.get(API_ACTOR_ENV_VAR, "api-operator").strip()
+    reviewer_token = os.environ.get(API_REVIEWER_TOKEN_ENV_VAR, "")
+    reviewer_actor = os.environ.get(API_REVIEWER_ACTOR_ENV_VAR, "api-reviewer").strip()
     try:
         is_loopback = ip_address(host).is_loopback
     except ValueError:
         is_loopback = host.lower() == "localhost"
-    if not is_loopback and not token:
-        raise RuntimeConfigurationError("非回环 API 监听必须配置身份认证")
-    authenticator = (
-        BearerAuthenticator(
-            token,
-            actor=actor,
-            roles=frozenset({"operator", "reviewer"}),
+    if not is_loopback and (not token or not reviewer_token):
+        raise RuntimeConfigurationError(
+            "非回环 API 监听必须配置分离的 operator/reviewer 身份认证凭证"
         )
-        if token
-        else None
-    )
+    if bool(token) != bool(reviewer_token):
+        raise RuntimeConfigurationError("operator/reviewer 凭证必须同时配置")
+    try:
+        authenticator = (
+            BearerAuthenticator.for_separated_duties(
+                operator_token=token,
+                operator_actor=actor,
+                reviewer_token=reviewer_token,
+                reviewer_actor=reviewer_actor,
+            )
+            if token
+            else None
+        )
+    except ValueError as error:
+        raise RuntimeConfigurationError(str(error)) from error
     return host, authenticator
 
 
