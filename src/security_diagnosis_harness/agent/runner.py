@@ -52,9 +52,19 @@ class ToolLoopBudget:
     max_rounds: int = 3
     max_tool_calls: int = 5
     timeout_seconds: float = 30.0
+    max_model_response_chars: int = 64_000
+    max_observation_chars: int = 16_000
+    max_context_chars: int = 128_000
 
     def __post_init__(self) -> None:
-        if self.max_rounds < 1 or self.max_tool_calls < 0 or self.timeout_seconds <= 0:
+        if (
+            self.max_rounds < 1
+            or self.max_tool_calls < 0
+            or self.timeout_seconds <= 0
+            or self.max_model_response_chars < 1
+            or self.max_observation_chars < 1
+            or self.max_context_chars < 1
+        ):
             raise ValueError("ToolLoopBudget 必须使用正轮次、非负工具次数和正超时")
 
 
@@ -129,6 +139,16 @@ class ToolLoopRunner:
         deadline = monotonic() + self._budget.timeout_seconds
 
         for round_index in range(1, self._budget.max_rounds + 1):
+            if self._message_chars(messages) > self._budget.max_context_chars:
+                return self._failure(
+                    case.diagnosis_id,
+                    f"超出上下文预算 max_context_chars={self._budget.max_context_chars}",
+                    rounds=round_index,
+                    tool_calls=tool_calls_used,
+                    messages=messages,
+                    tool_results=tool_results,
+                    evidence_drafts=evidence_drafts,
+                )
             request = LLMRequest(
                 messages=list(messages),
                 available_tools=allowed,
@@ -148,6 +168,27 @@ class ToolLoopRunner:
             except _RunnerDeadlineExceeded:
                 return self._deadline_failure(
                     case.diagnosis_id,
+                    rounds=round_index,
+                    tool_calls=tool_calls_used,
+                    messages=messages,
+                    tool_results=tool_results,
+                    evidence_drafts=evidence_drafts,
+                )
+            except Exception:
+                return self._failure(
+                    case.diagnosis_id,
+                    "模型调用失败",
+                    rounds=round_index,
+                    tool_calls=tool_calls_used,
+                    messages=messages,
+                    tool_results=tool_results,
+                    evidence_drafts=evidence_drafts,
+                )
+            if len(response.model_dump_json()) > self._budget.max_model_response_chars:
+                return self._failure(
+                    case.diagnosis_id,
+                    "模型响应超过大小预算 "
+                    f"max_model_response_chars={self._budget.max_model_response_chars}",
                     rounds=round_index,
                     tool_calls=tool_calls_used,
                     messages=messages,
@@ -192,6 +233,27 @@ class ToolLoopRunner:
                     except _RunnerDeadlineExceeded:
                         return self._deadline_failure(
                             case.diagnosis_id,
+                            rounds=round_index,
+                            tool_calls=tool_calls_used,
+                            messages=messages,
+                            tool_results=tool_results,
+                            evidence_drafts=evidence_drafts,
+                        )
+                    except Exception:
+                        return self._failure(
+                            case.diagnosis_id,
+                            f"工具执行失败: {call.tool_name}",
+                            rounds=round_index,
+                            tool_calls=tool_calls_used,
+                            messages=messages,
+                            tool_results=tool_results,
+                            evidence_drafts=evidence_drafts,
+                        )
+                    if len(result.observation) > self._budget.max_observation_chars:
+                        return self._failure(
+                            case.diagnosis_id,
+                            "工具 observation 超过大小预算 "
+                            f"max_observation_chars={self._budget.max_observation_chars}",
                             rounds=round_index,
                             tool_calls=tool_calls_used,
                             messages=messages,
@@ -269,6 +331,10 @@ class ToolLoopRunner:
             f"超出运行时间预算 timeout_seconds={self._budget.timeout_seconds}",
             **state,
         )
+
+    @staticmethod
+    def _message_chars(messages: Sequence[ChatMessage]) -> int:
+        return sum(len(item.content) + len(item.name or "") for item in messages)
 
     @staticmethod
     def _within_deadline(operation: Callable[[], _T], deadline: float) -> _T:

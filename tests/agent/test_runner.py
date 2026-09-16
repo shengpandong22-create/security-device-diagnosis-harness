@@ -280,3 +280,92 @@ def test_wall_clock_budget_stops_a_slow_read_only_tool(
 def test_invalid_budget_is_rejected(changes):
     with pytest.raises(ValueError, match="ToolLoopBudget"):
         ToolLoopBudget(**changes)
+
+
+def test_raw_model_exception_is_converted_without_leaking_detail(tool_registry, context):
+    class BrokenLLM:
+        def complete(self, request):
+            raise RuntimeError("provider password=plain-secret-detail")
+
+    result = ToolLoopRunner(BrokenLLM(), tool_registry).run(make_case(), context)
+
+    assert result.ok is False
+    assert result.error == "模型调用失败"
+    assert "secret" not in result.model_dump_json().lower()
+
+
+def test_oversized_observation_never_enters_messages_or_evidence(
+    tool_registry, context, monkeypatch
+):
+    oversized = "x" * 2_000
+    monkeypatch.setattr(
+        tool_registry,
+        "execute",
+        lambda *args, **kwargs: ToolExecutionResult(
+            tool_name="device__query_status",
+            observation=oversized,
+        ),
+    )
+    runner = ToolLoopRunner(
+        FakeLLM([_tool_call_response()]),
+        tool_registry,
+        ToolLoopBudget(max_observation_chars=100),
+    )
+
+    result = runner.run(make_case(), context)
+
+    assert result.ok is False
+    assert "max_observation_chars=100" in (result.error or "")
+    assert result.tool_results == []
+    assert result.evidence_drafts == []
+    assert all(oversized not in message.content for message in result.messages)
+
+
+def test_raw_tool_exception_is_converted_without_leaking_detail(
+    tool_registry, context, monkeypatch
+):
+    def broken_execute(*args, **kwargs):
+        raise RuntimeError("device token=plain-secret-detail")
+
+    monkeypatch.setattr(tool_registry, "execute", broken_execute)
+    result = ToolLoopRunner(FakeLLM([_tool_call_response()]), tool_registry).run(
+        make_case(), context
+    )
+
+    assert result.ok is False
+    assert result.error == "工具执行失败: device__query_status"
+    assert "secret" not in result.model_dump_json().lower()
+
+
+def test_oversized_model_response_is_rejected(tool_registry, context):
+    response = _final_response().model_copy(
+        update={
+            "final_conclusion": _final_response().final_conclusion.model_copy(
+                update={"summary": "x" * 2_000}
+            )
+        }
+    )
+    runner = ToolLoopRunner(
+        FakeLLM([response]),
+        tool_registry,
+        ToolLoopBudget(max_model_response_chars=200),
+    )
+
+    result = runner.run(make_case(), context)
+
+    assert result.ok is False
+    assert "max_model_response_chars=200" in (result.error or "")
+    assert result.final_conclusion is None
+
+
+def test_initial_context_budget_is_enforced_before_model_call(tool_registry, context):
+    case = make_case()
+    case.description = "x" * 500
+    llm = FakeLLM([_final_response()])
+    runner = ToolLoopRunner(llm, tool_registry, ToolLoopBudget(max_context_chars=100))
+
+    result = runner.run(case, context)
+
+    assert result.ok is False
+    assert "max_context_chars=100" in (result.error or "")
+    assert llm.call_count == 0
