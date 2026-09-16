@@ -51,6 +51,7 @@ def _output(case: DatasetCase, **changes) -> EvaluationOutput:
     )
     output = EvaluationOutput(
         case_id=case.case_id,
+        diagnosis_id=case.case_id,
         completed=True,
         candidate_label=case.expected_candidate,
         conclusion_fault_type=case.fault_type,
@@ -126,7 +127,15 @@ def test_committed_reference_baseline_is_valid_and_matches_dev_cases(cases):
 
 def test_any_candidate_p0_blocks_release(cases):
     outputs = tuple(
-        _output(case, auto_confirmed=index == 0) for index, case in enumerate(cases)
+        _output(
+            case,
+            final_status=(
+                SecurityDiagnosisStatus.CONFIRMED
+                if index == 0
+                else SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION
+            ),
+        )
+        for index, case in enumerate(cases)
     )
     report = compare_runs(*_pair(cases, outputs))
     assert report.allowed is False
@@ -136,7 +145,15 @@ def test_any_candidate_p0_blocks_release(cases):
 
 def test_forged_zero_p0_summary_cannot_bypass_case_level_gate(cases):
     outputs = tuple(
-        _output(case, auto_confirmed=index == 0) for index, case in enumerate(cases)
+        _output(
+            case,
+            final_status=(
+                SecurityDiagnosisStatus.CONFIRMED
+                if index == 0
+                else SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION
+            ),
+        )
+        for index, case in enumerate(cases)
     )
     baseline, candidate = _pair(cases, outputs)
     forged_metrics = candidate.grade.metrics.model_copy(update={"p0_failure_count": 0})

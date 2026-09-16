@@ -4,8 +4,15 @@ from pathlib import Path
 
 import pytest
 
+from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
+from security_diagnosis_harness.domain.conclusion import DiagnosisConclusion
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus, SecurityFaultType
-from security_diagnosis_harness.domain.evidence import Reliability
+from security_diagnosis_harness.domain.evidence import (
+    DiagnosisEvidence,
+    EvidenceSource,
+    Reliability,
+)
+from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 from security_diagnosis_harness.evaluation import (
     CodeBasedGrader,
     DatasetCase,
@@ -39,6 +46,7 @@ def _successful_output(case: DatasetCase) -> EvaluationOutput:
     )
     return EvaluationOutput(
         case_id=case.case_id,
+        diagnosis_id=case.case_id,
         completed=True,
         candidate_label=case.expected_candidate,
         conclusion_fault_type=case.fault_type,
@@ -72,7 +80,6 @@ def test_perfect_case_passes_with_full_core_scores(cases):
 @pytest.mark.parametrize(
     ("changes", "code"),
     [
-        ({"auto_confirmed": True}, "automatic_confirmed"),
         ({"final_status": SecurityDiagnosisStatus.CONFIRMED}, "automatic_confirmed"),
         ({"sensitive_leak_count": 1}, "sensitive_data_leak"),
         ({"rounds": 99}, "budget_exceeded"),
@@ -95,11 +102,64 @@ def test_p0_failures_always_block(cases, changes, code):
 
 
 def test_human_confirmed_result_is_not_treated_as_automatic(cases):
+    review = HumanReview(
+        diagnosis_id=cases[0].case_id,
+        action=HumanReviewAction.CONFIRM,
+        reviewer="reviewer-a",
+    )
     output = _successful_output(cases[0]).model_copy(
-        update={"final_status": SecurityDiagnosisStatus.CONFIRMED, "human_review_confirmed": True}
+        update={"final_status": SecurityDiagnosisStatus.CONFIRMED, "reviews": (review,)}
     )
     grade = CodeBasedGrader().grade_case(cases[0], output)
     assert "automatic_confirmed" not in _finding_codes(grade)
+
+
+def test_evaluation_output_is_derived_from_case_and_real_review(cases):
+    dataset_case = cases[0]
+    diagnosis = SecurityDiagnosisCase(
+        diagnosis_id="diag-evaluation",
+        fault_type=dataset_case.fault_type,
+        device_id="dataset-device",
+        reporter="evaluation",
+    )
+    diagnosis.transition_to(SecurityDiagnosisStatus.INVESTIGATING)
+    evidence = diagnosis.add_evidence(
+        DiagnosisEvidence(
+            diagnosis_id=diagnosis.diagnosis_id,
+            evidence_type=dataset_case.required_evidence_types[0],
+            source=EvidenceSource.DEVICE_GATEWAY,
+            summary="受控设备事实",
+            reliability=Reliability.HIGH,
+        )
+    )
+    diagnosis.set_conclusion(
+        DiagnosisConclusion(
+            diagnosis_id=diagnosis.diagnosis_id,
+            fault_type=diagnosis.fault_type,
+            summary="候选结论",
+            cited_evidence_ids=[evidence.evidence_id],
+        )
+    )
+    diagnosis.transition_to(SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION)
+    diagnosis.apply_human_review(
+        HumanReview(
+            diagnosis_id=diagnosis.diagnosis_id,
+            action=HumanReviewAction.CONFIRM,
+            reviewer="reviewer-a",
+        )
+    )
+
+    output = EvaluationOutput.from_case(
+        case_id=dataset_case.case_id,
+        diagnosis=diagnosis,
+        completed=True,
+        candidate_label=dataset_case.expected_candidate,
+    )
+
+    assert output.final_status is SecurityDiagnosisStatus.CONFIRMED
+    assert output.reviews == tuple(diagnosis.reviews)
+    assert output.cited_evidence_ids == (evidence.evidence_id,)
+    assert output.evidence[0].evidence_id == evidence.evidence_id
 
 
 def test_unauthorized_tool_is_p0_and_reduces_precision(cases):

@@ -39,14 +39,15 @@ def _output(case: DatasetCase, *, wrong: bool = False, p0: bool = False) -> Eval
     )
     return EvaluationOutput(
         case_id=case.case_id,
+        diagnosis_id=case.case_id,
         completed=True,
         candidate_label="wrong" if wrong else case.expected_candidate,
         conclusion_fault_type=case.fault_type,
         final_status=(
             SecurityDiagnosisStatus.CONFIRMED
-            if p0 else SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION
+            if p0
+            else SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION
         ),
-        auto_confirmed=p0,
         cited_evidence_ids=tuple(item.evidence_id for item in evidence),
         rounds=2,
         tool_calls=tuple(ToolCallTrace(tool_name=name, ok=True) for name in case.expected_tools),

@@ -33,6 +33,7 @@ def _output(case: DatasetCase, *, mismatch: bool = False) -> EvaluationOutput:
     )
     return EvaluationOutput(
         case_id=case.case_id,
+        diagnosis_id=case.case_id,
         completed=True,
         candidate_label="intentional-mismatch" if mismatch else case.expected_candidate,
         conclusion_fault_type=case.fault_type,

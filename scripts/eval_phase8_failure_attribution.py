@@ -26,11 +26,11 @@ def main() -> int:
     case = DatasetRegistry.load(DATASET_ROOT).cases(DatasetSplit.DEV)[0]
     output = EvaluationOutput(
         case_id=case.case_id,
+        diagnosis_id=case.case_id,
         completed=False,
         candidate_label="phase8b-intentional-mismatch",
         conclusion_fault_type=case.fault_type,
         final_status=SecurityDiagnosisStatus.CONFIRMED,
-        auto_confirmed=True,
     )
     identity = RunIdentity(
         code_commit="8" * 40,
