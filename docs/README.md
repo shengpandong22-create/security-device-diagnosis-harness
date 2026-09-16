@@ -12,6 +12,7 @@
 - [安防设备诊断 Harness 总览](./01-architecture/security-device-diagnosis-harness-overview.md)
 - [SVG 成品](./01-architecture/security-device-diagnosis-harness-overview.svg)
 - [Graphviz 语义源](./01-architecture/security-device-diagnosis-harness-overview.dot)
+- [ADR-001：正式 Runtime 的四域、RAG 与真实 LLM 边界](./01-architecture/ADR-001正式Runtime能力边界.md)
 
 ## 02-specifications
 

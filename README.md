@@ -413,6 +413,10 @@ Phase 6B-1 交付范围（正式运行装配与真实重启恢复）：
 
 Phase 6B-1 尚未实现四故障域统一 Strategy Router，因此**正式 Runtime 只装配摄像头黑屏诊断**：
 
+该边界已在 [ADR-001](./docs/01-architecture/ADR-001正式Runtime能力边界.md) 正式裁决：默认
+Runtime 暂不扩展四域、RAG 或真实 LLM。录像/门禁/报警属于独立闭环与固定评测能力；RAG
+待 BGE Adapter 安全加固后优先评审接入；真实模型仍仅限逐次授权的低频评测。
+
 - 支持：`camera_black_screen`；
 - 不支持：`recording_missing` / `access_card_failed` / `alarm_false_positive`
   （create 与 run 两处都会被拒绝，抛 `UnsupportedFaultTypeError`，API 返回 422
