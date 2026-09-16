@@ -227,6 +227,18 @@ _FAULT_DOMAIN_REQUIREMENTS: Mapping[SecurityFaultType, _FaultDomainNeeds] = Mapp
 # 默认 Adapter key：非敏感内部别名，仅用于 AssetCatalog ↔ Registry 的路由关联。
 DEFAULT_RUNTIME_ADAPTER_KEY = "runtime-static-adapter"
 
+# 正式 Runtime 的最小工具能力边界。即使注入的 Registry 注册了更多工具，Runner
+# 也只能看到本响应脚本实际需要的七个只读工具。
+FORMAL_RUNTIME_TOOL_ALLOWLIST: tuple[str, ...] = (
+    "device__query_status",
+    "device__search_alarm_events",
+    "device__read_config_snapshot",
+    "knowledge__search",
+    "device__query_channel",
+    "device__query_stream",
+    "platform__query_pull_status",
+)
+
 
 # 默认资产只含非敏感字段；device_id 与既有默认样例
 # `samples/devices/static_devices.sample.json` 保持一致。
@@ -513,6 +525,7 @@ def build_runtime_container(
         registry=resolved_registry,
         gateway=gateway,
         citation_policy=citation_policy,
+        tool_allowlist=list(FORMAL_RUNTIME_TOOL_ALLOWLIST),
         # 显式能力约束：由实际装配推导，不再是手工常量。
         supported_fault_types=derived_supported_fault_types,
         audit_repository=audit_repository,
@@ -570,6 +583,7 @@ def build_camera_registry() -> ToolRegistry:
 __all__ = [
     "ALEMBIC_INI_PATH",
     "DEFAULT_RUNTIME_ADAPTER_KEY",
+    "FORMAL_RUNTIME_TOOL_ALLOWLIST",
     "MIGRATIONS_DIR",
     "SUPPORTED_RUNTIME_FAULT_TYPES",
     "RuntimeContainer",

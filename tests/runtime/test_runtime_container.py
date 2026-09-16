@@ -15,7 +15,10 @@ from security_diagnosis_harness.bootstrap.container import (
     build_phase4_container,
 )
 from security_diagnosis_harness.config import RepositoryMode, RuntimeSettings
-from security_diagnosis_harness.runtime import build_runtime_container
+from security_diagnosis_harness.runtime import (
+    FORMAL_RUNTIME_TOOL_ALLOWLIST,
+    build_runtime_container,
+)
 
 
 def _sqlite_settings(tmp_path: Path) -> RuntimeSettings:
@@ -104,6 +107,12 @@ def test_runtime_exposes_required_components(tmp_path: Path):
         assert runtime.llm is not None
         assert runtime.citation_policy is not None
         assert runtime.session_factory is not None
+
+
+def test_formal_runtime_passes_explicit_minimal_tool_allowlist():
+    with build_runtime_container(RuntimeSettings(repository_mode="memory")) as runtime:
+        assert runtime.service._tool_allowlist == list(FORMAL_RUNTIME_TOOL_ALLOWLIST)
+        assert set(FORMAL_RUNTIME_TOOL_ALLOWLIST) <= set(runtime.registry.names())
 
 
 def test_runtime_does_not_call_external_model(tmp_path: Path):
