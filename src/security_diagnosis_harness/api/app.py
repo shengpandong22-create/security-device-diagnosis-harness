@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from security_diagnosis_harness import __version__
+from security_diagnosis_harness.api.auth import BearerAuthenticator
 from security_diagnosis_harness.api.routes.diagnoses import create_diagnoses_router
 from security_diagnosis_harness.api.schemas import ApiResponse, HealthData
 from security_diagnosis_harness.application.diagnoses import SecurityDiagnosisApplicationService
@@ -108,6 +109,7 @@ def create_app(
     repository_mode: str = "memory",
     database_ready: bool = True,
     phase: str = "6B",
+    authenticator: BearerAuthenticator | None = None,
 ) -> FastAPI:
     """创建 FastAPI 应用（纯工厂，无副作用）。
 
@@ -166,7 +168,7 @@ def create_app(
             content=_error_payload(_code_for(exc), str(exc)),
         )
 
-    app.include_router(create_diagnoses_router(service))
+    app.include_router(create_diagnoses_router(service, authenticator))
     return app
 
 

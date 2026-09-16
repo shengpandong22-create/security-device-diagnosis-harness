@@ -5,8 +5,9 @@ API 层不直接写领域状态，全部委托给 `SecurityDiagnosisApplicationS
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Header, Response
 
+from security_diagnosis_harness.api.auth import ApiPrincipal, BearerAuthenticator
 from security_diagnosis_harness.api.schemas import (
     ApiResponse,
     CreateDiagnosisRequest,
@@ -22,32 +23,67 @@ from security_diagnosis_harness.domain.evidence import DiagnosisEvidence
 ROUTER_PREFIX = "/api/v1/diagnoses"
 
 
-def create_diagnoses_router(service: SecurityDiagnosisApplicationService) -> APIRouter:
+def create_diagnoses_router(
+    service: SecurityDiagnosisApplicationService,
+    authenticator: BearerAuthenticator | None = None,
+) -> APIRouter:
     """创建诊断相关路由。"""
     router = APIRouter(prefix=ROUTER_PREFIX, tags=["diagnoses"])
 
+    def authorize(
+        role: str,
+        authorization: str | None,
+    ) -> ApiPrincipal | None:
+        if authenticator is None:
+            return None
+        return authenticator.authorize(authorization, role)
+
+    def require_operator(
+        authorization: str | None = Header(default=None),
+    ) -> ApiPrincipal | None:
+        return authorize("operator", authorization)
+
+    def require_reviewer(
+        authorization: str | None = Header(default=None),
+    ) -> ApiPrincipal | None:
+        return authorize("reviewer", authorization)
+
+    operator_dependency = Depends(require_operator)
+    reviewer_dependency = Depends(require_reviewer)
+
     @router.post("", response_model=ApiResponse[object], status_code=201)
-    def create_diagnosis(payload: CreateDiagnosisRequest) -> ApiResponse[object]:
+    def create_diagnosis(
+        payload: CreateDiagnosisRequest,
+        principal: ApiPrincipal | None = operator_dependency,
+    ) -> ApiResponse[object]:
         case = service.create_diagnosis(
             device_id=payload.device_id,
             fault_type=payload.fault_type,
-            reporter=payload.reporter,
+            reporter=principal.actor if principal is not None else payload.reporter,
             description=payload.description,
         )
         return ApiResponse(data=to_diagnosis_data(case))
 
     @router.get("", response_model=ApiResponse[object])
-    def list_diagnoses() -> ApiResponse[object]:
+    def list_diagnoses(
+        principal: ApiPrincipal | None = operator_dependency,
+    ) -> ApiResponse[object]:
         cases = [to_diagnosis_data(case) for case in service.list_diagnoses()]
         return ApiResponse(data=cases)
 
     @router.get("/{diagnosis_id}", response_model=ApiResponse[object])
-    def get_diagnosis(diagnosis_id: str) -> ApiResponse[object]:
+    def get_diagnosis(
+        diagnosis_id: str,
+        principal: ApiPrincipal | None = operator_dependency,
+    ) -> ApiResponse[object]:
         case = service.get_diagnosis(diagnosis_id)
         return ApiResponse(data=to_diagnosis_data(case))
 
     @router.post("/{diagnosis_id}/runs", response_model=ApiResponse[object])
-    def run_diagnosis(diagnosis_id: str) -> ApiResponse[object]:
+    def run_diagnosis(
+        diagnosis_id: str,
+        principal: ApiPrincipal | None = operator_dependency,
+    ) -> ApiResponse[object]:
         result = service.run_diagnosis(diagnosis_id)
         data = RunDiagnosisData(
             diagnosis_id=result.diagnosis_id,
@@ -78,16 +114,23 @@ def create_diagnoses_router(service: SecurityDiagnosisApplicationService) -> API
         "/{diagnosis_id}/evidence",
         response_model=ApiResponse[list[DiagnosisEvidence]],
     )
-    def list_evidence(diagnosis_id: str) -> ApiResponse[list[DiagnosisEvidence]]:
+    def list_evidence(
+        diagnosis_id: str,
+        principal: ApiPrincipal | None = operator_dependency,
+    ) -> ApiResponse[list[DiagnosisEvidence]]:
         evidence = service.list_evidence(diagnosis_id)
         return ApiResponse(data=evidence)
 
     @router.post("/{diagnosis_id}/review", response_model=ApiResponse[object])
-    def review_diagnosis(diagnosis_id: str, payload: ReviewRequest) -> ApiResponse[object]:
+    def review_diagnosis(
+        diagnosis_id: str,
+        payload: ReviewRequest,
+        principal: ApiPrincipal | None = reviewer_dependency,
+    ) -> ApiResponse[object]:
         result = service.review_diagnosis(
             diagnosis_id=diagnosis_id,
             action=payload.action,
-            reviewer=payload.reviewer,
+            reviewer=principal.actor if principal is not None else payload.reviewer,
             comment=payload.comment,
         )
         data = ReviewData(
@@ -101,7 +144,10 @@ def create_diagnoses_router(service: SecurityDiagnosisApplicationService) -> API
         return ApiResponse(data=data)
 
     @router.get("/{diagnosis_id}/report.md", response_class=Response)
-    def get_report(diagnosis_id: str) -> Response:
+    def get_report(
+        diagnosis_id: str,
+        principal: ApiPrincipal | None = operator_dependency,
+    ) -> Response:
         markdown = service.render_report(diagnosis_id)
         return Response(content=markdown, media_type="text/markdown; charset=utf-8")
 

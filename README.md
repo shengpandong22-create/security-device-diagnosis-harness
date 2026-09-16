@@ -417,6 +417,11 @@ Phase 6B-1 尚未实现四故障域统一 Strategy Router，因此**正式 Runti
 Runtime 暂不扩展四域、RAG 或真实 LLM。录像/门禁/报警属于独立闭环与固定评测能力；RAG
 待 BGE Adapter 安全加固后优先评审接入；真实模型仍仅限逐次授权的低频评测。
 
+API 默认只监听 `127.0.0.1`。如显式设置 `SECURITY_DIAGNOSIS_API_HOST=0.0.0.0` 或其它
+非回环地址，必须同时由部署环境注入 `SECURITY_DIAGNOSIS_API_TOKEN`；否则启动会受控失败。
+认证启用后，诊断读写需要 `operator`，人工确认需要 `reviewer`，审计 actor 来自认证身份而
+不是请求体中的 `reporter/reviewer` 字符串。Token 明文不会写入配置对象、日志或响应。
+
 - 支持：`camera_black_screen`；
 - 不支持：`recording_missing` / `access_card_failed` / `alarm_false_positive`
   （create 与 run 两处都会被拒绝，抛 `UnsupportedFaultTypeError`，API 返回 422
