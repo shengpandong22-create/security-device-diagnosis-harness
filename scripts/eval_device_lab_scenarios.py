@@ -86,7 +86,8 @@ def _onvif_adapter(password: str) -> OnvifReadOnlyAdapter:
     return OnvifReadOnlyAdapter(
         OnvifReadOnlySettings(
             base_url="http://127.0.0.1:28080",
-            allowed_hosts={"127.0.0.1"},
+            # Simulator 在容器内返回自身 hostname，实际探针经本机 Toxiproxy 转发。
+            allowed_hosts={"127.0.0.1", "onvif-simulator"},
             credential_reference="device-lab/onvif",
             rtsp_probe_host="127.0.0.1",
             rtsp_probe_port=28554,

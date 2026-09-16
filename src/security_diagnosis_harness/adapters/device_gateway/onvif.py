@@ -8,7 +8,7 @@ import secrets
 import socket
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
@@ -221,7 +221,8 @@ class OnvifReadOnlyAdapter:
                 return token
         return None
 
-    def _stream_uri(self, profile_token: str) -> None:
+    def _stream_uri(self, profile_token: str) -> str:
+        """取得并约束设备返回的 RTSP URI，返回不含 userinfo 的内存探针目标。"""
         escaped = escape(profile_token)
         root = self._soap(
             "media",
@@ -234,10 +235,38 @@ class OnvifReadOnlyAdapter:
             "get_stream_uri",
         )
         uri = self._text(root, "Uri")
-        if not uri or urlsplit(uri).scheme.lower() != "rtsp":
+        if not uri:
             raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, "get_stream_uri")
+        try:
+            parsed = urlsplit(uri)
+            host = (parsed.hostname or "").lower()
+            _port = parsed.port  # 触发非法端口校验；连接端口由受控配置决定。
+        except ValueError as exc:
+            raise DeviceAdapterError(
+                DeviceAdapterErrorKind.INVALID_RESPONSE, "get_stream_uri"
+            ) from exc
+        allowed_hosts = {item.lower() for item in self._settings.allowed_hosts}
+        if (
+            parsed.scheme.lower() != "rtsp"
+            or not host
+            or host not in allowed_hosts
+            or not parsed.path.startswith("/")
+            or parsed.fragment
+        ):
+            raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, "get_stream_uri")
+        # 连接目标由受控配置决定，以支持 Docker/NAT 端口映射；设备返回的 host
+        # 仍必须在 allowlist 中，而 path/query 必须来自设备实际 Stream URI。
+        probe_host = self._settings.rtsp_probe_host.lower()
+        probe_port = self._settings.rtsp_probe_port
+        netloc = (
+            f"[{probe_host}]:{probe_port}"
+            if ":" in probe_host
+            else f"{probe_host}:{probe_port}"
+        )
+        return urlunsplit(("rtsp", netloc, parsed.path, parsed.query, ""))
 
-    def _rtsp_available(self) -> bool:
+    def _rtsp_available(self, stream_uri: str) -> bool:
+        """对 ONVIF 返回的具体 URI 做只读 OPTIONS 探针，仅 2xx 视为可用。"""
         try:
             with socket.create_connection(
                 (self._settings.rtsp_probe_host, self._settings.rtsp_probe_port),
@@ -245,10 +274,21 @@ class OnvifReadOnlyAdapter:
             ) as connection:
                 connection.settimeout(self._settings.read_timeout_seconds)
                 connection.sendall(
-                    b"OPTIONS rtsp://device.invalid/profile RTSP/1.0\r\nCSeq: 1\r\n\r\n"
+                    (
+                        f"OPTIONS {stream_uri} RTSP/1.0\r\n"
+                        "CSeq: 1\r\n"
+                        "User-Agent: security-diagnosis-harness\r\n\r\n"
+                    ).encode("ascii")
                 )
-                return connection.recv(512).startswith(b"RTSP/1.0")
-        except OSError:
+                status_line = connection.recv(512).split(b"\r\n", 1)[0]
+                parts = status_line.split()
+                return (
+                    len(parts) >= 2
+                    and parts[0].startswith(b"RTSP/")
+                    and parts[1].isdigit()
+                    and 200 <= int(parts[1]) < 300
+                )
+        except (OSError, UnicodeEncodeError):
             return False
 
     def query_status(self, device_id: str) -> DeviceSnapshot:
@@ -285,8 +325,8 @@ class OnvifReadOnlyAdapter:
                 error_code="PROFILE_NOT_FOUND",
                 source=self.adapter_key,
             )
-        self._stream_uri(token)
-        available = self._rtsp_available()
+        stream_uri = self._stream_uri(token)
+        available = self._rtsp_available(stream_uri)
         return StreamSnapshot(
             device_id=device_id,
             stream_kind=stream_kind,

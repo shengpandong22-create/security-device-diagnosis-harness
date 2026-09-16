@@ -24,7 +24,7 @@ _PROFILES_RESPONSE = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-enve
 </GetProfilesResponse></s:Body></s:Envelope>"""
 _URI_RESPONSE = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
 <s:Body><GetStreamUriResponse><MediaUri>
-<Uri>rtsp://unit-user:do-not-store@camera.invalid/profile_main</Uri>
+<Uri>rtsp://unit-user:do-not-store@127.0.0.1:28554/profile_main</Uri>
 </MediaUri></GetStreamUriResponse></s:Body></s:Envelope>"""
 
 
@@ -94,18 +94,24 @@ def test_adapter_reads_device_information_without_exposing_credentials() -> None
 
 
 def test_adapter_reads_main_profile_and_checks_rtsp(monkeypatch) -> None:
+    probed: list[str] = []
     with _adapter() as adapter:
-        monkeypatch.setattr(adapter, "_rtsp_available", lambda: True)
+        monkeypatch.setattr(
+            adapter,
+            "_rtsp_available",
+            lambda stream_uri: probed.append(stream_uri) or True,
+        )
         stream = adapter.query_stream_snapshot("lab-camera", StreamKind.MAIN)
     assert stream.pull_status is PullStatus.SUCCESS
     assert stream.error_code is None
+    assert probed == ["rtsp://127.0.0.1:28554/profile_main"]
     assert "rtsp://" not in stream.model_dump_json()
     assert "do-not-store" not in stream.model_dump_json()
 
 
 def test_missing_sub_profile_is_a_traceable_fact(monkeypatch) -> None:
     with _adapter() as adapter:
-        monkeypatch.setattr(adapter, "_rtsp_available", lambda: True)
+        monkeypatch.setattr(adapter, "_rtsp_available", lambda stream_uri: True)
         stream = adapter.query_stream_snapshot("lab-camera", StreamKind.SUB)
     assert stream.pull_status is PullStatus.FAILED
     assert stream.error_code == "PROFILE_NOT_FOUND"
@@ -113,12 +119,93 @@ def test_missing_sub_profile_is_a_traceable_fact(monkeypatch) -> None:
 
 def test_rtsp_unreachable_is_not_device_offline(monkeypatch) -> None:
     with _adapter() as adapter:
-        monkeypatch.setattr(adapter, "_rtsp_available", lambda: False)
+        monkeypatch.setattr(adapter, "_rtsp_available", lambda stream_uri: False)
         status = adapter.query_status("lab-camera")
         stream = adapter.query_stream_snapshot("lab-camera", StreamKind.MAIN)
     assert status.online is True
     assert stream.pull_status is PullStatus.FAILED
     assert stream.error_code == "RTSP_UNREACHABLE"
+
+
+def test_stream_uri_host_or_port_cannot_escape_configured_probe_target() -> None:
+    response = _URI_RESPONSE.replace("127.0.0.1:28554", "camera.invalid:8554")
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        content = _PROFILES_RESPONSE if "GetProfiles" in body else response
+        return httpx.Response(200, text=content, request=request)
+
+    with _adapter(httpx.MockTransport(transport)) as adapter:
+        with pytest.raises(DeviceAdapterError) as exc_info:
+            adapter.query_stream_snapshot("lab-camera", StreamKind.MAIN)
+    assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
+
+
+def test_allowed_device_uri_is_mapped_to_controlled_nat_probe(monkeypatch) -> None:
+    response = _URI_RESPONSE.replace("127.0.0.1:28554", "onvif-simulator:8554")
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        content = _PROFILES_RESPONSE if "GetProfiles" in body else response
+        return httpx.Response(200, text=content, request=request)
+
+    probed: list[str] = []
+    adapter = OnvifReadOnlyAdapter(
+        _settings(allowed_hosts={"127.0.0.1", "onvif-simulator"}),
+        _Resolver(),
+        transport=httpx.MockTransport(transport),
+    )
+    with adapter:
+        monkeypatch.setattr(
+            adapter,
+            "_rtsp_available",
+            lambda stream_uri: probed.append(stream_uri) or True,
+        )
+        stream = adapter.query_stream_snapshot("lab-camera", StreamKind.MAIN)
+
+    assert stream.pull_status is PullStatus.SUCCESS
+    assert probed == ["rtsp://127.0.0.1:28554/profile_main"]
+
+
+@pytest.mark.parametrize(
+    ("status_line", "expected"),
+    [
+        (b"RTSP/1.0 200 OK\r\n", True),
+        (b"RTSP/1.0 401 Unauthorized\r\n", False),
+        (b"RTSP/1.0 404 Not Found\r\n", False),
+        (b"not-rtsp\r\n", False),
+    ],
+)
+def test_rtsp_probe_requires_success_for_the_actual_uri(monkeypatch, status_line, expected):
+    sent: list[bytes] = []
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def settimeout(self, timeout):
+            assert timeout == 5.0
+
+        def sendall(self, value):
+            sent.append(value)
+
+        def recv(self, size):
+            assert size == 512
+            return status_line
+
+    monkeypatch.setattr(
+        "security_diagnosis_harness.adapters.device_gateway.onvif.socket.create_connection",
+        lambda target, timeout: Connection(),
+    )
+    with _adapter() as adapter:
+        result = adapter._rtsp_available("rtsp://127.0.0.1:28554/profile_main")
+
+    assert result is expected
+    assert b"OPTIONS rtsp://127.0.0.1:28554/profile_main RTSP/1.0" in sent[0]
+    assert b"do-not-store" not in sent[0]
 
 
 @pytest.mark.parametrize(
