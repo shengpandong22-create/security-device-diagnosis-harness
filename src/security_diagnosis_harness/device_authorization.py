@@ -15,9 +15,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
-from datetime import datetime
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from enum import StrEnum
+from threading import Lock
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -391,6 +392,57 @@ def _consume(
     )
 
 
+class DeviceAuthorizationSession:
+    """一次运行期共享的授权与预算载体。
+
+    网关持有该对象，并在同一把锁内完成预检和预算状态替换。这样并发调用也不能
+    复用同一份旧状态越过预算；调用方无法为每次调用临时传入空预算。
+    """
+
+    def __init__(
+        self,
+        manifest: AuthorizationManifest | None,
+        *,
+        environment_alias: str,
+        initial_budget_state: AuthorizationBudgetState,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._manifest = manifest
+        self._environment_alias = _validate_alias(environment_alias, "environment_alias")
+        self._budget_state = initial_budget_state
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._lock = Lock()
+        self._request_sequence = 0
+
+    @property
+    def budget_state(self) -> AuthorizationBudgetState:
+        with self._lock:
+            return self._budget_state
+
+    def authorize(
+        self,
+        *,
+        asset_alias: str,
+        operation: DeviceReadOperation,
+    ) -> AuthorizationDecision:
+        """原子预检一次调用，并持久保留返回的预算状态。"""
+        with self._lock:
+            self._request_sequence += 1
+            decision = preflight_device_call(
+                self._manifest,
+                AuthorizationRequest(
+                    request_id=f"gateway-{self._request_sequence}",
+                    environment_alias=self._environment_alias,
+                    asset_alias=asset_alias,
+                    operation=operation,
+                    requested_at=self._clock(),
+                ),
+                self._budget_state,
+            )
+            self._budget_state = decision.budget_state
+            return decision
+
+
 __all__ = [
     "READ_ONLY_OPERATIONS",
     "AuthorizationBudgetState",
@@ -399,5 +451,6 @@ __all__ = [
     "AuthorizationManifest",
     "AuthorizationRequest",
     "DeviceReadOperation",
+    "DeviceAuthorizationSession",
     "preflight_device_call",
 ]

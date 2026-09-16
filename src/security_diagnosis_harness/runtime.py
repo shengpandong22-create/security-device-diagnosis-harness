@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 from types import MappingProxyType
@@ -86,6 +87,12 @@ from security_diagnosis_harness.config import (
     RuntimeConfigurationError,
     RuntimeSettings,
     build_runtime_settings,
+)
+from security_diagnosis_harness.device_authorization import (
+    AuthorizationBudgetState,
+    AuthorizationManifest,
+    DeviceAuthorizationSession,
+    DeviceReadOperation,
 )
 from security_diagnosis_harness.domain.citation_policy import CitationPolicy
 from security_diagnosis_harness.domain.device_integration import (
@@ -435,7 +442,23 @@ def build_runtime_container(
         runtime_adapter,
         ready=adapter_ready,
     )
-    gateway = RoutedDeviceGateway(asset_catalog, adapter_registry)
+    runtime_operations = frozenset(DeviceReadOperation)
+    authorization = DeviceAuthorizationSession(
+        AuthorizationManifest(
+            manifest_id="formal-runtime-read-only",
+            environment_alias="local-runtime",
+            asset_scope_aliases=frozenset(asset.device_id for asset in resolved_assets),
+            credential_ref="runtime:configured",
+            valid_from=datetime.min.replace(tzinfo=UTC),
+            valid_until=datetime.max.replace(tzinfo=UTC),
+            allowed_operations=runtime_operations,
+            max_total_calls=10_000,
+            max_calls_per_operation={operation: 10_000 for operation in runtime_operations},
+        ),
+        environment_alias="local-runtime",
+        initial_budget_state=AuthorizationBudgetState(),
+    )
+    gateway = RoutedDeviceGateway(asset_catalog, adapter_registry, authorization)
 
     # ------------------------------------------------ 能力推导（9C-2A resolver）
     if self_check_passed_adapter_keys is not None:

@@ -19,6 +19,7 @@ from security_diagnosis_harness.adapters.device_gateway.registry import (
 )
 from security_diagnosis_harness.adapters.device_gateway.routed import (
     DeviceAssetDisabledError,
+    DeviceAuthorizationDeniedError,
     DeviceCapabilityMissingError,
     DeviceRoutingError,
     RoutedDeviceGateway,
@@ -35,6 +36,7 @@ from security_diagnosis_harness.adapters.device_gateway.static import StaticDevi
 
 __all__ = [
     "DeviceAssetDisabledError",
+    "DeviceAuthorizationDeniedError",
     "DeviceCapabilityMissingError",
     "DeviceRoutingError",
     "CrossSourceCameraGateway",

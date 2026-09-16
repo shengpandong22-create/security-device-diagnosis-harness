@@ -16,6 +16,7 @@ import pytest
 
 from security_diagnosis_harness.adapters.device_gateway import (
     DeviceAssetDisabledError,
+    DeviceAuthorizationDeniedError,
     DeviceCapabilityMissingError,
     DeviceRoutingError,
     InMemoryDeviceAdapterRegistry,
@@ -23,6 +24,13 @@ from security_diagnosis_harness.adapters.device_gateway import (
     RoutingContextRequiredError,
 )
 from security_diagnosis_harness.adapters.device_gateway.routed import _METHOD_CAPABILITIES
+from security_diagnosis_harness.device_authorization import (
+    AuthorizationBudgetState,
+    AuthorizationDenyReason,
+    AuthorizationManifest,
+    DeviceAuthorizationSession,
+    DeviceReadOperation,
+)
 from security_diagnosis_harness.domain.camera import StreamKind
 from security_diagnosis_harness.domain.device import DeviceSnapshot
 from security_diagnosis_harness.domain.device_integration import (
@@ -75,6 +83,7 @@ ALLOWED_IMPORTS = {
     "security_diagnosis_harness.domain.device",
     "security_diagnosis_harness.domain.device_integration",
     "security_diagnosis_harness.domain.recording",
+    "security_diagnosis_harness.device_authorization",
     "security_diagnosis_harness.ports.device_adapters",
     "security_diagnosis_harness.ports.device_assets",
     "security_diagnosis_harness.ports.device_gateway",
@@ -232,8 +241,30 @@ def _build(
     registry = InMemoryDeviceAdapterRegistry()
     registry.register("sim", spy, ready=ready)
     return (
-        RoutedDeviceGateway(_FakeCatalog(catalog_assets), registry),
+        RoutedDeviceGateway(_FakeCatalog(catalog_assets), registry, _authorization(catalog_assets)),
         spy,
+    )
+
+
+def _authorization(
+    assets: list[DeviceAsset], *, max_total_calls: int = 100
+) -> DeviceAuthorizationSession:
+    operations = frozenset(DeviceReadOperation)
+    return DeviceAuthorizationSession(
+        AuthorizationManifest(
+            manifest_id="test-manifest",
+            environment_alias="test",
+            asset_scope_aliases=frozenset(asset.device_id for asset in assets),
+            credential_ref="test:fixture",
+            valid_from=datetime(2025, 1, 1, tzinfo=UTC),
+            valid_until=datetime(2027, 1, 1, tzinfo=UTC),
+            allowed_operations=operations,
+            max_total_calls=max_total_calls,
+            max_calls_per_operation={operation: max_total_calls for operation in operations},
+        ),
+        environment_alias="test",
+        initial_budget_state=AuthorizationBudgetState(),
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 
@@ -268,16 +299,15 @@ def test_spy_fake_satisfies_device_gateway_protocol() -> None:
 def test_assets_route_to_their_own_adapter() -> None:
     static_spy = SpyDeviceGateway("static")
     simulator_spy = SpyDeviceGateway("simulator")
-    catalog = _FakeCatalog(
-        [
-            _asset("dev-static-01", adapter_key="static"),
-            _asset("dev-sim-01", adapter_key="simulator"),
-        ]
-    )
+    assets = [
+        _asset("dev-static-01", adapter_key="static"),
+        _asset("dev-sim-01", adapter_key="simulator"),
+    ]
+    catalog = _FakeCatalog(assets)
     registry = InMemoryDeviceAdapterRegistry()
     registry.register("static", static_spy, ready=True)
     registry.register("simulator", simulator_spy, ready=True)
-    routed = RoutedDeviceGateway(catalog, registry)
+    routed = RoutedDeviceGateway(catalog, registry, _authorization(assets))
 
     first = routed.query_status("dev-static-01")
     second = routed.query_status("dev-sim-01")
@@ -323,6 +353,41 @@ def test_domain_object_is_returned_untouched() -> None:
     assert result is snapshot
 
 
+def test_authorization_budget_is_shared_across_gateway_calls() -> None:
+    spy = SpyDeviceGateway()
+    assets = [_asset()]
+    registry = InMemoryDeviceAdapterRegistry()
+    registry.register("sim", spy, ready=True)
+    authorization = _authorization(assets, max_total_calls=1)
+    routed = RoutedDeviceGateway(_FakeCatalog(assets), registry, authorization)
+
+    routed.query_status("dev-cam-01")
+    with pytest.raises(DeviceAuthorizationDeniedError) as exc_info:
+        routed.query_status("dev-cam-01")
+
+    assert exc_info.value.deny_reason is AuthorizationDenyReason.TOTAL_BUDGET_EXHAUSTED
+    assert authorization.budget_state.total_calls_consumed == 1
+    assert spy.calls == [("query_status", ("dev-cam-01",))]
+
+
+def test_authorization_denial_happens_before_adapter_lookup() -> None:
+    assets = [_asset(adapter_key="missing")]
+    authorization = DeviceAuthorizationSession(
+        None,
+        environment_alias="test",
+        initial_budget_state=AuthorizationBudgetState(),
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    routed = RoutedDeviceGateway(
+        _FakeCatalog(assets), InMemoryDeviceAdapterRegistry(), authorization
+    )
+
+    with pytest.raises(DeviceAuthorizationDeniedError) as exc_info:
+        routed.query_status("dev-cam-01")
+
+    assert exc_info.value.deny_reason is AuthorizationDenyReason.MISSING_MANIFEST
+
+
 # ---------------------------------------------------------------- 路由不可被覆盖
 def test_public_signatures_expose_no_routing_parameters() -> None:
     forbidden = {
@@ -348,11 +413,12 @@ def test_routing_decision_comes_only_from_asset() -> None:
     """同一 Registry 中存在多个 ready Adapter 时，也只按资产 adapter_key 路由。"""
     static_spy = SpyDeviceGateway("static")
     simulator_spy = SpyDeviceGateway("simulator")
-    catalog = _FakeCatalog([_asset("dev-cam-01", adapter_key="simulator")])
+    assets = [_asset("dev-cam-01", adapter_key="simulator")]
+    catalog = _FakeCatalog(assets)
     registry = InMemoryDeviceAdapterRegistry()
     registry.register("static", static_spy, ready=True)
     registry.register("simulator", simulator_spy, ready=True)
-    routed = RoutedDeviceGateway(catalog, registry)
+    routed = RoutedDeviceGateway(catalog, registry, _authorization(assets))
 
     routed.query_status("dev-cam-01")
 
@@ -417,10 +483,11 @@ def test_not_ready_adapter_fails_before_delegation() -> None:
 
 def test_adapter_becomes_unready_after_mark_not_ready() -> None:
     spy = SpyDeviceGateway()
-    catalog = _FakeCatalog([_asset()])
+    assets = [_asset()]
+    catalog = _FakeCatalog(assets)
     registry = InMemoryDeviceAdapterRegistry()
     registry.register("sim", spy, ready=True)
-    routed = RoutedDeviceGateway(catalog, registry)
+    routed = RoutedDeviceGateway(catalog, registry, _authorization(assets))
     routed.query_status("dev-cam-01")
 
     registry.mark_not_ready("sim")
@@ -436,11 +503,12 @@ def test_no_fallback_broadcast_or_retry_on_downstream_error() -> None:
     primary.errors["query_status"] = DeviceAdapterError(
         DeviceAdapterErrorKind.UNAVAILABLE, "query_status"
     )
-    catalog = _FakeCatalog([_asset("dev-cam-01", adapter_key="primary")])
+    assets = [_asset("dev-cam-01", adapter_key="primary")]
+    catalog = _FakeCatalog(assets)
     registry = InMemoryDeviceAdapterRegistry()
     registry.register("primary", primary, ready=True)
     registry.register("secondary", secondary, ready=True)
-    routed = RoutedDeviceGateway(catalog, registry)
+    routed = RoutedDeviceGateway(catalog, registry, _authorization(assets))
 
     with pytest.raises(DeviceAdapterError):
         routed.query_status("dev-cam-01")

@@ -36,6 +36,12 @@ from security_diagnosis_harness.adapters.llm.fake import FakeLLM
 from security_diagnosis_harness.agent.runner import ToolLoopBudget, ToolLoopRunner
 from security_diagnosis_harness.application.diagnoses import SecurityDiagnosisApplicationService
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
+from security_diagnosis_harness.device_authorization import (
+    AuthorizationBudgetState,
+    AuthorizationManifest,
+    DeviceAuthorizationSession,
+    DeviceReadOperation,
+)
 from security_diagnosis_harness.domain.camera import PullStatus, StreamKind
 from security_diagnosis_harness.domain.citation_policy import CitationPolicy
 from security_diagnosis_harness.domain.device_integration import (
@@ -277,7 +283,30 @@ def _evaluate_agent_loop(
     )
     adapters = InMemoryDeviceAdapterRegistry()
     adapters.register(composite.adapter_key, composite, ready=True)
-    gateway = RoutedDeviceGateway(assets, adapters)
+    lab_operations = frozenset(
+        {
+            DeviceReadOperation.QUERY_STATUS,
+            DeviceReadOperation.QUERY_CHANNEL_SNAPSHOT,
+            DeviceReadOperation.QUERY_STREAM_SNAPSHOT,
+            DeviceReadOperation.QUERY_PLATFORM_PULL_STATUS,
+        }
+    )
+    authorization = DeviceAuthorizationSession(
+        AuthorizationManifest(
+            manifest_id="device-lab-read-only",
+            environment_alias="device-lab",
+            asset_scope_aliases=frozenset(device_ids),
+            credential_ref="device-lab:runtime",
+            valid_from=datetime.min.replace(tzinfo=UTC),
+            valid_until=datetime.max.replace(tzinfo=UTC),
+            allowed_operations=lab_operations,
+            max_total_calls=100,
+            max_calls_per_operation={operation: 25 for operation in lab_operations},
+        ),
+        environment_alias="device-lab",
+        initial_budget_state=AuthorizationBudgetState(),
+    )
+    gateway = RoutedDeviceGateway(assets, adapters, authorization)
     tools = ToolRegistry()
     for tool_type in (
         DeviceStatusTool,

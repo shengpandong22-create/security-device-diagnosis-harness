@@ -25,6 +25,11 @@ from collections.abc import Mapping
 from datetime import datetime
 from types import MappingProxyType
 
+from security_diagnosis_harness.device_authorization import (
+    AuthorizationDenyReason,
+    DeviceAuthorizationSession,
+    DeviceReadOperation,
+)
 from security_diagnosis_harness.domain.access import (
     AccessControllerSnapshot,
     AccessEvent,
@@ -63,6 +68,7 @@ from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 __all__ = [
     "DeviceAssetDisabledError",
     "DeviceCapabilityMissingError",
+    "DeviceAuthorizationDeniedError",
     "DeviceRoutingError",
     "RoutedDeviceGateway",
     "RoutingContextRequiredError",
@@ -117,6 +123,16 @@ class DeviceCapabilityMissingError(DeviceRoutingError):
         )
 
 
+class DeviceAuthorizationDeniedError(DeviceRoutingError):
+    """设备调用未通过授权预检；仅暴露稳定原因码。"""
+
+    reason = "authorization_denied"
+
+    def __init__(self, deny_reason: AuthorizationDenyReason) -> None:
+        self.deny_reason = deny_reason
+        super().__init__(f"设备只读操作未获授权: reason={deny_reason.value}")
+
+
 # 方法到 DeviceCapability 的固定映射；与 SimulatorDeviceGateway 的既有约定一致。
 # 通过 MappingProxyType 冻结，任何调用方都无法替换映射内容。
 _METHOD_CAPABILITIES: Mapping[str, DeviceCapability] = MappingProxyType(
@@ -149,9 +165,11 @@ class RoutedDeviceGateway:
         self,
         asset_catalog: DeviceAssetCatalogPort,
         registry: DeviceAdapterRegistryPort,
+        authorization: DeviceAuthorizationSession,
     ) -> None:
         self._asset_catalog = asset_catalog
         self._registry = registry
+        self._authorization = authorization
 
     # ------------------------------------------------------------ 路由核心
     def _route(self, operation: str, device_id: str) -> DeviceGateway:
@@ -162,6 +180,13 @@ class RoutedDeviceGateway:
         capability = _METHOD_CAPABILITIES[operation]
         if capability not in asset.capabilities:
             raise DeviceCapabilityMissingError(device_id, operation, capability)
+        decision = self._authorization.authorize(
+            asset_alias=device_id,
+            operation=DeviceReadOperation(operation),
+        )
+        if not decision.allowed:
+            assert decision.deny_reason is not None
+            raise DeviceAuthorizationDeniedError(decision.deny_reason)
         return self._registry.get_ready(asset.adapter_key)
 
     # ------------------------------------------------------------ 设备事实
