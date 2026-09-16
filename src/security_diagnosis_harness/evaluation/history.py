@@ -56,6 +56,7 @@ class EvaluationRunSummary(BaseModel):
     run_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     metrics: SuiteMetrics
     deterministic_p0_count: int = Field(ge=0)
+    summary_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def _reject_sensitive_metadata(self) -> EvaluationRunSummary:
@@ -68,10 +69,9 @@ class EvaluationRunSummary(BaseModel):
     def from_run(cls, run: EvaluationRun) -> EvaluationRunSummary:
         # Revalidate at the persistence boundary to block model_copy bypasses.
         identity = RunIdentity.model_validate(run.identity.model_dump(mode="python"))
-        controlled = identity.controlled_variables()
         p0_count = sum(case.p0_blocked for case in run.grade.cases)
         metrics = run.grade.metrics.model_copy(update={"p0_failure_count": p0_count})
-        return cls(
+        summary = cls(
             run_id=run.run_id,
             created_at=run.created_at,
             code_commit=identity.code_commit,
@@ -84,11 +84,20 @@ class EvaluationRunSummary(BaseModel):
             prompt_hash=identity.prompt_hash,
             configuration_hash=identity.configuration_hash,
             environment_hash=sha256_text(canonical_json(identity.environment)),
-            comparison_fingerprint=sha256_text(canonical_json(controlled)),
+            comparison_fingerprint="0" * 64,
             run_content_hash=run.content_hash(),
             metrics=metrics,
             deterministic_p0_count=p0_count,
+            summary_content_hash="0" * 64,
         )
+        summary = summary.model_copy(
+            update={
+                "comparison_fingerprint": sha256_text(
+                    canonical_json(_controlled_summary_values(summary))
+                )
+            }
+        )
+        return summary.model_copy(update={"summary_content_hash": _summary_hash(summary)})
 
 
 class EvaluationHistoryRecord(BaseModel):
@@ -107,13 +116,55 @@ class EvaluationHistoryRecord(BaseModel):
 class EvaluationHistoryDocument(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: str = "1.0.0"
+    schema_version: str = "2.0.0"
     records: tuple[EvaluationHistoryRecord, ...] = ()
 
 
 #: 当前受支持的评测历史 schema 版本。其它版本明确拒绝（fail-closed），
 #: 不做隐式兼容，避免"格式合法但语义不同"的历史被静默接受。
-SUPPORTED_HISTORY_SCHEMA_VERSIONS: frozenset[str] = frozenset({"1.0.0"})
+SUPPORTED_HISTORY_SCHEMA_VERSIONS: frozenset[str] = frozenset({"2.0.0"})
+
+
+def _summary_hash(value: EvaluationRunSummary | dict[str, Any]) -> str:
+    payload = (
+        value.model_dump(mode="json", exclude={"summary_content_hash"})
+        if isinstance(value, EvaluationRunSummary)
+        else value
+    )
+    return sha256_text(canonical_json(payload))
+
+
+def _controlled_summary_values(summary: EvaluationRunSummary) -> dict[str, Any]:
+    return {
+        "dataset_name": summary.dataset_name,
+        "dataset_version": summary.dataset_version,
+        "split": summary.split.value,
+        "runner_name": summary.runner_name,
+        "model_name": summary.model_name,
+        "model_parameters": summary.model_parameters,
+        "prompt_hash": summary.prompt_hash,
+        "configuration_hash": summary.configuration_hash,
+        "environment_hash": summary.environment_hash,
+    }
+
+
+def _recompute_summary_gate(
+    baseline: EvaluationRunSummary,
+    candidate: EvaluationRunSummary,
+    policy: GatePolicy,
+) -> tuple[bool, bool, tuple[str, ...]]:
+    blocked_by_p0 = candidate.deterministic_p0_count > 0
+    reasons = (
+        [f"Candidate 存在 {candidate.deterministic_p0_count} 个 P0 失败"]
+        if blocked_by_p0
+        else []
+    )
+    for metric, tolerance_name in CORE_METRICS:
+        before = float(getattr(baseline.metrics, metric))
+        after = float(getattr(candidate.metrics, metric))
+        if after - before < -float(getattr(policy, tolerance_name)):
+            reasons.append(f"核心指标退化: {metric}")
+    return not reasons, blocked_by_p0, tuple(reasons)
 
 
 def _validate_document(document: EvaluationHistoryDocument) -> EvaluationHistoryDocument:
@@ -121,8 +172,15 @@ def _validate_document(document: EvaluationHistoryDocument) -> EvaluationHistory
     if document.schema_version not in SUPPORTED_HISTORY_SCHEMA_VERSIONS:
         raise EvaluationHistoryError("不支持的评测历史 schema_version")
     seen: set[str] = set()
+    summaries: dict[str, EvaluationRunSummary] = {}
     for record in document.records:
         summary = record.summary
+        if summary.comparison_fingerprint != sha256_text(
+            canonical_json(_controlled_summary_values(summary))
+        ):
+            raise EvaluationHistoryError("comparison_fingerprint 与运行身份不一致")
+        if summary.summary_content_hash != _summary_hash(summary):
+            raise EvaluationHistoryError("summary_content_hash 与历史摘要不一致")
         if summary.run_id in seen:
             raise EvaluationHistoryError(f"评测历史存在重复 run_id: {summary.run_id}")
         baseline_id = record.baseline_run_id
@@ -145,7 +203,17 @@ def _validate_document(document: EvaluationHistoryDocument) -> EvaluationHistory
                 raise EvaluationHistoryError("Gate 策略哈希必须绑定策略快照")
             if sha256_text(canonical_json(record.gate_policy)) != record.gate_policy_hash:
                 raise EvaluationHistoryError("Gate 策略快照与哈希不一致")
+        if baseline_id is not None:
+            if record.gate_policy is None:
+                raise EvaluationHistoryError("非基线记录必须保存 Gate 策略")
+            expected = _recompute_summary_gate(
+                summaries[baseline_id], summary, GatePolicy.model_validate(record.gate_policy)
+            )
+            actual = (record.gate_allowed, record.blocked_by_p0, record.blocking_reasons)
+            if actual != expected:
+                raise EvaluationHistoryError("Gate 结论与历史摘要重算结果不一致")
         seen.add(summary.run_id)
+        summaries[summary.run_id] = summary
     return document
 
 

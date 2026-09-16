@@ -234,7 +234,7 @@ def test_invalid_or_mixed_history_is_rejected(tmp_path, cases):
         }
     })
     path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(EvaluationHistoryError, match="不可比"):
+    with pytest.raises(EvaluationHistoryError, match="comparison_fingerprint"):
         history.trend()
 
 
@@ -293,10 +293,32 @@ def test_load_rejects_unsupported_schema_version(tmp_path, cases):
     history = JsonEvaluationHistory(tmp_path / "history.json")
     history.append(_run(cases, "a" * 40))
     data = json.loads(history._path.read_text(encoding="utf-8"))
-    data["schema_version"] = "2.0.0"
+    data["schema_version"] = "3.0.0"
     history._path.write_text(json.dumps(data), encoding="utf-8")
 
     with pytest.raises(EvaluationHistoryError, match="schema_version"):
+        history.load()
+
+
+def test_load_rejects_tampered_summary_metrics(tmp_path, cases):
+    history, path = _two_record_history(tmp_path, cases)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["records"][1]["summary"]["metrics"]["candidate_accuracy"] = 0.123
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="summary_content_hash"):
+        history.load()
+
+
+def test_load_recomputes_gate_from_valid_summary(tmp_path, cases):
+    history, path = _two_record_history(tmp_path, cases)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    record = data["records"][1]
+    record["blocking_reasons"] = ["invented reason"]
+    record["gate_allowed"] = False
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="重算结果"):
         history.load()
 
 
