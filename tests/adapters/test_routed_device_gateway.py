@@ -318,6 +318,37 @@ def test_assets_route_to_their_own_adapter() -> None:
     assert second is simulator_spy.default_result
 
 
+def test_invalid_asset_id_is_denied_without_calling_adapter() -> None:
+    spy = SpyDeviceGateway()
+    illegal_id = "Bad-Device!"
+    registry = InMemoryDeviceAdapterRegistry()
+    registry.register("sim", spy, ready=True)
+    # 授权清单的 scope 使用合法别名，从而"非法 ID"只在授权边界被映射为稳定拒绝，
+    # 而不是让 Pydantic ValidationError 穿透到工具层。
+    authorization = _authorization([_asset("dev-cam-01")])
+    routed = RoutedDeviceGateway(_FakeCatalog([_asset(illegal_id)]), registry, authorization)
+
+    with pytest.raises(DeviceAuthorizationDeniedError) as exc_info:
+        routed.query_status(illegal_id)
+
+    assert exc_info.value.deny_reason is AuthorizationDenyReason.INVALID_ASSET_ALIAS
+    assert spy.calls == []
+
+
+def test_boundary_valid_asset_id_is_routed() -> None:
+    boundary_id = "a" * 64
+    spy = SpyDeviceGateway()
+    assets = [_asset(boundary_id)]
+    registry = InMemoryDeviceAdapterRegistry()
+    registry.register("sim", spy, ready=True)
+    routed = RoutedDeviceGateway(_FakeCatalog(assets), registry, _authorization(assets))
+
+    result = routed.query_status(boundary_id)
+
+    assert result is spy.default_result
+    assert spy.calls == [("query_status", (boundary_id,))]
+
+
 @pytest.mark.parametrize(("operation", "args"), _ROUTED_CALLS)
 def test_every_routed_operation_delegates_exactly_once(
     operation: str, args: tuple[object, ...]

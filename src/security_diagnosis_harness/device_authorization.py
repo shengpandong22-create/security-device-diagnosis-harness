@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from threading import Lock
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 
 class _FrozenDict(dict):
@@ -86,6 +86,7 @@ class AuthorizationDenyReason(StrEnum):
     TOTAL_BUDGET_EXHAUSTED = "total_budget_exhausted"
     OPERATION_BUDGET_EXHAUSTED = "operation_budget_exhausted"
     SESSION_CLOSED = "session_closed"
+    INVALID_ASSET_ALIAS = "invalid_asset_alias"
 
 
 # 不透明凭证引用：`<namespace>:<name>`，两段都禁止 `.` `/` `@` `:` `=` `?` `&`，
@@ -500,17 +501,24 @@ class DeviceAuthorizationSession:
                     budget_state=self._budget_state,
                 )
             self._request_sequence += 1
-            decision = preflight_device_call(
-                self._manifest,
-                AuthorizationRequest(
+            try:
+                request = AuthorizationRequest(
                     request_id=f"gateway-{self._request_sequence}",
                     environment_alias=self._environment_alias,
                     asset_alias=asset_alias,
                     operation=operation,
                     requested_at=self._clock(),
-                ),
-                self._budget_state,
-            )
+                )
+            except ValidationError:
+                # 非法资产标识不是可重试的运行时错误：在授权边界映射为稳定拒绝，
+                # 不把原始 Pydantic 错误传播到 Tool / LLM / API。
+                return AuthorizationDecision(
+                    allowed=False,
+                    deny_reason=AuthorizationDenyReason.INVALID_ASSET_ALIAS,
+                    manifest_id=self._manifest.manifest_id if self._manifest else None,
+                    budget_state=self._budget_state,
+                )
+            decision = preflight_device_call(self._manifest, request, self._budget_state)
             self._budget_state = decision.budget_state
             return decision
 

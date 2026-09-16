@@ -674,3 +674,27 @@ def test_session_expiry_denies_at_valid_until_boundary() -> None:
 
     assert decision.allowed is False
     assert decision.deny_reason is AuthorizationDenyReason.EXPIRED
+
+
+def test_session_maps_invalid_asset_alias_to_stable_deny() -> None:
+    session = _session()
+
+    decision = session.authorize(
+        asset_alias="Bad-Alias!", operation=DeviceReadOperation.QUERY_STATUS
+    )
+
+    assert decision.allowed is False
+    assert decision.deny_reason is AuthorizationDenyReason.INVALID_ASSET_ALIAS
+    # 非法 alias 不消费预算，也不抛出原始 Pydantic 错误。
+    assert session.budget_state.total_calls_consumed == 0
+
+
+def test_session_accepts_boundary_valid_asset_alias() -> None:
+    alias = "a" * 64
+    session = _session(manifest=_manifest(asset_scope_aliases=frozenset({alias})))
+
+    decision = session.authorize(
+        asset_alias=alias, operation=DeviceReadOperation.QUERY_STATUS
+    )
+
+    assert decision.allowed is True
