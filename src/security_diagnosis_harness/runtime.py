@@ -674,6 +674,13 @@ def build_runtime_container(
             repository, knowledge_repository, audit_repository, transaction_lock
         )
 
+    # 正式 Runtime 审计装配断言：缺少审计仓储或原子写入时必须构建失败。
+    # （基础离线 Container 的"可选审计"语义保持不变，不受此处影响。）
+    if audit_repository is None or audited_write is None:
+        raise RuntimeConfigurationError(
+            "正式 Runtime 必须装配 AuditRepository 与 AuditedWrite"
+        )
+
     service = SecurityDiagnosisApplicationService(
         repository=repository,
         runner=runner,

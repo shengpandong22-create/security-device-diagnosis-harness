@@ -249,3 +249,13 @@ def test_sqlite_session_factory_rejects_after_close(tmp_path: Path):
     # Engine dispose 后，旧 Session factory 不得隐式重连。
     with pytest.raises(RuntimeClosedError):
         factory()
+
+
+def test_formal_runtime_requires_audit_assembly(monkeypatch):
+    from security_diagnosis_harness import runtime as runtime_module
+    from security_diagnosis_harness.config import RuntimeConfigurationError
+
+    monkeypatch.setattr(runtime_module, "InMemoryAuditRepository", lambda *args, **kwargs: None)
+
+    with pytest.raises(RuntimeConfigurationError, match="AuditRepository"):
+        build_runtime_container(RuntimeSettings(repository_mode="memory"))
