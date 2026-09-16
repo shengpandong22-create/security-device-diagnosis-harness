@@ -104,6 +104,72 @@ def test_finds_unknown_evidence_reference():
     assert "unknown_evidence_reference" in {item.code for item in scanner.scan().findings}
 
 
+def test_finds_unknown_model_evidence_reference():
+    case = build_confirmed_case().model_copy(deep=True, update={"version": 1})
+    case.conclusion.model_cited_evidence_ids.append("missing-model-evidence")
+    scanner, _, _ = _scanner([case], [])
+    assert "unknown_model_evidence_reference" in {
+        item.code for item in scanner.scan().findings
+    }
+
+
+def _scanner_with_audit(cases, knowledge, events):
+    return ConsistencyScanner(
+        _DiagnosisRepo(cases), _KnowledgeRepo(knowledge), _AuditRepo(events)
+    )
+
+
+def _audit_event(case, *, current_version: int | None) -> AuditEvent:
+    return AuditEvent(
+        entity_type=AuditEntityType.DIAGNOSIS,
+        entity_id=case.diagnosis_id,
+        action="diagnosis.run",
+        actor="agent",
+        current_version=current_version,
+    )
+
+
+def test_finds_audit_version_gap():
+    case = build_confirmed_case().model_copy(update={"version": 3})
+    scanner = _scanner_with_audit([case], [], [_audit_event(case, current_version=3)])
+    codes = {item.code for item in scanner.scan().findings}
+    assert "audit_version_gap" in codes
+
+
+def test_finds_duplicate_audit_version():
+    case = build_confirmed_case().model_copy(update={"version": 2})
+    events = [
+        _audit_event(case, current_version=1),
+        _audit_event(case, current_version=2),
+        _audit_event(case, current_version=2),
+    ]
+    scanner = _scanner_with_audit([case], [], events)
+    codes = {item.code for item in scanner.scan().findings}
+    assert "duplicate_audit_version" in codes
+
+
+def test_finds_out_of_order_audit_version():
+    case = build_confirmed_case().model_copy(update={"version": 2})
+    events = [
+        _audit_event(case, current_version=2),
+        _audit_event(case, current_version=1),
+    ]
+    scanner = _scanner_with_audit([case], [], events)
+    codes = {item.code for item in scanner.scan().findings}
+    assert "audit_version_out_of_order" in codes
+
+
+def test_complete_audit_chain_has_no_audit_findings():
+    case = build_confirmed_case().model_copy(update={"version": 2})
+    events = [
+        _audit_event(case, current_version=1),
+        _audit_event(case, current_version=2),
+    ]
+    scanner = _scanner_with_audit([case], [], events)
+    codes = {item.code for item in scanner.scan().findings}
+    assert not {code for code in codes if "audit" in code}
+
+
 def test_finds_confirmed_without_human_review():
     case = build_confirmed_case().model_copy(
         deep=True,

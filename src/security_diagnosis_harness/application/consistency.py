@@ -5,7 +5,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from security_diagnosis_harness.application.errors import RepositoryPersistenceError
-from security_diagnosis_harness.domain.audit import AuditEntityType
+from security_diagnosis_harness.domain.audit import AuditEntityType, AuditEvent
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus
 from security_diagnosis_harness.domain.knowledge import KnowledgeCandidateStatus
 from security_diagnosis_harness.domain.review import HumanReviewAction
@@ -145,6 +145,16 @@ class ConsistencyScanner:
                             f"结论引用不存在的 Evidence: {sorted(missing)}",
                         )
                     )
+                model_missing = set(case.conclusion.model_cited_evidence_ids) - known
+                if model_missing:
+                    findings.append(
+                        _finding(
+                            "unknown_model_evidence_reference",
+                            "diagnosis",
+                            case.diagnosis_id,
+                            f"模型引用不存在的 Evidence: {sorted(model_missing)}",
+                        )
+                    )
                 if case.conclusion.diagnosis_id != case.diagnosis_id:
                     findings.append(
                         _finding(
@@ -208,18 +218,36 @@ class ConsistencyScanner:
                     )
                 )
 
+        events_by_entity: dict[tuple[AuditEntityType, str], list[AuditEvent]] = {}
         for event in events:
-            if event.entity_type is AuditEntityType.DIAGNOSIS:
-                entity = case_by_id.get(event.entity_id)
+            events_by_entity.setdefault((event.entity_type, event.entity_id), []).append(event)
+
+        for (entity_type, entity_id), entity_events in events_by_entity.items():
+            if entity_type is AuditEntityType.DIAGNOSIS:
+                entity = case_by_id.get(entity_id)
             else:
-                entity = knowledge_by_id.get(event.entity_id)
+                entity = knowledge_by_id.get(entity_id)
             if entity is None:
-                findings.append(_finding("orphan_audit_event", "audit", event.event_id))
+                for event in entity_events:
+                    findings.append(_finding("orphan_audit_event", "audit", event.event_id))
                 continue
-            if event.current_version is not None and event.current_version > entity.version:
+
+            versions = [
+                event.current_version
+                for event in entity_events
+                if event.current_version is not None
+            ]
+            # 审计版本链必须无重复、无倒序、无缺口，并覆盖聚合的当前版本。
+            if len(versions) != len(set(versions)):
+                findings.append(_finding("duplicate_audit_version", "audit", entity_id))
+            if versions != sorted(versions):
                 findings.append(
-                    _finding("audit_version_ahead", "audit", event.event_id)
+                    _finding("audit_version_out_of_order", "audit", entity_id)
                 )
+            if versions and max(versions) > entity.version:
+                findings.append(_finding("audit_version_ahead", "audit", entity_id))
+            if set(range(1, entity.version + 1)) - set(versions):
+                findings.append(_finding("audit_version_gap", "audit", entity_id))
 
         return ConsistencyReport(
             diagnosis_count=len(cases),
