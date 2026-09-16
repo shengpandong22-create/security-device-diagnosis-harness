@@ -153,7 +153,7 @@ def test_nested_sets_and_frozen_sets_are_redacted():
 
 
 def test_bytes_credentials_cannot_bypass_redaction():
-    cleaned, changed = redact_value("token=abcd1234efgh".encode("utf-8"))
+    cleaned, changed = redact_value(b"token=abcd1234efgh")
 
     assert changed is True
     assert "abcd1234efgh" not in cleaned
