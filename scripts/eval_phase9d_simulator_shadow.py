@@ -39,6 +39,7 @@ from security_diagnosis_harness.domain.enums import (  # noqa: E402
     SecurityDiagnosisStatus,
     SecurityFaultType,
 )
+from security_diagnosis_harness.domain.evidence import EvidenceSource  # noqa: E402
 from security_diagnosis_harness.domain.redaction import redact_text  # noqa: E402
 from security_diagnosis_harness.domain.review import HumanReviewAction  # noqa: E402
 from security_diagnosis_harness.evaluation.device_observability import (  # noqa: E402
@@ -126,13 +127,18 @@ def _scenario_summary(
 ) -> ShadowScenarioSummary:
     """把一次场景运行折算为可验证的聚合安全事实。"""
     successful_calls = sum(1 for trace in traces if trace.ok)
+    # 只统计**设备来源** Evidence：knowledge_sop 等非设备证据不经过设备调用，
+    # 不应被计入"失败调用产出 Evidence"的判据（否则会把合法知识证据误报为违规）。
+    device_evidence = sum(
+        1 for item in case.evidence if item.source is EvidenceSource.DEVICE_GATEWAY
+    )
     confirmed = case.status is SecurityDiagnosisStatus.CONFIRMED
     return ShadowScenarioSummary(
         scenario_id=scenario.scenario_id,
         completed=confirmed,
         controlled_degradation=bool(run.degraded),
-        # 失败调用不得产出 Evidence：证据数超过成功调用数即违规。
-        evidence_violations=max(0, len(case.evidence) - successful_calls),
+        # 失败调用不得产出设备 Evidence：设备证据数超过成功调用数即违规。
+        evidence_violations=max(0, device_evidence - successful_calls),
         # confirmed 必须由人工 Review 产生，自动 confirmed 记为 P0。
         p0_findings=int(confirmed and not case.reviews),
         sensitive_leaks=_count_sensitive_leaks(case),
