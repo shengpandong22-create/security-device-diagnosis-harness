@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 from xml.etree import ElementTree
+from xml.parsers import expat
 from xml.sax.saxutils import escape
 
 import httpx
@@ -84,6 +85,24 @@ def _contains_forbidden_markup(content: bytes) -> bool:
         return True
     without_nul = lowered.replace(b"\x00", b"")
     return any(marker in without_nul for marker in _FORBIDDEN_MARKUP)
+
+
+def _reject_forbidden_xml_constructs(content: bytes) -> None:
+    """Use parser events to reject DTD, entity declarations and external entities."""
+    parser = expat.ParserCreate()
+
+    def reject(*_args: object) -> None:
+        raise _XmlLimitExceeded
+
+    def reject_external(*_args: object) -> int:
+        raise _XmlLimitExceeded
+
+    parser.StartDoctypeDeclHandler = reject
+    parser.EntityDeclHandler = reject
+    parser.UnparsedEntityDeclHandler = reject
+    parser.NotationDeclHandler = reject
+    parser.ExternalEntityRefHandler = reject_external
+    parser.Parse(content, True)
 
 
 class _BoundedTreeBuilder(ElementTree.TreeBuilder):
@@ -273,16 +292,16 @@ class OnvifReadOnlyAdapter:
         因此 UTF-16 / UTF-32 无法借"字符间夹 NUL 字节"绕过字节子串检查。所有越界
         统一映射为稳定的 INVALID_RESPONSE，不回显原始 XML。
 
-        仅使用标准库（ElementTree + 有界 TreeBuilder + 字节级检测）：不引入
-        defusedxml 等依赖，因为"禁止 DTD/实体 + 有界建树"已由标准库覆盖，且解析器
-        不接触网络或本地文件（expat 默认不加载外部实体）。
+        使用 Expat 声明事件进行结构化预检，再由有界 TreeBuilder 建树。字节级检测
+        仅作为纵深防御，不承担 DTD/实体安全边界。
         """
         if _contains_forbidden_markup(content):
             raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
         try:
+            _reject_forbidden_xml_constructs(content)
             parser = ElementTree.XMLParser(target=_BoundedTreeBuilder(self._settings))
             root = ElementTree.fromstring(content, parser=parser)
-        except (ElementTree.ParseError, _XmlLimitExceeded, ValueError) as exc:
+        except (ElementTree.ParseError, expat.ExpatError, _XmlLimitExceeded, ValueError) as exc:
             raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation) from exc
         return root
 

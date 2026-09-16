@@ -2,6 +2,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from security_diagnosis_harness.adapters.device_gateway import onvif as onvif_module
 from security_diagnosis_harness.adapters.device_gateway.onvif import (
     OnvifReadOnlyAdapter,
     OnvifReadOnlySettings,
@@ -357,6 +358,18 @@ def test_dtd_and_entities_are_rejected_across_encodings(xml: str, encoding: str)
     with _adapter(httpx.MockTransport(handler)) as adapter:
         with pytest.raises(DeviceAdapterError) as exc_info:
             adapter.query_status("lab-camera")
+
+    assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
+
+
+def test_parser_event_boundary_rejects_dtd_without_byte_prefilter(monkeypatch) -> None:
+    monkeypatch.setattr(onvif_module, "_contains_forbidden_markup", lambda _content: False)
+    payload = _FORBIDDEN_SOAP_DOCUMENTS[0].encode()
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, request=request))
+    with _adapter(transport) as adapter:
+        with pytest.raises(DeviceAdapterError) as exc_info:
+            adapter._parse_xml(payload, "parser_boundary")
 
     assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
 
