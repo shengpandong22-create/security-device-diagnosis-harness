@@ -291,11 +291,14 @@ class CodeBasedGrader:
 
         proof = output.confirmed_by_aggregate
         if output.final_status is SecurityDiagnosisStatus.CONFIRMED:
-            if proof is None or proof.diagnosis_id != output.diagnosis_id:
+            # A serialized proof is only a transport value, never a trust anchor.
+            # Confirmation can be accepted only while checking it against the
+            # persisted aggregate supplied by the caller.
+            if diagnosis is None or proof is None or proof.diagnosis_id != output.diagnosis_id:
                 findings.append(
                     _finding("automatic_confirmed", FindingLevel.P0, "conclusion")
                 )
-            elif diagnosis is not None:
+            else:
                 # 强校验：证明必须与真实聚合派生结果一致（绑定聚合内容哈希）。
                 trusted = ConfirmedAggregateProof.from_diagnosis(diagnosis)
                 if (

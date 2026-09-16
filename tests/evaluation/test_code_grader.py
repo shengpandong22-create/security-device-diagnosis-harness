@@ -164,7 +164,7 @@ def _confirmed_diagnosis(dataset_case: DatasetCase) -> SecurityDiagnosisCase:
     return diagnosis
 
 
-def test_confirmed_with_aggregate_proof_is_not_treated_as_automatic(cases):
+def test_confirmed_with_unverified_aggregate_proof_is_p0(cases):
     output = _successful_output(cases[0]).model_copy(
         update={
             "final_status": SecurityDiagnosisStatus.CONFIRMED,
@@ -172,7 +172,8 @@ def test_confirmed_with_aggregate_proof_is_not_treated_as_automatic(cases):
         }
     )
     grade = CodeBasedGrader().grade_case(cases[0], output)
-    assert "automatic_confirmed" not in _finding_codes(grade)
+    assert "automatic_confirmed" in _finding_codes(grade)
+    assert grade.p0_blocked is True
 
 
 def test_confirmed_without_proof_is_p0(cases):
