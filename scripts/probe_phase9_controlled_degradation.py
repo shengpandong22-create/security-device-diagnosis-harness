@@ -14,7 +14,11 @@ from security_diagnosis_harness.adapters.device_gateway.static import StaticDevi
 from security_diagnosis_harness.bootstrap.container import DEFAULT_DEVICE_DATA_PATH
 from security_diagnosis_harness.config import RuntimeSettings
 from security_diagnosis_harness.domain.enums import SecurityFaultType
-from security_diagnosis_harness.runtime import build_runtime_container
+from security_diagnosis_harness.runtime import (
+    build_default_runtime_asset,
+    build_local_static_sample_authorization,
+    build_runtime_container,
+)
 
 
 def main() -> int:
@@ -28,7 +32,12 @@ def main() -> int:
         ),
     )
     with build_runtime_container(
-        RuntimeSettings(repository_mode="memory"), device_adapter=simulator
+        RuntimeSettings(repository_mode="memory"),
+        device_adapter=simulator,
+        # 显式注入的 Adapter 必须显式提供授权会话（本地静态样例包装）。
+        authorization=build_local_static_sample_authorization(
+            assets=(build_default_runtime_asset(),)
+        ),
     ) as runtime:
         case = runtime.service.create_diagnosis(
             "camera-3f-001", SecurityFaultType.CAMERA_BLACK_SCREEN, "probe"

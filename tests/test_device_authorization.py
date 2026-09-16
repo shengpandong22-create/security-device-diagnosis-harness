@@ -22,6 +22,8 @@ from security_diagnosis_harness.device_authorization import (
     AuthorizationDenyReason,
     AuthorizationManifest,
     AuthorizationRequest,
+    AuthorizationSessionClosedError,
+    DeviceAuthorizationSession,
     DeviceReadOperation,
     preflight_device_call,
 )
@@ -550,3 +552,125 @@ def test_importing_module_has_no_side_effects(tmp_path) -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert list(tmp_path.rglob("*")) == []
+
+
+# ------------------------------------------------------------ 授权会话生命周期
+
+
+def _session(**overrides) -> DeviceAuthorizationSession:
+    base: dict = {
+        "manifest": _manifest(),
+        "environment_alias": "env-lab",
+        "initial_budget_state": AuthorizationBudgetState(),
+        # 固定时钟在授权时间窗内（NOW），不依赖真实当前时间。
+        "clock": lambda: NOW,
+    }
+    base.update(overrides)
+    return DeviceAuthorizationSession(**base)
+
+
+def test_session_consumes_budget_atomically_across_calls() -> None:
+    session = _session(
+        manifest=_manifest(
+            max_total_calls=2,
+            max_calls_per_operation={DeviceReadOperation.QUERY_STATUS: 2},
+        )
+    )
+
+    first = session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    )
+    second = session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    )
+    third = session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    )
+
+    assert first.allowed is True
+    assert second.allowed is True
+    assert third.allowed is False
+    assert third.deny_reason is AuthorizationDenyReason.TOTAL_BUDGET_EXHAUSTED
+    assert session.budget_state.total_calls_consumed == 2
+
+
+def test_session_budget_exhaustion_never_auto_resets() -> None:
+    session = _session(
+        manifest=_manifest(
+            max_total_calls=1,
+            max_calls_per_operation={DeviceReadOperation.QUERY_STATUS: 1},
+        )
+    )
+
+    assert session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    ).allowed is True
+    for _ in range(3):
+        denied = session.authorize(
+            asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+        )
+        assert denied.allowed is False
+        assert denied.deny_reason is AuthorizationDenyReason.TOTAL_BUDGET_EXHAUSTED
+    # 耗尽后既不静默重置也不自动扩容。
+    assert session.budget_state.total_calls_consumed == 1
+
+
+def test_session_rotate_starts_new_batch_and_resets_budget() -> None:
+    session = _session(
+        manifest=_manifest(
+            max_total_calls=1,
+            max_calls_per_operation={DeviceReadOperation.QUERY_STATUS: 1},
+        )
+    )
+    assert session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    ).allowed is True
+    assert session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    ).allowed is False
+
+    session.rotate(
+        _manifest(
+            max_total_calls=1,
+            max_calls_per_operation={DeviceReadOperation.QUERY_STATUS: 1},
+        )
+    )
+
+    assert session.batch_index == 1
+    assert session.budget_state.total_calls_consumed == 0
+    assert session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    ).allowed is True
+
+
+def test_session_close_is_terminal_and_idempotent() -> None:
+    session = _session()
+
+    session.close()
+    session.close()
+
+    decision = session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    )
+    assert decision.allowed is False
+    assert decision.deny_reason is AuthorizationDenyReason.SESSION_CLOSED
+    assert session.closed is True
+
+
+def test_session_rotate_after_close_is_rejected() -> None:
+    session = _session()
+    session.close()
+
+    with pytest.raises(AuthorizationSessionClosedError):
+        session.rotate(_manifest())
+
+
+def test_session_expiry_denies_at_valid_until_boundary() -> None:
+    session = _session(clock=lambda: VALID_UNTIL)
+
+    decision = session.authorize(
+        asset_alias="camera-a", operation=DeviceReadOperation.QUERY_STATUS
+    )
+
+    assert decision.allowed is False
+    assert decision.deny_reason is AuthorizationDenyReason.EXPIRED

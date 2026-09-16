@@ -23,7 +23,7 @@ from security_diagnosis_harness.adapters.device_gateway import (
     RoutedDeviceGateway,
     RoutingContextRequiredError,
 )
-from security_diagnosis_harness.adapters.device_gateway.routed import _METHOD_CAPABILITIES
+from security_diagnosis_harness.adapters.device_gateway.routed import METHOD_CAPABILITIES
 from security_diagnosis_harness.device_authorization import (
     AuthorizationBudgetState,
     AuthorizationDenyReason,
@@ -447,7 +447,7 @@ def test_disabled_asset_fails_before_delegation() -> None:
     assert spy.calls == []
 
 
-@pytest.mark.parametrize(("operation", "capability"), sorted(_METHOD_CAPABILITIES.items()))
+@pytest.mark.parametrize(("operation", "capability"), sorted(METHOD_CAPABILITIES.items()))
 def test_missing_capability_fails_before_delegation(
     operation: str, capability: DeviceCapability
 ) -> None:
@@ -591,22 +591,22 @@ def _protocol_device_id_methods() -> set[str]:
 
 
 def test_capability_mapping_covers_exactly_all_device_id_methods() -> None:
-    assert set(_METHOD_CAPABILITIES) == _protocol_device_id_methods()
+    assert set(METHOD_CAPABILITIES) == _protocol_device_id_methods()
 
 
 def test_capability_mapping_excludes_context_free_methods() -> None:
-    assert "query_credential" not in _METHOD_CAPABILITIES
-    assert "query_access_policy" not in _METHOD_CAPABILITIES
+    assert "query_credential" not in METHOD_CAPABILITIES
+    assert "query_access_policy" not in METHOD_CAPABILITIES
 
 
 def test_capability_mapping_is_frozen() -> None:
-    assert isinstance(_METHOD_CAPABILITIES, MappingProxyType)
+    assert isinstance(METHOD_CAPABILITIES, MappingProxyType)
     with pytest.raises(TypeError):
-        _METHOD_CAPABILITIES["query_status"] = DeviceCapability.ALARM  # type: ignore[index]
+        METHOD_CAPABILITIES["query_status"] = DeviceCapability.ALARM  # type: ignore[index]
 
 
 def test_all_mapping_values_are_device_capabilities() -> None:
-    for capability in _METHOD_CAPABILITIES.values():
+    for capability in METHOD_CAPABILITIES.values():
         assert isinstance(capability, DeviceCapability)
 
 

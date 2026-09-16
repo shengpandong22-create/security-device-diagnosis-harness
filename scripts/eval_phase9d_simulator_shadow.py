@@ -50,7 +50,11 @@ from security_diagnosis_harness.evaluation.shadow_history import (  # noqa: E402
     ShadowScenarioSummary,
     SimulatorShadowRun,
 )
-from security_diagnosis_harness.runtime import build_runtime_container  # noqa: E402
+from security_diagnosis_harness.runtime import (  # noqa: E402
+    build_default_runtime_asset,
+    build_local_static_sample_authorization,
+    build_runtime_container,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "demo-output" / "phase9d-simulator-shadow.json"
@@ -148,7 +152,12 @@ def _execute() -> tuple[list[dict], list[dict], tuple[ShadowScenarioSummary, ...
             StaticDeviceGateway(DEFAULT_DEVICE_DATA_PATH), scenario
         )
         with build_runtime_container(
-            RuntimeSettings(repository_mode=SHADOW_REPOSITORY_MODE), device_adapter=simulator
+            RuntimeSettings(repository_mode=SHADOW_REPOSITORY_MODE),
+            device_adapter=simulator,
+            # 显式注入的 Adapter 必须显式提供授权会话（本地静态样例包装）。
+            authorization=build_local_static_sample_authorization(
+                assets=(build_default_runtime_asset(),)
+            ),
         ) as runtime:
             case = runtime.service.create_diagnosis(
                 "camera-3f-001", SHADOW_FAULT_TYPE, "shadow-eval"

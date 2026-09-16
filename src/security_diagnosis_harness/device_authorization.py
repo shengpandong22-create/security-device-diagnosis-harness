@@ -85,6 +85,7 @@ class AuthorizationDenyReason(StrEnum):
     OPERATION_NOT_ALLOWED = "operation_not_allowed"
     TOTAL_BUDGET_EXHAUSTED = "total_budget_exhausted"
     OPERATION_BUDGET_EXHAUSTED = "operation_budget_exhausted"
+    SESSION_CLOSED = "session_closed"
 
 
 # 不透明凭证引用：`<namespace>:<name>`，两段都禁止 `.` `/` `@` `:` `=` `?` `&`，
@@ -392,11 +393,31 @@ def _consume(
     )
 
 
+class AuthorizationSessionClosedError(Exception):
+    """对已关闭的授权会话执行轮换等变更操作时的受控错误。
+
+    异常文本不含会话标识或凭证内容。
+    """
+
+    def __init__(self) -> None:
+        super().__init__("授权会话已关闭，不能再执行轮换")
+
+
 class DeviceAuthorizationSession:
-    """一次运行期共享的授权与预算载体。
+    """一次运行期共享的授权与预算载体（显式、有限的生命周期）。
 
     网关持有该对象，并在同一把锁内完成预检和预算状态替换。这样并发调用也不能
     复用同一份旧状态越过预算；调用方无法为每次调用临时传入空预算。
+
+    生命周期契约（显式、有限、不可隐式重置）：
+
+    - **创建**：由装配方显式构造，绑定一个 ``manifest``（授权批次）与初始预算；
+    - **轮换**：``rotate(manifest)`` 显式开启新授权批次并重置预算，``batch_index`` +1；
+      这是唯一允许重置预算的入口，任何失败路径都不会自动触发它；
+    - **关闭**：``close()`` 进入终态，之后所有预检稳定返回 ``session_closed``，
+      且 ``close()`` 可重复调用；关闭后 ``rotate`` 受控失败；
+    - **预算耗尽**：只拒绝（``total_budget_exhausted`` / ``operation_budget_exhausted``）；
+      本类不自动扩容、不静默重置、不重试；需要继续调用必须显式 ``rotate`` 到新批次。
     """
 
     def __init__(
@@ -405,19 +426,63 @@ class DeviceAuthorizationSession:
         *,
         environment_alias: str,
         initial_budget_state: AuthorizationBudgetState,
+        session_id: str = "device-authorization-session",
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._manifest = manifest
         self._environment_alias = _validate_alias(environment_alias, "environment_alias")
         self._budget_state = initial_budget_state
+        self._session_id = session_id
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = Lock()
         self._request_sequence = 0
+        self._batch_index = 0
+        self._closed = False
+
+    @property
+    def session_id(self) -> str:
+        """非敏感会话标识，仅用于区分授权批次来源。"""
+        return self._session_id
+
+    @property
+    def manifest(self) -> AuthorizationManifest | None:
+        """当前生效的授权清单只读快照；仅含非敏感策略信息（无明文凭证）。"""
+        with self._lock:
+            return self._manifest
 
     @property
     def budget_state(self) -> AuthorizationBudgetState:
         with self._lock:
             return self._budget_state
+
+    @property
+    def batch_index(self) -> int:
+        """当前授权批次序号；每次成功 ``rotate`` 后 +1，用于区分预算批次。"""
+        with self._lock:
+            return self._batch_index
+
+    @property
+    def closed(self) -> bool:
+        with self._lock:
+            return self._closed
+
+    def rotate(self, manifest: AuthorizationManifest) -> None:
+        """显式轮换到新授权批次：替换清单并把预算重置为新状态。
+
+        这是唯一的预算重置入口，必须由调用方显式触发；预算耗尽后不会自动重置，
+        也不会自动扩容。已关闭的会话不允许轮换。
+        """
+        with self._lock:
+            if self._closed:
+                raise AuthorizationSessionClosedError()
+            self._manifest = manifest
+            self._budget_state = AuthorizationBudgetState()
+            self._batch_index += 1
+
+    def close(self) -> None:
+        """进入终态：之后所有预检稳定返回 ``session_closed``；可重复调用。"""
+        with self._lock:
+            self._closed = True
 
     def authorize(
         self,
@@ -427,6 +492,13 @@ class DeviceAuthorizationSession:
     ) -> AuthorizationDecision:
         """原子预检一次调用，并持久保留返回的预算状态。"""
         with self._lock:
+            if self._closed:
+                return AuthorizationDecision(
+                    allowed=False,
+                    deny_reason=AuthorizationDenyReason.SESSION_CLOSED,
+                    manifest_id=None,
+                    budget_state=self._budget_state,
+                )
             self._request_sequence += 1
             decision = preflight_device_call(
                 self._manifest,
@@ -450,6 +522,7 @@ __all__ = [
     "AuthorizationDenyReason",
     "AuthorizationManifest",
     "AuthorizationRequest",
+    "AuthorizationSessionClosedError",
     "DeviceReadOperation",
     "DeviceAuthorizationSession",
     "preflight_device_call",

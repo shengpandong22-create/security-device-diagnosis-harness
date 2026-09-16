@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from types import MappingProxyType
@@ -39,7 +39,10 @@ from security_diagnosis_harness.adapters.device_assets import InMemoryDeviceAsse
 from security_diagnosis_harness.adapters.device_gateway.registry import (
     InMemoryDeviceAdapterRegistry,
 )
-from security_diagnosis_harness.adapters.device_gateway.routed import RoutedDeviceGateway
+from security_diagnosis_harness.adapters.device_gateway.routed import (
+    METHOD_CAPABILITIES,
+    RoutedDeviceGateway,
+)
 from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
 from security_diagnosis_harness.adapters.knowledge.in_memory import (
     InMemoryKnowledgeRepository,
@@ -240,6 +243,97 @@ FORMAL_RUNTIME_TOOL_ALLOWLIST: tuple[str, ...] = (
 )
 
 
+# 正式 Runtime 工具 → 其内部实际发起的 DeviceGateway 只读操作。
+# 仅用于推导**最小授权操作集**：授权清单只能包含工具真正会发起的操作。
+# 不在此表中的工具（如 knowledge__search）不访问设备，不贡献任何操作。
+_TOOL_DEVICE_OPERATIONS: Mapping[str, DeviceReadOperation] = MappingProxyType(
+    {
+        "device__query_status": DeviceReadOperation.QUERY_STATUS,
+        "device__query_channel": DeviceReadOperation.QUERY_CHANNEL_SNAPSHOT,
+        "device__query_stream": DeviceReadOperation.QUERY_STREAM_SNAPSHOT,
+        "platform__query_pull_status": DeviceReadOperation.QUERY_PLATFORM_PULL_STATUS,
+        "device__search_alarm_events": DeviceReadOperation.SEARCH_ALARM_EVENTS,
+        "device__read_config_snapshot": DeviceReadOperation.READ_CONFIG_SNAPSHOT,
+    }
+)
+
+
+# 默认（内部 StaticDeviceGateway）离线样例授权的显式标记与有限参数。
+# 该授权只服务本地静态样例，**不冒充真实设备授权**：环境别名与清单 ID 均带
+# "local-static-sample" 前缀，时间窗有限、预算有限。
+LOCAL_STATIC_SAMPLE_ENVIRONMENT_ALIAS = "local-static-sample"
+LOCAL_STATIC_SAMPLE_MANIFEST_ID = "local-static-sample-read-only"
+LOCAL_STATIC_SAMPLE_VALIDITY = timedelta(hours=24)
+LOCAL_STATIC_SAMPLE_MAX_TOTAL_CALLS = 1_000
+LOCAL_STATIC_SAMPLE_MAX_CALLS_PER_OPERATION = 200
+
+
+def derive_runtime_allowed_operations(
+    tool_allowlist: Iterable[str],
+    assets: Iterable[DeviceAsset],
+) -> frozenset[DeviceReadOperation]:
+    """推导正式 Runtime 的最小授权操作集。
+
+    取"工具 allowlist 实际会发起的操作"与"资产能力允许的操作"的交集：既不会
+    授权工具用不到的操作，也不会授权资产未声明能力的操作。纯函数：只读取入参，
+    不访问环境、网络、设备或数据库。
+    """
+    asset_capabilities: set[DeviceCapability] = set()
+    for asset in assets:
+        asset_capabilities |= set(asset.capabilities)
+    asset_operations = {
+        DeviceReadOperation(operation)
+        for operation, capability in METHOD_CAPABILITIES.items()
+        if capability in asset_capabilities
+    }
+    tool_operations = {
+        _TOOL_DEVICE_OPERATIONS[name]
+        for name in tool_allowlist
+        if name in _TOOL_DEVICE_OPERATIONS
+    }
+    return frozenset(tool_operations & asset_operations)
+
+
+def build_local_static_sample_authorization(
+    *,
+    assets: Iterable[DeviceAsset],
+    now: datetime | None = None,
+) -> DeviceAuthorizationSession:
+    """构造默认（内部 StaticDeviceGateway）离线样例授权会话。
+
+    - 操作集来自 :func:`derive_runtime_allowed_operations`，是最小交集；
+    - 时间窗显式且有限（`now` 起 ``LOCAL_STATIC_SAMPLE_VALIDITY``），不使用
+      ``datetime.min/max`` 这类"近似无限"窗口；
+    - 预算有限且绑定本会话；耗尽后只拒绝，需显式 ``rotate()`` 才能换新批次；
+    - 环境别名 / 清单 ID 明确标记为本地静态样例，不冒充真实设备授权。
+    """
+    resolved_assets = tuple(assets)
+    allowed_operations = derive_runtime_allowed_operations(
+        FORMAL_RUNTIME_TOOL_ALLOWLIST, resolved_assets
+    )
+    window_start = now if now is not None else datetime.now(UTC)
+    manifest = AuthorizationManifest(
+        manifest_id=LOCAL_STATIC_SAMPLE_MANIFEST_ID,
+        environment_alias=LOCAL_STATIC_SAMPLE_ENVIRONMENT_ALIAS,
+        asset_scope_aliases=frozenset(asset.device_id for asset in resolved_assets),
+        credential_ref="runtime:configured",
+        valid_from=window_start,
+        valid_until=window_start + LOCAL_STATIC_SAMPLE_VALIDITY,
+        allowed_operations=allowed_operations,
+        max_total_calls=LOCAL_STATIC_SAMPLE_MAX_TOTAL_CALLS,
+        max_calls_per_operation={
+            operation: LOCAL_STATIC_SAMPLE_MAX_CALLS_PER_OPERATION
+            for operation in allowed_operations
+        },
+    )
+    return DeviceAuthorizationSession(
+        manifest,
+        environment_alias=LOCAL_STATIC_SAMPLE_ENVIRONMENT_ALIAS,
+        initial_budget_state=AuthorizationBudgetState(),
+        session_id="local-static-sample-session",
+    )
+
+
 # 默认资产只含非敏感字段；device_id 与既有默认样例
 # `samples/devices/static_devices.sample.json` 保持一致。
 # capabilities 覆盖摄像头闭环所需的全部只读能力（含 Phase 0 通用告警/配置事实）。
@@ -337,6 +431,8 @@ class RuntimeContainer:
     # Phase 9C-2B：契约是 DeviceGateway；默认实例是 RoutedDeviceGateway，
     # StaticDeviceGateway 只作为 Router 内部 Adapter，不再直接传给 Service。
     gateway: DeviceGateway
+    # 设备授权会话：网关持有它做调用前预检；容器负责在 close() 时关闭它。
+    authorization: DeviceAuthorizationSession
     llm: FakeLLM
     citation_policy: CitationPolicy
     audit_repository: AuditRepository
@@ -367,10 +463,11 @@ class RuntimeContainer:
 
     # ------------------------------------------------------------------ 生命周期
     def close(self) -> None:
-        """释放 Engine；可重复调用。memory 模式下安全无副作用。"""
+        """关闭授权会话并释放 Engine；可重复调用。memory 模式下安全无副作用。"""
         if self._closed:
             return
         self._closed = True
+        self.authorization.close()
         if self.engine is not None:
             self.engine.dispose()
             self.engine = None
@@ -406,6 +503,8 @@ def build_runtime_container(
     self_check_passed_adapter_keys: Iterable[str] | None = None,
     registry: ToolRegistry | None = None,
     device_adapter: DeviceGateway | None = None,
+    authorization: DeviceAuthorizationSession | None = None,
+    now: datetime | None = None,
 ) -> RuntimeContainer:
     """按配置装配正式运行环境。
 
@@ -421,12 +520,18 @@ def build_runtime_container(
         registry: 注入 ToolRegistry；缺省时使用摄像头运行时注册表。
             supported fault types 一律按该注册表实际注册工具推导。
         device_adapter: Phase 9C-3 显式注入的 DeviceGateway Adapter（测试 /
-            影子运行用）；缺省时使用内部 StaticDeviceGateway，默认行为完全
-            不变。Adapter 注册在 DEFAULT_RUNTIME_ADAPTER_KEY 下，readiness
-            由 `adapter_ready` 决定；不形成全局单例、不访问网络。
+            影子运行用）；缺省时使用内部 StaticDeviceGateway。Adapter 注册在
+            DEFAULT_RUNTIME_ADAPTER_KEY 下，readiness 由 `adapter_ready` 决定；
+            不形成全局单例、不访问网络。
+        authorization: 显式设备授权会话。**显式注入 `device_adapter` 时必须提供**，
+            否则构建失败——禁止为外部 / 显式注入的 Adapter 自动生成"全部操作 +
+            无限时间"的伪授权。缺省且未注入 `device_adapter` 时，自动生成明确
+            标记的本地静态样例授权（有限时间窗、最小操作集、有限预算）。
+        now: 构造本地静态样例授权时间窗的基准时刻（缺省为当前 UTC）；只在自动
+            生成本地静态样例授权时生效，显式传入 `authorization` 时忽略。
 
     Raises:
-        RuntimeConfigurationError: 配置非法。
+        RuntimeConfigurationError: 配置非法，或注入外部 Adapter 但缺少显式授权。
         Exception: sqlite 模式迁移失败时向上抛，不返回容器。
     """
     resolved = settings or build_runtime_settings()
@@ -454,23 +559,21 @@ def build_runtime_container(
         runtime_adapter,
         ready=adapter_ready,
     )
-    runtime_operations = frozenset(DeviceReadOperation)
-    authorization = DeviceAuthorizationSession(
-        AuthorizationManifest(
-            manifest_id="formal-runtime-read-only",
-            environment_alias="local-runtime",
-            asset_scope_aliases=frozenset(asset.device_id for asset in resolved_assets),
-            credential_ref="runtime:configured",
-            valid_from=datetime.min.replace(tzinfo=UTC),
-            valid_until=datetime.max.replace(tzinfo=UTC),
-            allowed_operations=runtime_operations,
-            max_total_calls=10_000,
-            max_calls_per_operation={operation: 10_000 for operation in runtime_operations},
-        ),
-        environment_alias="local-runtime",
-        initial_budget_state=AuthorizationBudgetState(),
-    )
-    gateway = RoutedDeviceGateway(asset_catalog, adapter_registry, authorization)
+    # 设备授权：外部 / 显式注入的 Adapter 必须由调用方显式提供授权会话，缺失时
+    # 构建失败（禁止自动生成"全部操作 + 无限时间"的伪授权）。只有内部
+    # StaticDeviceGateway 的本地静态样例才自动生成，且明确标记、时间窗有限、
+    # 操作集为工具 allowlist 与资产能力的最小交集。
+    resolved_authorization = authorization
+    if resolved_authorization is None:
+        if device_adapter is not None:
+            raise RuntimeConfigurationError(
+                "显式注入的设备 Adapter 必须同时提供显式授权会话（authorization），"
+                "禁止自动生成全局伪授权"
+            )
+        resolved_authorization = build_local_static_sample_authorization(
+            assets=resolved_assets, now=now
+        )
+    gateway = RoutedDeviceGateway(asset_catalog, adapter_registry, resolved_authorization)
 
     # ------------------------------------------------ 能力推导（9C-2A resolver）
     if self_check_passed_adapter_keys is not None:
@@ -549,6 +652,7 @@ def build_runtime_container(
         runner=runner,
         registry=resolved_registry,
         gateway=gateway,
+        authorization=resolved_authorization,
         llm=llm,
         citation_policy=citation_policy,
         audit_repository=audit_repository,

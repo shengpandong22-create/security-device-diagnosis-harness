@@ -66,6 +66,7 @@ from security_diagnosis_harness.ports.device_assets import DeviceAssetCatalogPor
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 
 __all__ = [
+    "METHOD_CAPABILITIES",
     "DeviceAssetDisabledError",
     "DeviceCapabilityMissingError",
     "DeviceAuthorizationDeniedError",
@@ -135,7 +136,9 @@ class DeviceAuthorizationDeniedError(DeviceRoutingError):
 
 # 方法到 DeviceCapability 的固定映射；与 SimulatorDeviceGateway 的既有约定一致。
 # 通过 MappingProxyType 冻结，任何调用方都无法替换映射内容。
-_METHOD_CAPABILITIES: Mapping[str, DeviceCapability] = MappingProxyType(
+# 公开导出：正式 Runtime 依据它从"资产能力"推导最小授权操作集，
+# 使授权清单不再靠手工枚举维护。
+METHOD_CAPABILITIES: Mapping[str, DeviceCapability] = MappingProxyType(
     {
         "query_status": DeviceCapability.STATUS,
         "query_channel_snapshot": DeviceCapability.CHANNEL,
@@ -177,7 +180,7 @@ class RoutedDeviceGateway:
         asset = self._asset_catalog.get(device_id)
         if not asset.enabled:
             raise DeviceAssetDisabledError(device_id)
-        capability = _METHOD_CAPABILITIES[operation]
+        capability = METHOD_CAPABILITIES[operation]
         if capability not in asset.capabilities:
             raise DeviceCapabilityMissingError(device_id, operation, capability)
         decision = self._authorization.authorize(

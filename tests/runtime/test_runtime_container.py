@@ -154,3 +154,59 @@ def test_migration_failure_prevents_container(monkeypatch, tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="migration exploded"):
         build_runtime_container(_sqlite_settings(tmp_path))
+
+
+# ---------------------------------------------------------------- 授权策略与生命周期
+def test_default_authorization_is_minimal_and_finite():
+    from datetime import UTC, datetime, timedelta
+
+    from security_diagnosis_harness.device_authorization import (
+        READ_ONLY_OPERATIONS,
+        DeviceReadOperation,
+    )
+
+    with build_runtime_container(RuntimeSettings(repository_mode="memory")) as runtime:
+        manifest = runtime.authorization.manifest
+        assert manifest is not None
+        # 明确标记为本地静态样例，不冒充真实设备授权。
+        assert manifest.manifest_id == "local-static-sample-read-only"
+        assert manifest.environment_alias == "local-static-sample"
+        # 操作集是工具 allowlist 与资产能力的最小交集，是真子集（非全部只读操作）。
+        assert manifest.allowed_operations < READ_ONLY_OPERATIONS
+        assert manifest.allowed_operations == frozenset(
+            {
+                DeviceReadOperation.QUERY_STATUS,
+                DeviceReadOperation.QUERY_CHANNEL_SNAPSHOT,
+                DeviceReadOperation.QUERY_STREAM_SNAPSHOT,
+                DeviceReadOperation.QUERY_PLATFORM_PULL_STATUS,
+                DeviceReadOperation.SEARCH_ALARM_EVENTS,
+                DeviceReadOperation.READ_CONFIG_SNAPSHOT,
+            }
+        )
+        # 时间窗有限，不再是 datetime.min/max 的"近似无限"窗口。
+        assert manifest.valid_from > datetime.min.replace(tzinfo=UTC)
+        assert manifest.valid_until < datetime.max.replace(tzinfo=UTC)
+        assert manifest.valid_until - manifest.valid_from <= timedelta(hours=24)
+
+
+def test_explicit_device_adapter_requires_explicit_authorization():
+    from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
+    from security_diagnosis_harness.bootstrap.container import DEFAULT_DEVICE_DATA_PATH
+    from security_diagnosis_harness.config import RuntimeConfigurationError
+
+    adapter = StaticDeviceGateway(DEFAULT_DEVICE_DATA_PATH)
+    with pytest.raises(RuntimeConfigurationError):
+        build_runtime_container(
+            RuntimeSettings(repository_mode="memory"), device_adapter=adapter
+        )
+
+
+def test_close_closes_authorization_session():
+    runtime = build_runtime_container(RuntimeSettings(repository_mode="memory"))
+
+    assert runtime.authorization.closed is False
+    runtime.close()
+    assert runtime.authorization.closed is True
+    # close 幂等，不改变终态。
+    runtime.close()
+    assert runtime.authorization.closed is True
