@@ -30,9 +30,9 @@ _ENTITY = "知识候选"
 class InMemoryKnowledgeRepository:
     """通过深拷贝隔离调用方，并在检索边界强制状态治理。"""
 
-    def __init__(self) -> None:
+    def __init__(self, lock: RLock | None = None) -> None:
         self._items: dict[str, KnowledgeCandidate] = {}
-        self._lock = RLock()
+        self._lock = lock or RLock()
 
     def save(self, candidate: KnowledgeCandidate) -> KnowledgeCandidate:
         """新增知识候选；只接受全新聚合（`version == 0`），写入后版本为 1。"""

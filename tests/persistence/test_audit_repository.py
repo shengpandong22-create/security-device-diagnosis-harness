@@ -188,13 +188,13 @@ def test_runtime_records_knowledge_generation_and_review(tmp_path: Path):
     ]
 
 
-def test_audit_failure_is_explicit_after_business_write():
+def test_audit_failure_rolls_back_business_write():
     class FailingAuditRepository(InMemoryAuditRepository):
         def append(self, event):
             raise RepositoryPersistenceError("审计事件", "injected")
 
     container = build_runtime_container(RuntimeSettings(repository_mode="memory"))
-    container.service._audit_repository = FailingAuditRepository()
+    container.audited_write._audit = FailingAuditRepository()
     try:
         with pytest.raises(RepositoryPersistenceError):
             container.service.create_diagnosis(
@@ -202,6 +202,53 @@ def test_audit_failure_is_explicit_after_business_write():
                 fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
                 reporter="operator-a",
             )
-        assert container.repository.count() == 1
+        assert container.repository.count() == 0
     finally:
         container.close()
+
+
+def _reject_new_audit_events(container) -> None:
+    assert container.engine is not None
+    with container.engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TRIGGER reject_atomic_audit BEFORE INSERT ON audit_events "
+                "BEGIN SELECT RAISE(ABORT, 'injected audit failure'); END"
+            )
+        )
+
+
+def test_sqlite_audit_failure_rolls_back_diagnosis_insert(tmp_path: Path):
+    url = f"sqlite:///{(tmp_path / 'atomic-diagnosis.db').as_posix()}"
+    with build_runtime_container(
+        RuntimeSettings(repository_mode="sqlite", database_url=url)
+    ) as container:
+        _reject_new_audit_events(container)
+        with pytest.raises(RepositoryPersistenceError):
+            container.service.create_diagnosis(
+                device_id="camera-3f-001",
+                fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
+                reporter="operator-a",
+            )
+        assert container.repository.count() == 0
+
+
+def test_sqlite_audit_failure_rolls_back_knowledge_insert(tmp_path: Path):
+    url = f"sqlite:///{(tmp_path / 'atomic-knowledge.db').as_posix()}"
+    with build_runtime_container(
+        RuntimeSettings(repository_mode="sqlite", database_url=url)
+    ) as container:
+        case = container.service.create_diagnosis(
+            device_id="camera-3f-001",
+            fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
+            reporter="operator-a",
+        )
+        container.service.run_diagnosis(case.diagnosis_id)
+        container.service.review_diagnosis(
+            case.diagnosis_id, HumanReviewAction.CONFIRM, "reviewer-a"
+        )
+        _reject_new_audit_events(container)
+
+        with pytest.raises(RepositoryPersistenceError):
+            container.knowledge_service.generate_and_save(case.diagnosis_id, "knowledge-curator")
+        assert container.knowledge_repository.list_all() == []

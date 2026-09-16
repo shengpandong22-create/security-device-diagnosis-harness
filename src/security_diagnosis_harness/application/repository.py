@@ -29,9 +29,9 @@ _ENTITY = "诊断"
 class InMemoryDiagnosisRepository:
     """进程内诊断仓储（乐观锁语义与 SQLite 实现一致）。"""
 
-    def __init__(self) -> None:
+    def __init__(self, lock: RLock | None = None) -> None:
         self._cases: dict[str, SecurityDiagnosisCase] = {}
-        self._lock = RLock()
+        self._lock = lock or RLock()
 
     # ------------------------------------------------------------------ 写
     def save(self, case: SecurityDiagnosisCase) -> SecurityDiagnosisCase:

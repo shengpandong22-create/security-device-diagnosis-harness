@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from types import MappingProxyType
 from typing import NamedTuple
 
@@ -32,6 +33,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from security_diagnosis_harness.adapters.audit_in_memory import InMemoryAuditRepository
+from security_diagnosis_harness.adapters.audited_write_in_memory import InMemoryAuditedWrite
 from security_diagnosis_harness.adapters.device_assets import InMemoryDeviceAssetCatalog
 from security_diagnosis_harness.adapters.device_gateway.registry import (
     InMemoryDeviceAdapterRegistry,
@@ -44,6 +46,9 @@ from security_diagnosis_harness.adapters.knowledge.in_memory import (
 from security_diagnosis_harness.adapters.llm.fake import FakeLLM
 from security_diagnosis_harness.adapters.persistence.audit_repository import (
     SqlAlchemyAuditRepository,
+)
+from security_diagnosis_harness.adapters.persistence.audited_write import (
+    SqlAlchemyAuditedWrite,
 )
 from security_diagnosis_harness.adapters.persistence.database import (
     build_engine,
@@ -89,6 +94,7 @@ from security_diagnosis_harness.domain.device_integration import (
 )
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.ports.audit_repository import AuditRepository
+from security_diagnosis_harness.ports.audited_write import AuditedWrite
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
 from security_diagnosis_harness.ports.knowledge_repository import KnowledgeRepository
@@ -141,6 +147,7 @@ SUPPORTED_RUNTIME_FAULT_TYPES: frozenset[SecurityFaultType] = frozenset(
     {SecurityFaultType.CAMERA_BLACK_SCREEN}
 )
 
+
 # ---------------------------------------------------------------- 能力需求矩阵
 # "故障域所需 capability" 与 "故障域所需工具名" 的固定需求矩阵。
 # 矩阵是**需求**，不是 supported 结果；supported 必须由
@@ -152,9 +159,7 @@ class _FaultDomainNeeds(NamedTuple):
     tool_names: frozenset[str]
 
 
-_FAULT_DOMAIN_REQUIREMENTS: Mapping[
-    SecurityFaultType, _FaultDomainNeeds
-] = MappingProxyType(
+_FAULT_DOMAIN_REQUIREMENTS: Mapping[SecurityFaultType, _FaultDomainNeeds] = MappingProxyType(
     {
         SecurityFaultType.CAMERA_BLACK_SCREEN: _FaultDomainNeeds(
             capabilities=frozenset(
@@ -215,6 +220,7 @@ _FAULT_DOMAIN_REQUIREMENTS: Mapping[
 # 默认 Adapter key：非敏感内部别名，仅用于 AssetCatalog ↔ Registry 的路由关联。
 DEFAULT_RUNTIME_ADAPTER_KEY = "runtime-static-adapter"
 
+
 # 默认资产只含非敏感字段；device_id 与既有默认样例
 # `samples/devices/static_devices.sample.json` 保持一致。
 # capabilities 覆盖摄像头闭环所需的全部只读能力（含 Phase 0 通用告警/配置事实）。
@@ -246,8 +252,7 @@ def _tool_supported_fault_types(registry: ToolRegistry) -> frozenset[SecurityFau
     supported: set[SecurityFaultType] = set()
     for fault_type, needs in _FAULT_DOMAIN_REQUIREMENTS.items():
         covered = all(
-            registry.has(tool_name)
-            and supports_fault_type(registry.get(tool_name), fault_type)
+            registry.has(tool_name) and supports_fault_type(registry.get(tool_name), fault_type)
             for tool_name in needs.tool_names
         )
         if covered:
@@ -317,6 +322,7 @@ class RuntimeContainer:
     citation_policy: CitationPolicy
     audit_repository: AuditRepository
     knowledge_repository: KnowledgeRepository
+    audited_write: AuditedWrite
     knowledge_service: KnowledgeGovernanceApplicationService
     consistency_scanner: ConsistencyScanner
     _asset_catalog: InMemoryDeviceAssetCatalog
@@ -452,6 +458,7 @@ def build_runtime_container(
     repository: DiagnosisRepository
     audit_repository: AuditRepository
     knowledge_repository: KnowledgeRepository
+    audited_write: AuditedWrite
 
     if resolved.repository_mode is RepositoryMode.SQLITE:
         try:
@@ -462,15 +469,20 @@ def build_runtime_container(
             repository = SqlAlchemyDiagnosisRepository(session_factory)
             audit_repository = SqlAlchemyAuditRepository(session_factory)
             knowledge_repository = SqlAlchemyKnowledgeRepository(session_factory)
+            audited_write = SqlAlchemyAuditedWrite(session_factory)
         except Exception:
             # 迁移 / 建 Engine 失败时必须释放已创建资源，且不返回容器。
             if engine is not None:
                 engine.dispose()
             raise
     else:
-        repository = InMemoryDiagnosisRepository()
-        audit_repository = InMemoryAuditRepository()
-        knowledge_repository = InMemoryKnowledgeRepository()
+        transaction_lock = RLock()
+        repository = InMemoryDiagnosisRepository(transaction_lock)
+        audit_repository = InMemoryAuditRepository(transaction_lock)
+        knowledge_repository = InMemoryKnowledgeRepository(transaction_lock)
+        audited_write = InMemoryAuditedWrite(
+            repository, knowledge_repository, audit_repository, transaction_lock
+        )
 
     service = SecurityDiagnosisApplicationService(
         repository=repository,
@@ -481,11 +493,13 @@ def build_runtime_container(
         # 显式能力约束：由实际装配推导，不再是手工常量。
         supported_fault_types=derived_supported_fault_types,
         audit_repository=audit_repository,
+        audited_write=audited_write,
     )
     knowledge_service = KnowledgeGovernanceApplicationService(
         KnowledgeCandidateApplicationService(service),
         knowledge_repository,
         audit_repository,
+        audited_write,
     )
     consistency_scanner = ConsistencyScanner(repository, knowledge_repository)
     return RuntimeContainer(
@@ -501,6 +515,7 @@ def build_runtime_container(
         citation_policy=citation_policy,
         audit_repository=audit_repository,
         knowledge_repository=knowledge_repository,
+        audited_write=audited_write,
         knowledge_service=knowledge_service,
         consistency_scanner=consistency_scanner,
         _asset_catalog=asset_catalog,

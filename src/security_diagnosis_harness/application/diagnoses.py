@@ -57,6 +57,7 @@ from security_diagnosis_harness.domain.errors import (
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence, EvidenceType
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 from security_diagnosis_harness.ports.audit_repository import AuditRepository
+from security_diagnosis_harness.ports.audited_write import AuditedWrite
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
 from security_diagnosis_harness.tools.contracts import ToolEvidenceDraft, ToolExecutionContext
@@ -278,6 +279,7 @@ class SecurityDiagnosisApplicationService:
         tool_allowlist: list[str] | None = None,
         supported_fault_types: frozenset[SecurityFaultType] | None = None,
         audit_repository: AuditRepository | None = None,
+        audited_write: AuditedWrite | None = None,
     ) -> None:
         self._repository = repository
         self._runner = runner
@@ -288,7 +290,10 @@ class SecurityDiagnosisApplicationService:
         # None 表示不限制（Phase 0～5 独立评测 Container 的既有语义）。
         self._supported_fault_types = supported_fault_types
         self.supported_fault_types = supported_fault_types
+        if audit_repository is not None and audited_write is None:
+            raise ValueError("启用审计时必须提供 AuditedWrite 原子写入实现")
         self._audit_repository = audit_repository
+        self._audited_write = audited_write
 
     # -------------------------------------------------------------- 能力闸门
     def is_fault_type_supported(self, fault_type: SecurityFaultType) -> bool:
@@ -331,12 +336,11 @@ class SecurityDiagnosisApplicationService:
             reporter=reporter,
             description=description,
         )
-        saved = self._repository.save(case)
-        self._append_audit(
+        saved = self._save_with_audit(
+            case,
             action="diagnosis.created",
             actor=reporter,
             before=None,
-            after=saved,
             summary="创建诊断任务",
         )
         return saved
@@ -464,13 +468,11 @@ class SecurityDiagnosisApplicationService:
         case.set_conclusion(conclusion)
         case.transition_to(SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION)
         # update() 返回最新持久化副本（version 已递增），后续逻辑必须用它。
-        case = self._repository.update(case)
-
-        self._append_audit(
+        case = self._update_with_audit(
+            case,
             action="diagnosis.run",
             actor="agent",
             before=before,
-            after=case,
             summary="诊断运行完成并产出候选结论",
         )
 
@@ -542,13 +544,11 @@ class SecurityDiagnosisApplicationService:
             comment=comment,
         )
         case.apply_human_review(review)
-        case = self._repository.update(case)
-
-        self._append_audit(
+        case = self._update_with_audit(
+            case,
             action=f"diagnosis.review.{action.value}",
             actor=reviewer,
             before=before,
-            after=case,
             summary="人工审核诊断结论",
         )
 
@@ -582,12 +582,11 @@ class SecurityDiagnosisApplicationService:
     ) -> RunDiagnosisResult:
         """受控失败：不伪造 Evidence，只推进状态并记录错误。"""
         case.transition_to(status)
-        case = self._repository.update(case)
-        self._append_audit(
+        case = self._update_with_audit(
+            case,
             action="diagnosis.run",
             actor="agent",
             before=before,
-            after=case,
             summary=f"诊断运行受控结束: {error}",
         )
         return RunDiagnosisResult(
@@ -603,31 +602,51 @@ class SecurityDiagnosisApplicationService:
             failure_kinds=list(failure_kinds),
         )
 
-    def _append_audit(
+    def _save_with_audit(
         self,
+        case: SecurityDiagnosisCase,
+        **audit_fields: object,
+    ) -> SecurityDiagnosisCase:
+        if self._audit_repository is None:
+            return self._repository.save(case)
+        predicted = case.model_copy(deep=True, update={"version": 1})
+        event = self._build_audit_event(after=predicted, **audit_fields)
+        assert self._audited_write is not None
+        return self._audited_write.save_diagnosis(case, event)
+
+    def _update_with_audit(
+        self,
+        case: SecurityDiagnosisCase,
+        **audit_fields: object,
+    ) -> SecurityDiagnosisCase:
+        if self._audit_repository is None:
+            return self._repository.update(case)
+        predicted = case.model_copy(deep=True, update={"version": case.version + 1})
+        event = self._build_audit_event(after=predicted, **audit_fields)
+        assert self._audited_write is not None
+        return self._audited_write.update_diagnosis(case, event)
+
+    @staticmethod
+    def _build_audit_event(
         *,
         action: str,
         actor: str,
         before: SecurityDiagnosisCase | None,
         after: SecurityDiagnosisCase,
         summary: str,
-    ) -> None:
-        """在业务写入成功后追加安全审计摘要；失败必须显式向上传播。"""
-        if self._audit_repository is None:
-            return
-        self._audit_repository.append(
-            AuditEvent(
-                entity_type=AuditEntityType.DIAGNOSIS,
-                entity_id=after.diagnosis_id,
-                action=action,
-                actor=actor,
-                previous_state=before.status.value if before else None,
-                current_state=after.status.value,
-                previous_version=before.version if before else None,
-                current_version=after.version,
-                summary=summary,
-                metadata={"fault_type": after.fault_type.value},
-            )
+    ) -> AuditEvent:
+        """构造与目标持久化版本一致的审计事件。"""
+        return AuditEvent(
+            entity_type=AuditEntityType.DIAGNOSIS,
+            entity_id=after.diagnosis_id,
+            action=action,
+            actor=actor,
+            previous_state=before.status.value if before else None,
+            current_state=after.status.value,
+            previous_version=before.version if before else None,
+            current_version=after.version,
+            summary=summary,
+            metadata={"fault_type": after.fault_type.value},
         )
 
 

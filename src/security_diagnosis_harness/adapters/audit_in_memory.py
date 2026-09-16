@@ -1,5 +1,7 @@
 """进程内追加式审计仓储。"""
 
+from __future__ import annotations
+
 from copy import deepcopy
 from threading import RLock
 
@@ -8,9 +10,9 @@ from security_diagnosis_harness.domain.audit import AuditEvent
 
 
 class InMemoryAuditRepository:
-    def __init__(self) -> None:
+    def __init__(self, lock: RLock | None = None) -> None:
         self._events: dict[str, AuditEvent] = {}
-        self._lock = RLock()
+        self._lock = lock or RLock()
 
     def append(self, event: AuditEvent) -> AuditEvent:
         with self._lock:
