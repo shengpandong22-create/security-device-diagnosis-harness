@@ -442,3 +442,63 @@ def test_history_load_rejects_tampered_gate_decision(tmp_path):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ShadowHistoryError, match="协议"):
         history.load()
+
+
+def test_custom_policy_round_trips_and_reloads(tmp_path):
+    path = tmp_path / "shadow-history.json"
+    history = JsonShadowHistory(path)
+    baseline = _run("a" * 40, run_id="baseline")
+    candidate = _run("b" * 40, run_id="candidate")
+    history.append(baseline)
+    policy = ShadowGatePolicy(completion_rate_tolerance=0.5)
+
+    record = history.append(candidate, baseline=baseline, policy=policy)
+
+    # 自定义策略写入后必须能被重新加载（不再被默认策略误判为不一致）。
+    reloaded = history.load()
+    assert reloaded.records[-1].gate_allowed == record.gate_allowed
+    assert reloaded.records[-1].gate_policy == policy.model_dump(mode="json")
+
+
+def test_tampered_shadow_policy_snapshot_is_rejected(tmp_path):
+    path = tmp_path / "shadow-history.json"
+    history = JsonShadowHistory(path)
+    baseline = _run("a" * 40, run_id="baseline")
+    history.append(baseline)
+    history.append(_run("b" * 40, run_id="candidate"), baseline=baseline)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["records"][1]["gate_policy"]["completion_rate_tolerance"] = 1.0
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ShadowHistoryError, match="协议"):
+        history.load()
+
+
+def test_unsupported_shadow_schema_version_is_rejected(tmp_path):
+    path = tmp_path / "shadow-history.json"
+    history = JsonShadowHistory(path)
+    history.append(_run("a" * 40, run_id="baseline"))
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["schema_version"] = "9.9.9"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ShadowHistoryError, match="协议"):
+        history.load()
+
+
+def test_legacy_record_without_policy_uses_default(tmp_path):
+    path = tmp_path / "shadow-history.json"
+    history = JsonShadowHistory(path)
+    baseline = _run("a" * 40, run_id="baseline")
+    candidate = _run("b" * 40, run_id="candidate")
+    history.append(baseline)
+    history.append(candidate, baseline=baseline)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    # 移除策略快照，模拟旧格式记录（应显式按默认策略复算）。
+    payload["records"][1].pop("gate_policy", None)
+    payload["records"][1].pop("gate_policy_hash", None)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    reloaded = history.load()
+    assert len(reloaded.records) == 2

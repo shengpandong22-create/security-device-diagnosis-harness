@@ -245,6 +245,10 @@ class ShadowHistoryRecord(BaseModel):
     gate_allowed: bool | None = None
     blocked_by_safety: bool = False
     blocking_reasons: tuple[str, ...] = ()
+    # 实际使用的 ShadowGatePolicy 快照与其规范化哈希。
+    # 旧格式（schema 1.0.0 早期记录）该字段为 None，加载时按默认策略复算。
+    gate_policy: dict[str, Any] | None = None
+    gate_policy_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class ShadowHistoryDocument(BaseModel):
@@ -252,6 +256,10 @@ class ShadowHistoryDocument(BaseModel):
 
     schema_version: str = "1.0.0"
     records: tuple[ShadowHistoryRecord, ...] = ()
+
+
+#: 当前受支持的影子历史 schema 版本；其它版本明确拒绝（fail-closed）。
+SUPPORTED_SHADOW_SCHEMA_VERSIONS: frozenset[str] = frozenset({"1.0.0"})
 
 
 class JsonShadowHistory:
@@ -275,6 +283,8 @@ class JsonShadowHistory:
     @staticmethod
     def _validate_document(document: ShadowHistoryDocument) -> None:
         """重算不可变字段，拒绝格式合法但被篡改的历史与 Gate 结论。"""
+        if document.schema_version not in SUPPORTED_SHADOW_SCHEMA_VERSIONS:
+            raise ValueError("不支持的影子历史 schema_version")
         seen: dict[str, ShadowRunSummary] = {}
         for index, record in enumerate(document.records):
             summary = record.summary
@@ -303,7 +313,21 @@ class JsonShadowHistory:
                 baseline = seen.get(record.baseline_run_id or "")
                 if baseline is None:
                     raise ValueError("Candidate 引用了不存在或未来的 Baseline")
-                report = compare_shadow_runs(baseline, summary)
+                if record.gate_policy_hash is not None:
+                    if record.gate_policy is None:
+                        raise ValueError("Gate 策略哈希必须绑定策略快照")
+                    if (
+                        sha256_text(canonical_json(record.gate_policy))
+                        != record.gate_policy_hash
+                    ):
+                        raise ValueError("Gate 策略快照与哈希不一致")
+                # 旧格式（无策略快照）按默认策略复算；新格式按记录策略复算。
+                policy = (
+                    ShadowGatePolicy.model_validate(record.gate_policy)
+                    if record.gate_policy is not None
+                    else None
+                )
+                report = compare_shadow_runs(baseline, summary, policy)
                 if (
                     record.gate_allowed != report.allowed
                     or record.blocked_by_safety != report.blocked_by_safety
@@ -338,12 +362,15 @@ class JsonShadowHistory:
             if persisted is None or persisted.run_content_hash != expected_hash:
                 raise ShadowHistoryError("Baseline 必须已入历史且内容哈希一致")
             report = compare_shadow_runs(persisted, summary, policy)
+            policy_snapshot = (policy or ShadowGatePolicy()).model_dump(mode="json")
             record = ShadowHistoryRecord(
                 summary=summary,
                 baseline_run_id=persisted.run_id,
                 gate_allowed=report.allowed,
                 blocked_by_safety=report.blocked_by_safety,
                 blocking_reasons=report.blocking_reasons,
+                gate_policy=policy_snapshot,
+                gate_policy_hash=sha256_text(canonical_json(policy_snapshot)),
             )
         updated = document.model_copy(update={"records": (*document.records, record)})
         self._write(updated)
