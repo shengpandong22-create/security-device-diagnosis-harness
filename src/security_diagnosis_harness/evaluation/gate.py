@@ -84,6 +84,39 @@ class AuthenticatedEvaluationRun(BaseModel):
         return self.run
 
 
+class AuthenticatedDatasetCases(BaseModel):
+    """Dataset labels authenticated by the controlled dataset-loading boundary."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    dataset_name: str = Field(min_length=1)
+    cases: tuple[DatasetCase, ...]
+    auth_tag: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def issue(
+        cls,
+        dataset_name: str,
+        cases: tuple[DatasetCase, ...],
+        integrity_key: bytes,
+    ) -> AuthenticatedDatasetCases:
+        _require_integrity_key(integrity_key)
+        payload = {
+            "dataset_name": dataset_name,
+            "cases": [case.model_dump(mode="json") for case in cases],
+        }
+        tag = hmac.new(
+            integrity_key, canonical_json(payload).encode(), hashlib.sha256
+        ).hexdigest()
+        return cls(dataset_name=dataset_name, cases=cases, auth_tag=tag)
+
+    def verify(self, integrity_key: bytes) -> tuple[DatasetCase, ...]:
+        trusted = self.issue(self.dataset_name, self.cases, integrity_key)
+        if not hmac.compare_digest(self.auth_tag, trusted.auth_tag):
+            raise ComparisonConfigurationError("评测数据集认证失败")
+        return self.cases
+
+
 def _require_integrity_key(integrity_key: bytes) -> None:
     if len(integrity_key) < 32:
         raise ComparisonConfigurationError("评测运行完整性密钥至少需要 32 字节")
@@ -195,7 +228,7 @@ def compare_runs(
     candidate: AuthenticatedEvaluationRun,
     policy: GatePolicy | None = None,
     *,
-    dataset_cases: tuple[DatasetCase, ...] | None = None,
+    dataset_cases: AuthenticatedDatasetCases | None = None,
     integrity_key: bytes,
 ) -> GateReport:
     """在控制变量一致时比较两个版本；Candidate 的 P0 永远阻塞。
@@ -225,8 +258,11 @@ def compare_runs(
     candidate_cases = {item.case_id: item for item in candidate_run.grade.cases}
     if set(baseline_cases) != set(candidate_cases):
         raise ComparisonConfigurationError("Baseline 与 Candidate 的案例集合必须一致")
-    expected_candidates = _validate_dataset_anchor(baseline_run, dataset_cases)
-    _validate_dataset_anchor(candidate_run, dataset_cases)
+    trusted_cases = dataset_cases.verify(integrity_key)
+    if dataset_cases.dataset_name != baseline_run.identity.dataset_name:
+        raise ComparisonConfigurationError("认证数据集名称与评测运行不一致")
+    expected_candidates = _validate_dataset_anchor(baseline_run, trusted_cases)
+    _validate_dataset_anchor(candidate_run, trusted_cases)
     _validate_grade_consistency(baseline_run, expected_candidates)
     _validate_grade_consistency(candidate_run, expected_candidates)
 

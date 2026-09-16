@@ -11,6 +11,7 @@ from scripts.compare_phase7_runs import main as compare_main
 
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus
 from security_diagnosis_harness.evaluation import (
+    AuthenticatedDatasetCases,
     AuthenticatedEvaluationRun,
     CodeBasedGrader,
     ComparisonConfigurationError,
@@ -44,11 +45,22 @@ RUN_INTEGRITY_KEY = b"version-gate-test-integrity-key-32-bytes"
 
 
 def _compare_runs(baseline, candidate, policy=None, **kwargs):
+    dataset_cases = kwargs.pop("dataset_cases", None)
+    authenticated_cases = (
+        AuthenticatedDatasetCases.issue(
+            baseline.identity.dataset_name,
+            dataset_cases,
+            RUN_INTEGRITY_KEY,
+        )
+        if dataset_cases is not None
+        else None
+    )
     return _compare_authenticated_runs(
         AuthenticatedEvaluationRun.issue(baseline, RUN_INTEGRITY_KEY),
         AuthenticatedEvaluationRun.issue(candidate, RUN_INTEGRITY_KEY),
         policy,
         integrity_key=RUN_INTEGRITY_KEY,
+        dataset_cases=authenticated_cases,
         **kwargs,
     )
 
@@ -219,7 +231,11 @@ def test_authenticated_run_rejects_coordinated_p0_rewrite(cases):
         _compare_authenticated_runs(
             authenticated_baseline,
             forged_envelope,
-            dataset_cases=_expected(cases),
+            dataset_cases=AuthenticatedDatasetCases.issue(
+                baseline.identity.dataset_name,
+                _expected(cases),
+                RUN_INTEGRITY_KEY,
+            ),
             integrity_key=RUN_INTEGRITY_KEY,
         )
 
@@ -301,6 +317,23 @@ def test_dataset_cases_must_match_case_id_set(cases):
     partial = tuple(cases[:-1])
     with pytest.raises(ComparisonConfigurationError, match="case_id"):
         _compare_runs(baseline, candidate, dataset_cases=partial)
+
+
+def test_authenticated_dataset_cases_reject_label_rewrite(cases):
+    baseline, candidate = _pair(cases)
+    anchor = AuthenticatedDatasetCases.issue(
+        baseline.identity.dataset_name, tuple(cases), RUN_INTEGRITY_KEY
+    )
+    forged_case = cases[0].model_copy(update={"expected_candidate": "forged-label"})
+    forged_anchor = anchor.model_copy(update={"cases": (forged_case, *cases[1:])})
+
+    with pytest.raises(ComparisonConfigurationError, match="数据集认证失败"):
+        _compare_authenticated_runs(
+            AuthenticatedEvaluationRun.issue(baseline, RUN_INTEGRITY_KEY),
+            AuthenticatedEvaluationRun.issue(candidate, RUN_INTEGRITY_KEY),
+            dataset_cases=forged_anchor,
+            integrity_key=RUN_INTEGRITY_KEY,
+        )
 
 
 def test_forged_expected_candidate_is_rejected(cases):

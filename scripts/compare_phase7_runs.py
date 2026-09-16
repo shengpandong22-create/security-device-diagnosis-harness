@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from security_diagnosis_harness.evaluation import (
+    AuthenticatedDatasetCases,
     AuthenticatedEvaluationRun,
     ComparisonConfigurationError,
     DatasetRegistry,
@@ -51,7 +52,9 @@ def main() -> int:
         report = compare_runs(
             baseline,
             candidate,
-            dataset_cases=dataset_cases,
+            dataset_cases=AuthenticatedDatasetCases.issue(
+                candidate.run.identity.dataset_name, dataset_cases, integrity_key
+            ),
             integrity_key=integrity_key,
         )
         json_path, markdown_path = write_gate_report(report, args.output_dir)

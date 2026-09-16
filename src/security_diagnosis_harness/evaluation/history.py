@@ -15,6 +15,7 @@ from security_diagnosis_harness.domain.redaction import redact_mapping
 from security_diagnosis_harness.evaluation.dataset import DatasetCase, DatasetSplit
 from security_diagnosis_harness.evaluation.gate import (
     CORE_METRICS,
+    AuthenticatedDatasetCases,
     AuthenticatedEvaluationRun,
     ComparisonConfigurationError,
     EvaluationRun,
@@ -334,7 +335,15 @@ class JsonEvaluationHistory:
                 AuthenticatedEvaluationRun.issue(baseline, self._integrity_key),
                 AuthenticatedEvaluationRun.issue(run, self._integrity_key),
                 policy,
-                dataset_cases=dataset_cases,
+                dataset_cases=(
+                    AuthenticatedDatasetCases.issue(
+                        run.identity.dataset_name,
+                        dataset_cases,
+                        self._integrity_key,
+                    )
+                    if dataset_cases is not None
+                    else None
+                ),
                 integrity_key=self._integrity_key,
             )
             policy_snapshot = (policy or GatePolicy()).model_dump(mode="json")
