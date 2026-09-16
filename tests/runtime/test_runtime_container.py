@@ -239,6 +239,33 @@ def test_memory_closed_container_rejects_entry_points():
         runtime.ensure_open()
 
 
+def test_held_runtime_entry_points_are_revoked_after_close():
+    from security_diagnosis_harness.runtime import RuntimeClosedError
+
+    runtime = build_runtime_container(RuntimeSettings(repository_mode="memory"))
+    repository = runtime.repository
+    audit_repository = runtime.audit_repository
+    knowledge_repository = runtime.knowledge_repository
+    knowledge_service = runtime.knowledge_service
+    runner = runtime.runner
+    registry = runtime.registry
+    gateway = runtime.gateway
+    calls = (
+        repository.list,
+        audit_repository.list_all,
+        knowledge_repository.list_all,
+        knowledge_service.generate_and_save,
+        runner.run,
+        registry.names,
+        gateway.query_status,
+    )
+    runtime.close()
+
+    for call in calls:
+        with pytest.raises(RuntimeClosedError):
+            call()
+
+
 def test_sqlite_session_factory_rejects_after_close(tmp_path: Path):
     from security_diagnosis_harness.runtime import RuntimeClosedError
 

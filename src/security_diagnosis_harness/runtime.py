@@ -440,6 +440,43 @@ class _ClosedAwareSessionFactory:
         return self._factory(*args, **kwargs)
 
 
+class _RuntimeLifecycle:
+    """Shared revocation state for every object exposed by a RuntimeContainer."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def ensure_open(self) -> None:
+        if self.closed:
+            raise RuntimeClosedError()
+
+
+class _ClosedAwareProxy:
+    """Revoke an already-held formal runtime entry point after container close."""
+
+    def __init__(self, target: Any, lifecycle: _RuntimeLifecycle) -> None:
+        object.__setattr__(self, "_target", target)
+        object.__setattr__(self, "_lifecycle", lifecycle)
+
+    @property
+    def __class__(self) -> type[Any]:
+        """Preserve concrete and runtime-checkable Protocol introspection."""
+        return object.__getattribute__(self, "_target").__class__
+
+    def __getattr__(self, name: str) -> Any:
+        lifecycle = object.__getattribute__(self, "_lifecycle")
+        lifecycle.ensure_open()
+        value = getattr(object.__getattribute__(self, "_target"), name)
+        if not callable(value):
+            return value
+
+        def guarded(*args: Any, **kwargs: Any) -> Any:
+            lifecycle.ensure_open()
+            return value(*args, **kwargs)
+
+        return guarded
+
+
 @dataclass
 class RuntimeContainer:
     """正式本地运行装配结果。
@@ -472,6 +509,7 @@ class RuntimeContainer:
     _asset_catalog: InMemoryDeviceAssetCatalog
     _adapter_registry: InMemoryDeviceAdapterRegistry
     _capability_support: RuntimeCapabilitySupport
+    _lifecycle: _RuntimeLifecycle
     _closed: bool = False
 
     # ------------------------------------------------------ 只读能力装配视图
@@ -493,8 +531,7 @@ class RuntimeContainer:
     # ------------------------------------------------------ 关闭后受控拒绝入口
     def ensure_open(self) -> None:
         """容器关闭后，正式入口继续操作时稳定拒绝。"""
-        if self._closed:
-            raise RuntimeClosedError()
+        self._lifecycle.ensure_open()
 
     @property
     def service(self) -> SecurityDiagnosisApplicationService:
@@ -518,6 +555,7 @@ class RuntimeContainer:
             return
         self._closed = True
         self.authorization.close()
+        self._lifecycle.closed = True
         if isinstance(self.session_factory, _ClosedAwareSessionFactory):
             self.session_factory.mark_closed()
         if self.engine is not None:
@@ -702,26 +740,34 @@ def build_runtime_container(
     consistency_scanner = ConsistencyScanner(
         repository, knowledge_repository, audit_repository
     )
+    lifecycle = _RuntimeLifecycle()
+
+    def exposed(value: Any) -> Any:
+        return _ClosedAwareProxy(value, lifecycle)
+
     return RuntimeContainer(
         settings=resolved,
-        _service=service,
-        _repository=repository,
+        _service=exposed(service),
+        _repository=exposed(repository),
         engine=engine,
         session_factory=session_factory,
-        runner=runner,
-        registry=resolved_registry,
-        _gateway=gateway,
+        runner=exposed(runner),
+        registry=exposed(resolved_registry),
+        _gateway=exposed(gateway),
+        # DeviceAuthorizationSession owns its own terminal close state and must
+        # remain inspectable so callers can observe that terminal state.
         authorization=resolved_authorization,
         llm=llm,
         citation_policy=citation_policy,
-        audit_repository=audit_repository,
-        knowledge_repository=knowledge_repository,
-        audited_write=audited_write,
-        knowledge_service=knowledge_service,
-        consistency_scanner=consistency_scanner,
-        _asset_catalog=asset_catalog,
-        _adapter_registry=adapter_registry,
+        audit_repository=exposed(audit_repository),
+        knowledge_repository=exposed(knowledge_repository),
+        audited_write=exposed(audited_write),
+        knowledge_service=exposed(knowledge_service),
+        consistency_scanner=exposed(consistency_scanner),
+        _asset_catalog=exposed(asset_catalog),
+        _adapter_registry=exposed(adapter_registry),
         _capability_support=capability_support,
+        _lifecycle=lifecycle,
     )
 
 
