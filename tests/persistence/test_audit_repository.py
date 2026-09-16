@@ -272,7 +272,6 @@ def test_in_memory_audited_write_rollback_preserves_other_writes():
     lock = RLock()
     diagnoses = InMemoryDiagnosisRepository(lock)
     knowledge = InMemoryKnowledgeRepository(lock)
-    audit = InMemoryAuditRepository(lock)
 
     direct = build_confirmed_case("diag-direct")
     diagnoses.save(direct)
