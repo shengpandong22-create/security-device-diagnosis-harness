@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -72,7 +73,11 @@ def main() -> int:
     baseline = _run(cases, "a" * 40, mismatch=False)
     candidate = _run(cases, "b" * 40, mismatch=True)
     with TemporaryDirectory(prefix="phase8c-") as directory:
-        history = JsonEvaluationHistory(Path(directory) / "history.json")
+        # The deterministic offline regression uses an isolated, non-production key.
+        integrity_key = hashlib.sha256(b"phase8-offline-history-regression").digest()
+        history = JsonEvaluationHistory(
+            Path(directory) / "history.json", integrity_key=integrity_key
+        )
         history.append(baseline)
         candidate_record = history.append(
             candidate, baseline=baseline, dataset_cases=cases

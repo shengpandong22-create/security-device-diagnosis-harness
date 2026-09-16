@@ -25,6 +25,11 @@ from security_diagnosis_harness.evaluation import (
 
 ROOT = Path(__file__).resolve().parents[2]
 DATASET_ROOT = ROOT / "datasets/security-diagnosis/1.0.0"
+HISTORY_INTEGRITY_KEY = b"history-test-integrity-key-32-bytes-minimum"
+
+
+def _history(path: Path) -> JsonEvaluationHistory:
+    return JsonEvaluationHistory(path, integrity_key=HISTORY_INTEGRITY_KEY)
 
 
 @pytest.fixture(scope="module")
@@ -91,7 +96,7 @@ def _expected(cases) -> tuple[DatasetCase, ...]:
 
 
 def test_first_run_is_persisted_as_baseline_summary(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     record = history.append(_run(cases, "a" * 40))
     assert record.baseline_run_id is None
     assert record.gate_allowed is None
@@ -100,7 +105,7 @@ def test_first_run_is_persisted_as_baseline_summary(tmp_path, cases):
 
 def test_history_json_excludes_cases_findings_traces_and_environment_values(tmp_path, cases):
     path = tmp_path / "history.json"
-    JsonEvaluationHistory(path).append(_run(cases, "a" * 40))
+    _history(path).append(_run(cases, "a" * 40))
     raw = path.read_text(encoding="utf-8")
     for forbidden in ('"cases"', '"findings"', '"tool_calls"', '"evidence"', '"grade"'):
         assert forbidden not in raw
@@ -109,7 +114,7 @@ def test_history_json_excludes_cases_findings_traces_and_environment_values(tmp_
 
 
 def test_second_run_requires_persisted_matching_baseline(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     baseline = _run(cases, "a" * 40)
     history.append(baseline)
     with pytest.raises(EvaluationHistoryError, match="必须提供"):
@@ -120,7 +125,7 @@ def test_second_run_requires_persisted_matching_baseline(tmp_path, cases):
 
 
 def test_baseline_run_id_with_changed_content_hash_is_rejected(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     baseline = _run(cases, "a" * 40)
     history.append(baseline)
     changed = baseline.model_copy(
@@ -135,7 +140,7 @@ def test_baseline_run_id_with_changed_content_hash_is_rejected(tmp_path, cases):
 
 
 def test_duplicate_run_id_is_rejected(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     run = _run(cases, "a" * 40)
     history.append(run)
     with pytest.raises(EvaluationHistoryError, match="已存在"):
@@ -154,7 +159,7 @@ def test_duplicate_run_id_is_rejected(tmp_path, cases):
     ],
 )
 def test_incomparable_runs_never_enter_trend(tmp_path, cases, changes):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     baseline = _run(cases, "a" * 40)
     history.append(baseline)
     candidate = _run(cases, "b" * 40, **changes)
@@ -165,7 +170,7 @@ def test_incomparable_runs_never_enter_trend(tmp_path, cases, changes):
 
 
 def test_regression_reuses_phase7_gate_and_is_recorded(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40, wrong=True)
     history.append(baseline)
@@ -176,7 +181,7 @@ def test_regression_reuses_phase7_gate_and_is_recorded(tmp_path, cases):
 
 
 def test_p0_is_recomputed_from_cases_and_blocks_trend_run(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40, p0=True)
     tampered_metrics = candidate.grade.metrics.model_copy(update={"p0_failure_count": 0})
@@ -191,7 +196,7 @@ def test_p0_is_recomputed_from_cases_and_blocks_trend_run(tmp_path, cases):
 
 
 def test_trend_contains_only_core_aggregate_metrics(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40)
     history.append(baseline)
@@ -205,7 +210,7 @@ def test_trend_contains_only_core_aggregate_metrics(tmp_path, cases):
 
 
 def test_trend_report_is_atomic_and_contains_lineage(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40)
     history.append(baseline)
@@ -220,9 +225,9 @@ def test_invalid_or_mixed_history_is_rejected(tmp_path, cases):
     path = tmp_path / "history.json"
     path.write_text("not-json", encoding="utf-8")
     with pytest.raises(EvaluationHistoryError, match="协议"):
-        JsonEvaluationHistory(path).load()
+        _history(path).load()
 
-    history = JsonEvaluationHistory(path)
+    history = _history(path)
     first = _run(cases, "a" * 40)
     path.unlink()
     history.append(first)
@@ -234,13 +239,13 @@ def test_invalid_or_mixed_history_is_rejected(tmp_path, cases):
         }
     })
     path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(EvaluationHistoryError, match="comparison_fingerprint"):
+    with pytest.raises(EvaluationHistoryError, match="认证失败"):
         history.trend()
 
 
 def _two_record_history(tmp_path, cases) -> tuple[JsonEvaluationHistory, object]:
     path = tmp_path / "history.json"
-    history = JsonEvaluationHistory(path)
+    history = _history(path)
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40)
     history.append(baseline)
@@ -249,7 +254,7 @@ def _two_record_history(tmp_path, cases) -> tuple[JsonEvaluationHistory, object]
 
 
 def test_load_rejects_duplicate_run_id(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     history.append(_run(cases, "a" * 40))
     data = json.loads(history._path.read_text(encoding="utf-8"))
     data["records"].append(data["records"][0])
@@ -275,7 +280,7 @@ def test_load_rejects_tampered_gate_conclusion(tmp_path, cases):
     data["records"][1]["gate_allowed"] = not data["records"][1]["gate_allowed"]
     path.write_text(json.dumps(data), encoding="utf-8")
 
-    with pytest.raises(EvaluationHistoryError, match="Gate 结论"):
+    with pytest.raises(EvaluationHistoryError, match="认证失败"):
         history.load()
 
 
@@ -285,15 +290,15 @@ def test_load_rejects_tampered_policy_snapshot(tmp_path, cases):
     data["records"][1]["gate_policy"]["tool_recall_tolerance"] = 1.0
     path.write_text(json.dumps(data), encoding="utf-8")
 
-    with pytest.raises(EvaluationHistoryError, match="策略快照"):
+    with pytest.raises(EvaluationHistoryError, match="认证失败"):
         history.load()
 
 
 def test_load_rejects_unsupported_schema_version(tmp_path, cases):
-    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history = _history(tmp_path / "history.json")
     history.append(_run(cases, "a" * 40))
     data = json.loads(history._path.read_text(encoding="utf-8"))
-    data["schema_version"] = "3.0.0"
+    data["schema_version"] = "4.0.0"
     history._path.write_text(json.dumps(data), encoding="utf-8")
 
     with pytest.raises(EvaluationHistoryError, match="schema_version"):
@@ -306,7 +311,7 @@ def test_load_rejects_tampered_summary_metrics(tmp_path, cases):
     data["records"][1]["summary"]["metrics"]["candidate_accuracy"] = 0.123
     path.write_text(json.dumps(data), encoding="utf-8")
 
-    with pytest.raises(EvaluationHistoryError, match="summary_content_hash"):
+    with pytest.raises(EvaluationHistoryError, match="认证失败"):
         history.load()
 
 
@@ -318,7 +323,7 @@ def test_load_recomputes_gate_from_valid_summary(tmp_path, cases):
     record["gate_allowed"] = False
     path.write_text(json.dumps(data), encoding="utf-8")
 
-    with pytest.raises(EvaluationHistoryError, match="重算结果"):
+    with pytest.raises(EvaluationHistoryError, match="认证失败"):
         history.load()
 
 
@@ -329,13 +334,13 @@ def test_model_copy_cannot_bypass_sensitive_identity_validation(tmp_path, cases)
     )
     unsafe_run = run.model_copy(update={"identity": unsafe_identity})
     with pytest.raises(ValueError, match="敏感"):
-        JsonEvaluationHistory(tmp_path / "history.json").append(unsafe_run)
+        _history(tmp_path / "history.json").append(unsafe_run)
     assert not (tmp_path / "history.json").exists()
 
 
 def test_loaded_summary_rejects_sensitive_model_parameters(tmp_path, cases):
     path = tmp_path / "history.json"
-    history = JsonEvaluationHistory(path)
+    history = _history(path)
     history.append(_run(cases, "a" * 40))
     data = json.loads(path.read_text(encoding="utf-8"))
     data["records"][0]["summary"]["model_parameters"] = {
@@ -344,3 +349,4 @@ def test_loaded_summary_rejects_sensitive_model_parameters(tmp_path, cases):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(EvaluationHistoryError, match="协议"):
         history.load()
+

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -110,18 +112,26 @@ class EvaluationHistoryRecord(BaseModel):
     # 非敏感 GatePolicy 快照与其规范化哈希；用于加载期复验策略未被篡改。
     gate_policy: dict[str, Any] | None = None
     gate_policy_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    record_auth_tag: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class EvaluationHistoryDocument(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: str = "2.0.0"
+    schema_version: str = "3.0.0"
     records: tuple[EvaluationHistoryRecord, ...] = ()
 
 
 #: 当前受支持的评测历史 schema 版本。其它版本明确拒绝（fail-closed），
 #: 不做隐式兼容，避免"格式合法但语义不同"的历史被静默接受。
-SUPPORTED_HISTORY_SCHEMA_VERSIONS: frozenset[str] = frozenset({"2.0.0"})
+SUPPORTED_HISTORY_SCHEMA_VERSIONS: frozenset[str] = frozenset({"3.0.0"})
+
+
+def _record_auth_tag(record: EvaluationHistoryRecord, integrity_key: bytes) -> str:
+    payload = canonical_json(
+        record.model_dump(mode="json", exclude={"record_auth_tag"})
+    ).encode()
+    return hmac.new(integrity_key, payload, hashlib.sha256).hexdigest()
 
 
 def _summary_hash(value: EvaluationRunSummary | dict[str, Any]) -> str:
@@ -166,13 +176,18 @@ def _recompute_summary_gate(
     return not reasons, blocked_by_p0, tuple(reasons)
 
 
-def _validate_document(document: EvaluationHistoryDocument) -> EvaluationHistoryDocument:
+def _validate_document(
+    document: EvaluationHistoryDocument, integrity_key: bytes
+) -> EvaluationHistoryDocument:
     """复验历史文档的结构不变量；拒绝被篡改或顺序错误的历史。"""
     if document.schema_version not in SUPPORTED_HISTORY_SCHEMA_VERSIONS:
         raise EvaluationHistoryError("不支持的评测历史 schema_version")
     seen: set[str] = set()
     summaries: dict[str, EvaluationRunSummary] = {}
     for record in document.records:
+        expected_auth_tag = _record_auth_tag(record, integrity_key)
+        if not hmac.compare_digest(record.record_auth_tag, expected_auth_tag):
+            raise EvaluationHistoryError("评测历史记录认证失败")
         summary = record.summary
         if summary.comparison_fingerprint != sha256_text(
             canonical_json(_controlled_summary_values(summary))
@@ -267,8 +282,11 @@ class EvaluationTrendReport(BaseModel):
 class JsonEvaluationHistory:
     """Atomic local history repository containing summaries, never full runs."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, integrity_key: bytes) -> None:
+        if len(integrity_key) < 32:
+            raise ValueError("评测历史完整性密钥至少需要 32 字节")
         self._path = path
+        self._integrity_key = bytes(integrity_key)
 
     def load(self) -> EvaluationHistoryDocument:
         if not self._path.exists():
@@ -279,7 +297,7 @@ class JsonEvaluationHistory:
             )
         except (OSError, ValueError) as exc:
             raise EvaluationHistoryError("评测历史文件无法通过协议校验") from exc
-        return _validate_document(document)
+        return _validate_document(document, self._integrity_key)
 
     def append(
         self,
@@ -300,7 +318,10 @@ class JsonEvaluationHistory:
             raise EvaluationHistoryError("首个历史记录不能声明 Baseline")
 
         if baseline is None:
-            record = EvaluationHistoryRecord(summary=EvaluationRunSummary.from_run(run))
+            record = EvaluationHistoryRecord(
+                summary=EvaluationRunSummary.from_run(run),
+                record_auth_tag="0" * 64,
+            )
         else:
             persisted = summaries.get(baseline.run_id)
             if persisted is None or persisted.run_content_hash != baseline.content_hash():
@@ -320,7 +341,11 @@ class JsonEvaluationHistory:
                 blocking_reasons=gate.blocking_reasons,
                 gate_policy=policy_snapshot,
                 gate_policy_hash=sha256_text(canonical_json(policy_snapshot)),
+                record_auth_tag="0" * 64,
             )
+        record = record.model_copy(
+            update={"record_auth_tag": _record_auth_tag(record, self._integrity_key)}
+        )
         updated = document.model_copy(update={"records": (*document.records, record)})
         self._write(updated)
         return record
