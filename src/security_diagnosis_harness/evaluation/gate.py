@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from math import isclose
 from pathlib import Path
@@ -158,8 +159,22 @@ def compare_runs(
     baseline: EvaluationRun,
     candidate: EvaluationRun,
     policy: GatePolicy | None = None,
+    *,
+    expected_candidates: Mapping[str, str] | None = None,
 ) -> GateReport:
-    """在控制变量一致时比较两个版本；Candidate 的 P0 永远阻塞。"""
+    """在控制变量一致时比较两个版本；Candidate 的 P0 永远阻塞。
+
+    ``expected_candidates`` 是版本门禁的**可信锚**：必须由调用方从受控
+    DatasetCase 集合显式传入（``case_id -> expected_candidate``）。门禁不信任评分
+    产物自带的 ``CaseGrade.expected_candidate``，而是用它交叉复核并重算
+    ``candidate_correct`` / ``candidate_accuracy`` / ``candidate_macro_f1``。
+    缺失时 fail-closed（禁止隐式信任或搜索任意路径）。
+    """
+    if expected_candidates is None:
+        raise ComparisonConfigurationError(
+            "版本门禁必须显式提供受控 expected_candidates（来自 DatasetCase），"
+            "禁止信任评分产物自带的 expected_candidate"
+        )
     if baseline.identity.controlled_variables() != candidate.identity.controlled_variables():
         raise ComparisonConfigurationError("除 code_commit 外的评测变量必须完全一致")
     if baseline.run_id == candidate.run_id:
@@ -170,8 +185,8 @@ def compare_runs(
     candidate_cases = {item.case_id: item for item in candidate.grade.cases}
     if set(baseline_cases) != set(candidate_cases):
         raise ComparisonConfigurationError("Baseline 与 Candidate 的案例集合必须一致")
-    _validate_grade_consistency(baseline)
-    _validate_grade_consistency(candidate)
+    _validate_grade_consistency(baseline, expected_candidates)
+    _validate_grade_consistency(candidate, expected_candidates)
 
     policy = policy or GatePolicy()
     deltas = tuple(
@@ -251,12 +266,20 @@ _AVERAGED_SUITE_FIELDS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _validate_grade_consistency(run: EvaluationRun) -> None:
-    """拒绝逐案例与汇总指标不一致的外部评测产物。"""
+def _validate_grade_consistency(
+    run: EvaluationRun,
+    expected_candidates: Mapping[str, str],
+) -> None:
+    """拒绝逐案例与汇总指标不一致、或与受控数据集不一致的外部评测产物。"""
     cases = run.grade.cases
     metrics = run.grade.metrics
     if metrics.total != len(cases):
         raise ComparisonConfigurationError(f"{run.run_id} 的 total 与逐案例数量不一致")
+
+    if set(expected_candidates) != {case.case_id for case in cases}:
+        raise ComparisonConfigurationError(
+            f"{run.run_id} 的 case_id 集合与受控数据集不一致"
+        )
 
     for case in cases:
         expected_p0 = any(item.level.value == "p0" for item in case.findings)
@@ -265,7 +288,13 @@ def _validate_grade_consistency(run: EvaluationRun) -> None:
             raise ComparisonConfigurationError(
                 f"{run.run_id} 的案例 {case.case_id} 状态与 findings 不一致"
             )
-        expected_correct = float(case.expected_candidate == case.predicted_candidate)
+        trusted_expected = expected_candidates[case.case_id]
+        if case.expected_candidate != trusted_expected:
+            raise ComparisonConfigurationError(
+                f"{run.run_id} 的案例 {case.case_id} expected_candidate 与受控数据集不一致"
+            )
+        # candidate_correct 必须由受控 expected 与产物 predicted 重算，而非自报。
+        expected_correct = float(case.predicted_candidate == trusted_expected)
         _require_metric(
             run.run_id,
             f"{case.case_id}.candidate_correct",
@@ -278,9 +307,10 @@ def _validate_grade_consistency(run: EvaluationRun) -> None:
     for suite_field, case_field in _AVERAGED_SUITE_FIELDS:
         expected = _average(float(getattr(item.metrics, case_field)) for item in cases)
         _require_metric(run.run_id, suite_field, float(getattr(metrics, suite_field)), expected)
+    # candidate_macro_f1 必须由受控 expected 与产物 predicted 重算。
     expected_macro_f1 = _macro_f1(
-        [item.expected_candidate for item in cases],
-        [item.predicted_candidate for item in cases],
+        [expected_candidates[case.case_id] for case in cases],
+        [case.predicted_candidate for case in cases],
     )
     _require_metric(
         run.run_id, "candidate_macro_f1", metrics.candidate_macro_f1, expected_macro_f1

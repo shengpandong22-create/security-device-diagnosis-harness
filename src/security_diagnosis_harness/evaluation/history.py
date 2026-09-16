@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -177,6 +178,7 @@ class JsonEvaluationHistory:
         *,
         baseline: EvaluationRun | None = None,
         policy: GatePolicy | None = None,
+        expected_candidates: Mapping[str, str] | None = None,
     ) -> EvaluationHistoryRecord:
         document = self.load()
         summaries = {record.summary.run_id: record.summary for record in document.records}
@@ -197,7 +199,9 @@ class JsonEvaluationHistory:
             changes = comparison_changes(baseline, run)
             if changes:
                 raise TrendComparabilityError(changes)
-            gate = compare_runs(baseline, run, policy)
+            gate = compare_runs(
+                baseline, run, policy, expected_candidates=expected_candidates
+            )
             record = EvaluationHistoryRecord(
                 summary=EvaluationRunSummary.from_run(run),
                 baseline_run_id=baseline.run_id,

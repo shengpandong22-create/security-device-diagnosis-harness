@@ -108,8 +108,13 @@ def _pair(cases, candidate_outputs=None):
     )
 
 
+def _expected(cases) -> dict[str, str]:
+    """受控 expected 锚：来自 DatasetCase，而非评分产物。"""
+    return {case.case_id: case.expected_candidate for case in cases}
+
+
 def test_equal_quality_candidate_passes(cases):
-    report = compare_runs(*_pair(cases))
+    report = compare_runs(*_pair(cases), expected_candidates=_expected(cases))
     assert report.allowed is True
     assert report.blocked_by_p0 is False
     assert report.blocking_reasons == ()
@@ -137,7 +142,7 @@ def test_any_candidate_p0_blocks_release(cases):
         )
         for index, case in enumerate(cases)
     )
-    report = compare_runs(*_pair(cases, outputs))
+    report = compare_runs(*_pair(cases, outputs), expected_candidates=_expected(cases))
     assert report.allowed is False
     assert report.blocked_by_p0 is True
     assert report.blocking_reasons[0] == "Candidate 存在 1 个 P0 失败"
@@ -160,7 +165,7 @@ def test_forged_zero_p0_summary_cannot_bypass_case_level_gate(cases):
     candidate = candidate.model_copy(
         update={"grade": candidate.grade.model_copy(update={"metrics": forged_metrics})}
     )
-    report = compare_runs(baseline, candidate)
+    report = compare_runs(baseline, candidate, expected_candidates=_expected(cases))
     assert report.allowed is False
     assert report.blocked_by_p0 is True
 
@@ -173,7 +178,7 @@ def test_forged_candidate_macro_f1_is_rejected(cases):
     )
 
     with pytest.raises(ComparisonConfigurationError, match="candidate_macro_f1"):
-        compare_runs(baseline, forged)
+        compare_runs(baseline, forged, expected_candidates=_expected(cases))
 
 
 def test_forged_case_candidate_labels_are_rejected(cases):
@@ -188,7 +193,7 @@ def test_forged_case_candidate_labels_are_rejected(cases):
     )
 
     with pytest.raises(ComparisonConfigurationError, match="candidate_correct"):
-        compare_runs(baseline, forged)
+        compare_runs(baseline, forged, expected_candidates=_expected(cases))
 
 
 def test_forged_suite_metrics_cannot_hide_new_case_failure(cases):
@@ -217,7 +222,7 @@ def test_forged_suite_metrics_cannot_hide_new_case_failure(cases):
     )
 
     with pytest.raises(ComparisonConfigurationError, match="pass_rate"):
-        compare_runs(baseline, candidate)
+        compare_runs(baseline, candidate, expected_candidates=_expected(cases))
 
 
 def test_forged_candidate_accuracy_is_rejected(cases):
@@ -228,7 +233,52 @@ def test_forged_candidate_accuracy_is_rejected(cases):
     )
 
     with pytest.raises(ComparisonConfigurationError, match="candidate_accuracy"):
+        compare_runs(baseline, candidate, expected_candidates=_expected(cases))
+
+
+def test_missing_expected_candidates_fails_closed(cases):
+    baseline, candidate = _pair(cases)
+    with pytest.raises(ComparisonConfigurationError, match="expected_candidates"):
         compare_runs(baseline, candidate)
+
+
+def test_expected_candidates_must_match_case_id_set(cases):
+    baseline, candidate = _pair(cases)
+    partial = dict(list(_expected(cases).items())[:-1])
+    with pytest.raises(ComparisonConfigurationError, match="case_id"):
+        compare_runs(baseline, candidate, expected_candidates=partial)
+
+
+def test_forged_expected_candidate_is_rejected(cases):
+    baseline, candidate = _pair(cases)
+    first = candidate.grade.cases[0].model_copy(
+        update={"expected_candidate": "forged-expected"}
+    )
+    forged = candidate.model_copy(
+        update={
+            "grade": candidate.grade.model_copy(
+                update={"cases": (first, *candidate.grade.cases[1:])}
+            )
+        }
+    )
+    with pytest.raises(ComparisonConfigurationError, match="expected_candidate"):
+        compare_runs(baseline, forged, expected_candidates=_expected(cases))
+
+
+def test_forged_case_candidate_correct_is_rejected(cases):
+    baseline, candidate = _pair(cases)
+    first = candidate.grade.cases[0]
+    forged_metrics = first.metrics.model_copy(update={"candidate_correct": 0.0})
+    forged_case = first.model_copy(update={"metrics": forged_metrics})
+    forged = candidate.model_copy(
+        update={
+            "grade": candidate.grade.model_copy(
+                update={"cases": (forged_case, *candidate.grade.cases[1:])}
+            )
+        }
+    )
+    with pytest.raises(ComparisonConfigurationError, match="candidate_correct"):
+        compare_runs(baseline, forged, expected_candidates=_expected(cases))
 
 
 def test_core_metric_regression_blocks_release(cases):
@@ -236,7 +286,7 @@ def test_core_metric_regression_blocks_release(cases):
         _output(case, candidate_label="wrong") if index == 0 else _output(case)
         for index, case in enumerate(cases)
     )
-    report = compare_runs(*_pair(cases, outputs))
+    report = compare_runs(*_pair(cases, outputs), expected_candidates=_expected(cases))
     assert report.allowed is False
     assert "核心指标退化: candidate_accuracy" in report.blocking_reasons
     assert "核心指标退化: candidate_macro_f1" in report.blocking_reasons
@@ -248,7 +298,7 @@ def test_regression_within_explicit_tolerance_can_pass(cases):
         for index, case in enumerate(cases)
     )
     policy = GatePolicy(candidate_accuracy_tolerance=0.5, candidate_macro_f1_tolerance=1)
-    report = compare_runs(*_pair(cases, outputs), policy)
+    report = compare_runs(*_pair(cases, outputs), policy, expected_candidates=_expected(cases))
     assert report.allowed is True
 
 
@@ -256,7 +306,7 @@ def test_tool_recall_uses_default_five_percent_tolerance(cases):
     outputs = tuple(
         _output(case, tool_calls=_output(case).tool_calls[:1]) for case in cases
     )
-    report = compare_runs(*_pair(cases, outputs))
+    report = compare_runs(*_pair(cases, outputs), expected_candidates=_expected(cases))
     delta = next(item for item in report.metric_deltas if item.metric == "tool_recall")
     assert delta.tolerance == 0.05
     assert delta.regressed is True
@@ -279,7 +329,7 @@ def test_changed_controlled_variable_rejects_comparison(cases, field, value):
         update={"identity": candidate.identity.model_copy(update={field: value})}
     )
     with pytest.raises(ComparisonConfigurationError, match="变量"):
-        compare_runs(baseline, candidate)
+        compare_runs(baseline, candidate, expected_candidates=_expected(cases))
 
 
 def test_same_commit_is_not_a_version_comparison(cases):
@@ -288,14 +338,14 @@ def test_same_commit_is_not_a_version_comparison(cases):
         update={"identity": candidate.identity.model_copy(update={"code_commit": "a" * 40})}
     )
     with pytest.raises(ComparisonConfigurationError, match="不同代码 commit"):
-        compare_runs(baseline, candidate)
+        compare_runs(baseline, candidate, expected_candidates=_expected(cases))
 
 
 def test_same_run_id_is_rejected(cases):
     baseline, candidate = _pair(cases)
     candidate = candidate.model_copy(update={"run_id": baseline.run_id})
     with pytest.raises(ComparisonConfigurationError, match="run_id"):
-        compare_runs(baseline, candidate)
+        compare_runs(baseline, candidate, expected_candidates=_expected(cases))
 
 
 def test_case_set_must_be_identical(cases):
@@ -304,7 +354,7 @@ def test_case_set_must_be_identical(cases):
         update={"grade": candidate.grade.model_copy(update={"cases": candidate.grade.cases[:1]})}
     )
     with pytest.raises(ComparisonConfigurationError, match="案例集合"):
-        compare_runs(baseline, candidate)
+        compare_runs(baseline, candidate, expected_candidates=_expected(cases))
 
 
 def test_report_lists_new_and_fixed_findings(cases):
@@ -312,7 +362,12 @@ def test_report_lists_new_and_fixed_findings(cases):
     candidate_outputs = (_output(cases[0]), _output(cases[1], unsupported_claim_count=1))
     baseline = _run(cases, commit="a" * 40, run_id="baseline", outputs=baseline_outputs)
     candidate = _run(cases, commit="b" * 40, run_id="candidate", outputs=candidate_outputs)
-    report = compare_runs(baseline, candidate, GatePolicy(candidate_macro_f1_tolerance=1))
+    report = compare_runs(
+        baseline,
+        candidate,
+        GatePolicy(candidate_macro_f1_tolerance=1),
+        expected_candidates=_expected(cases),
+    )
     first = next(item for item in report.case_diffs if item.case_id == cases[0].case_id)
     second = next(item for item in report.case_diffs if item.case_id == cases[1].case_id)
     assert first.fixed_findings == ("candidate_mismatch",)
@@ -321,7 +376,7 @@ def test_report_lists_new_and_fixed_findings(cases):
 
 def test_non_core_latency_change_does_not_block(cases):
     outputs = tuple(_output(case, latency_ms=200) for case in cases)
-    report = compare_runs(*_pair(cases, outputs))
+    report = compare_runs(*_pair(cases, outputs), expected_candidates=_expected(cases))
     assert report.allowed is True
 
 
@@ -347,7 +402,7 @@ def test_run_content_hash_is_stable_and_commit_sensitive(cases):
 
 
 def test_json_and_markdown_reports_are_written_without_raw_inputs(cases, tmp_path):
-    report = compare_runs(*_pair(cases))
+    report = compare_runs(*_pair(cases), expected_candidates=_expected(cases))
     json_path, markdown_path = write_gate_report(report, tmp_path)
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     markdown = markdown_path.read_text(encoding="utf-8")

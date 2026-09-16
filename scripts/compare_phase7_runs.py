@@ -8,10 +8,30 @@ from pathlib import Path
 
 from security_diagnosis_harness.evaluation import (
     ComparisonConfigurationError,
+    DatasetRegistry,
     EvaluationRun,
     compare_runs,
     write_gate_report,
 )
+
+DEFAULT_DATASET_ROOT = Path("datasets")
+
+
+def _load_expected_candidates(run: EvaluationRun, dataset_root: Path) -> dict[str, str]:
+    """从受控数据集加载 expected_candidate 锚；禁止隐式搜索任意路径。
+
+    只按 RunIdentity 的 dataset_name/version/split 在显式 dataset_root 下定位，
+    并与物理目录名、manifest 校验一致；不信任评分产物自带的 expected。
+    """
+    identity = run.identity
+    version_directory = dataset_root / identity.dataset_name / identity.dataset_version
+    if not version_directory.is_dir():
+        raise ComparisonConfigurationError("受控数据集版本目录不存在")
+    registry = DatasetRegistry.load(version_directory)
+    return {
+        case.case_id: case.expected_candidate
+        for case in registry.cases(identity.split, allow_test=True)
+    }
 
 
 def main() -> int:
@@ -19,11 +39,13 @@ def main() -> int:
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, default=Path("demo-output"))
+    parser.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET_ROOT)
     args = parser.parse_args()
     try:
         baseline = EvaluationRun.model_validate_json(args.baseline.read_text(encoding="utf-8"))
         candidate = EvaluationRun.model_validate_json(args.candidate.read_text(encoding="utf-8"))
-        report = compare_runs(baseline, candidate)
+        expected_candidates = _load_expected_candidates(candidate, args.dataset_root)
+        report = compare_runs(baseline, candidate, expected_candidates=expected_candidates)
         json_path, markdown_path = write_gate_report(report, args.output_dir)
     except (OSError, ValueError, ComparisonConfigurationError) as exc:
         print(json.dumps({"allowed": False, "error": str(exc)}, ensure_ascii=False))
