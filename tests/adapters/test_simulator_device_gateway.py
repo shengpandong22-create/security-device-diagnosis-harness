@@ -94,3 +94,48 @@ def test_simulator_preserves_offline_device_fact() -> None:
         SimulatorScenario(scenario_id="offline-fact"),
     )
     assert gateway.query_status("cam-offline-01").online is False
+
+
+def test_delegate_failure_is_recorded_as_failure() -> None:
+    class ExplodingDelegate:
+        def query_status(self, device_id: str):
+            raise DeviceAdapterError(DeviceAdapterErrorKind.UNAVAILABLE, "query_status")
+
+    gateway = SimulatorDeviceGateway(
+        ExplodingDelegate(), SimulatorScenario(scenario_id="delegate-failure")
+    )
+
+    with pytest.raises(DeviceAdapterError) as excinfo:
+        gateway.query_status("camera-3f-001")
+
+    assert excinfo.value.kind is DeviceAdapterErrorKind.UNAVAILABLE
+    assert gateway.call_count == 1
+    assert gateway.traces[0].ok is False
+    assert gateway.traces[0].error_kind is DeviceAdapterErrorKind.UNAVAILABLE
+
+
+def test_delegate_unexpected_error_is_recorded_as_unavailable() -> None:
+    class CrashingDelegate:
+        def query_status(self, device_id: str):
+            raise RuntimeError("boom")
+
+    gateway = SimulatorDeviceGateway(
+        CrashingDelegate(), SimulatorScenario(scenario_id="delegate-crash")
+    )
+
+    with pytest.raises(RuntimeError):
+        gateway.query_status("camera-3f-001")
+
+    assert gateway.call_count == 1
+    assert gateway.traces[0].ok is False
+    assert gateway.traces[0].error_kind is DeviceAdapterErrorKind.UNAVAILABLE
+
+
+def test_success_records_exactly_one_trace_in_sequence(static_gateway) -> None:
+    gateway = SimulatorDeviceGateway(static_gateway, SimulatorScenario(scenario_id="ok"))
+
+    gateway.query_status("camera-3f-001")
+    gateway.query_status("camera-3f-001")
+
+    assert [trace.sequence for trace in gateway.traces] == [1, 2]
+    assert all(trace.ok for trace in gateway.traces)

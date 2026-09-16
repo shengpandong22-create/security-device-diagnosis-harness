@@ -100,21 +100,68 @@ class SimulatorDeviceGateway:
         callback: Callable[[], T],
     ) -> T:
         directive = self._scenario.directives.get(operation, SimulatorDirective())
-        error_kind = _ERROR_KIND.get(directive.behavior)
-        ok = error_kind is None
+        injected_kind = _ERROR_KIND.get(directive.behavior)
+        if injected_kind is not None:
+            # 注入失败：按 directive 记录稳定 error_kind，且不调用 delegate。
+            self._record(
+                operation,
+                capability,
+                ok=False,
+                simulated_latency_ms=directive.simulated_latency_ms,
+                error_kind=injected_kind,
+            )
+            raise DeviceAdapterError(injected_kind, operation)
+        try:
+            result = callback()
+        except DeviceAdapterError as exc:
+            # delegate 自身失败：记录真实失败原因，绝不误报成功。
+            self._record(
+                operation,
+                capability,
+                ok=False,
+                simulated_latency_ms=directive.simulated_latency_ms,
+                error_kind=exc.kind,
+            )
+            raise
+        except Exception:
+            self._record(
+                operation,
+                capability,
+                ok=False,
+                simulated_latency_ms=directive.simulated_latency_ms,
+                error_kind=DeviceAdapterErrorKind.UNAVAILABLE,
+            )
+            raise
+        # 只有 callback 成功返回后才记录成功。
+        self._record(
+            operation,
+            capability,
+            ok=True,
+            simulated_latency_ms=directive.simulated_latency_ms,
+            error_kind=None,
+        )
+        return result
+
+    def _record(
+        self,
+        operation: str,
+        capability: DeviceCapability,
+        *,
+        ok: bool,
+        simulated_latency_ms: int,
+        error_kind: DeviceAdapterErrorKind | None,
+    ) -> None:
+        """追加一条调用轨迹；sequence 单调，且每次调用只记录一次。"""
         self._traces.append(
             SimulatorCallTrace(
                 sequence=len(self._traces) + 1,
                 operation=operation,
                 capability=capability,
                 ok=ok,
-                simulated_latency_ms=directive.simulated_latency_ms,
+                simulated_latency_ms=simulated_latency_ms,
                 error_kind=error_kind,
             )
         )
-        if error_kind is not None:
-            raise DeviceAdapterError(error_kind, operation)
-        return callback()
 
     def query_status(self, device_id: str) -> Any:
         return self._call(
