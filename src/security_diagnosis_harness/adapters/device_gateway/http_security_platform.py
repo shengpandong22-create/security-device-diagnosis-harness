@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -9,6 +10,9 @@ from urllib.parse import quote, urlsplit
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from security_diagnosis_harness.adapters.device_gateway.http_safety import (
+    read_limited_response,
+)
 from security_diagnosis_harness.domain.camera import (
     ChannelSnapshot,
     PlatformPullStatus,
@@ -98,11 +102,22 @@ class SecurityPlatformHttpAdapter:
     def _get(self, operation: str, path: str, params: dict[str, Any] | None = None) -> Any:
         credential = self._credential_resolver.resolve(self._settings.credential_reference)
         try:
-            response = self._client.get(
+            with self._client.stream(
+                "GET",
                 path,
                 params=params,
                 headers={"Authorization": f"Bearer {credential.value.get_secret_value()}"},
-            )
+            ) as response:
+                kind = self._status_error_kind(response.status_code)
+                if kind is not None:
+                    raise DeviceAdapterError(kind, operation)
+                if response.is_redirect:
+                    raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
+                content = read_limited_response(
+                    response,
+                    max_bytes=self._settings.max_response_bytes,
+                    operation=operation,
+                )
         except httpx.TimeoutException as exc:
             raise DeviceAdapterError(DeviceAdapterErrorKind.TIMEOUT, operation) from exc
         except httpx.RequestError as exc:
@@ -110,19 +125,9 @@ class SecurityPlatformHttpAdapter:
         finally:
             del credential
 
-        kind = self._status_error_kind(response.status_code)
-        if kind is not None:
-            raise DeviceAdapterError(kind, operation)
-        if response.is_redirect:
-            raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
-        declared = response.headers.get("content-length")
-        if declared and declared.isdigit() and int(declared) > self._settings.max_response_bytes:
-            raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
-        if len(response.content) > self._settings.max_response_bytes:
-            raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
         try:
-            payload = response.json()
-        except ValueError as exc:
+            payload = json.loads(content)
+        except (UnicodeDecodeError, ValueError) as exc:
             raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation) from exc
         self._validate_json_shape(payload, depth=1)
         return payload

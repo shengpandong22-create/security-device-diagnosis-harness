@@ -304,6 +304,30 @@ def test_invalid_xml_is_controlled() -> None:
     assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
 
 
+def test_chunked_oversized_soap_stops_before_buffering_the_tail() -> None:
+    yielded: list[int] = []
+
+    class Chunked(httpx.SyncByteStream):
+        def __iter__(self):
+            for index in range(10):
+                yielded.append(index)
+                yield b"x" * 400
+
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, stream=Chunked(), request=request)
+    )
+    adapter = OnvifReadOnlyAdapter(
+        _settings(max_response_bytes=1_024),
+        _Resolver(),
+        transport=transport,
+    )
+    with adapter, pytest.raises(DeviceAdapterError) as exc_info:
+        adapter.query_status("lab-camera")
+
+    assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
+    assert yielded == [0, 1, 2]
+
+
 def test_write_capabilities_do_not_exist() -> None:
     adapter = _adapter()
     try:

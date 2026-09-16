@@ -255,6 +255,31 @@ def test_oversized_response_is_rejected() -> None:
     assert excinfo.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
 
 
+def test_chunked_oversized_response_stops_before_buffering_the_tail() -> None:
+    yielded: list[int] = []
+
+    class Chunked(httpx.SyncByteStream):
+        def __iter__(self):
+            for index in range(10):
+                yielded.append(index)
+                yield b"x" * 400
+
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, stream=Chunked(), request=request)
+    )
+    gateway = SecurityPlatformHttpAdapter(
+        settings(max_response_bytes=1_024),
+        FixtureCredentialResolver(),
+        transport=transport,
+    )
+
+    with pytest.raises(DeviceAdapterError) as excinfo:
+        gateway.query_status("camera-1")
+
+    assert excinfo.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
+    assert yielded == [0, 1, 2]
+
+
 def test_deep_json_is_rejected() -> None:
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, json={"a": {"b": {"c": 1}}})
