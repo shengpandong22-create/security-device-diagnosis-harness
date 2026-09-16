@@ -411,11 +411,33 @@ def verify_dataset_release(directory: Path) -> DatasetReleaseReceipt:
     ):
         raise DatasetReleaseError("发布回执的案例数量与实际数据集不一致")
     by_split = {
-        split: {case.case_id for case in registry.cases(split, allow_test=True)}
+        split: {case.case_id: case for case in registry.cases(split, allow_test=True)}
         for split in DatasetSplit
     }
     if any(item.case_id not in by_split[item.split] for item in receipt.additions):
         raise DatasetReleaseError("发布回执包含数据集中不存在的新增案例")
+
+    # 从受控新增案例重算来源计数与来源类型，不信任回执自报值。
+    recomputed_synthetic = 0
+    recomputed_authorized = 0
+    for item in receipt.additions:
+        case = by_split[item.split][item.case_id]
+        is_synthetic = case.source.startswith("synthetic")
+        if item.source_kind is SourceKind.SYNTHETIC and not is_synthetic:
+            raise DatasetReleaseError("发布回执将非合成来源标记为 synthetic")
+        if item.source_kind is SourceKind.AUTHORIZED_EXPORT and is_synthetic:
+            raise DatasetReleaseError("发布回执将合成来源标记为授权导出")
+        if item.source_record_id != case.source_record_id:
+            raise DatasetReleaseError("发布回执的来源记录与实际案例不一致")
+        if is_synthetic:
+            recomputed_synthetic += 1
+        else:
+            recomputed_authorized += 1
+    if (
+        recomputed_synthetic != receipt.synthetic_case_count
+        or recomputed_authorized != receipt.authorized_case_count
+    ):
+        raise DatasetReleaseError("发布回执的来源计数与实际新增案例不一致")
     return receipt
 
 
