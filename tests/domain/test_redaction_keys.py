@@ -7,12 +7,14 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import BaseModel
 
 from security_diagnosis_harness.domain.device import REDACTED_VALUE
 from security_diagnosis_harness.domain.redaction import (
     is_sensitive_key,
     redact_mapping,
     redact_text,
+    redact_value,
 )
 
 
@@ -133,3 +135,55 @@ def test_token_compatibility_is_unchanged():
     payload, changed = redact_mapping({"refresh_token": "abc"})
     assert changed is True
     assert payload["refresh_token"] == REDACTED_VALUE
+
+
+# ------------------------------------------------- 值容器 / bytes / 模型 / 未知对象
+def test_nested_sets_and_frozen_sets_are_redacted():
+    payload, changed = redact_mapping(
+        {
+            "refs": {"card_no": "330100001"},
+            "frozen": frozenset({"person_id=person-88"}),
+        }
+    )
+
+    assert changed is True
+    assert payload["refs"] == {"card_no": REDACTED_VALUE}
+    assert isinstance(payload["frozen"], list)
+    assert all(REDACTED_VALUE in item for item in payload["frozen"])
+
+
+def test_bytes_credentials_cannot_bypass_redaction():
+    cleaned, changed = redact_value("token=abcd1234efgh".encode("utf-8"))
+
+    assert changed is True
+    assert "abcd1234efgh" not in cleaned
+    assert REDACTED_VALUE in cleaned
+
+
+def test_pydantic_model_fields_are_redacted():
+    class Payload(BaseModel):
+        password: str
+        channel_id: int
+
+    cleaned, changed = redact_value(Payload(password="p@ss", channel_id=3))
+
+    assert changed is True
+    assert cleaned == {"password": REDACTED_VALUE, "channel_id": 3}
+
+
+def test_unknown_objects_fail_closed():
+    class Opaque:
+        pass
+
+    cleaned, changed = redact_value(Opaque())
+
+    assert changed is True
+    assert cleaned == REDACTED_VALUE
+
+
+@pytest.mark.parametrize("value", [None, True, 3, 1.5, "encoding=H264"])
+def test_plain_values_are_unchanged(value):
+    cleaned, changed = redact_value(value)
+
+    assert changed is False
+    assert cleaned == value

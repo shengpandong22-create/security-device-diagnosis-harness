@@ -18,7 +18,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
+from datetime import date, datetime, time
 from typing import Any
+
+from pydantic import BaseModel
 
 REDACTED_VALUE = "***REDACTED***"
 
@@ -122,23 +126,54 @@ def _replace_match(match: re.Match[str]) -> str:
 
 
 def redact_value(value: Any) -> tuple[Any, bool]:
-    """递归脱敏 string / list / dict，键名命中敏感模式时整体替换。"""
+    """递归脱敏 str / bytes / 容器 / Pydantic 模型。
+
+    - ``str``：文本脱敏；
+    - ``bytes`` / ``bytearray``：先解码（UTF-8 → UTF-16 → latin-1 兜底）再脱敏，
+      编码异常不会绕过；
+    - ``list`` / ``tuple``：逐项递归，保持容器类型；
+    - ``set`` / ``frozenset``：逐项递归，返回可序列化的 ``list``；
+    - ``dict``：键名命中的整体替换，其余值递归（见 :func:`redact_mapping`）；
+    - Pydantic ``BaseModel``：按字段递归，返回可序列化的 ``dict``；
+    - 其它无敏感内容的标量（``None`` / bool / int / float / datetime 等）原样返回；
+    - **未知对象 fail-closed**：替换为 ``REDACTED_VALUE``，绝不原样放行。
+    """
+    if value is None or isinstance(value, (bool, int, float, datetime, date, time)):
+        return value, False
     if isinstance(value, str):
         return redact_text(value)
-    if isinstance(value, list):
-        changed = False
-        items: list[Any] = []
-        for item in value:
-            cleaned, item_changed = redact_value(item)
-            items.append(cleaned)
-            changed = changed or item_changed
-        return items, changed
-    if isinstance(value, tuple):
-        cleaned, changed = redact_value(list(value))
-        return tuple(cleaned), changed
+    if isinstance(value, (bytes, bytearray)):
+        return _redact_bytes(value)
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return _redact_items(value)
     if isinstance(value, dict):
         return redact_mapping(value)
-    return value, False
+    if isinstance(value, BaseModel):
+        return redact_value(value.model_dump(mode="python"))
+    return REDACTED_VALUE, True
+
+
+def _redact_items(items: Iterable[Any]) -> tuple[list[Any], bool]:
+    """逐项递归脱敏，统一返回可序列化的 list。"""
+    changed = False
+    cleaned_items: list[Any] = []
+    for item in items:
+        cleaned, item_changed = redact_value(item)
+        cleaned_items.append(cleaned)
+        changed = changed or item_changed
+    return cleaned_items, changed
+
+
+def _redact_bytes(value: bytes | bytearray) -> tuple[str, bool]:
+    """对 bytes-like 先解码再脱敏；无法用前两种编码解码时用 latin-1 兜底。"""
+    raw = bytes(value)
+    for encoding in ("utf-8", "utf-16"):
+        try:
+            text = raw.decode(encoding)
+        except (UnicodeDecodeError, ValueError):
+            continue
+        return redact_text(text)
+    return redact_text(raw.decode("latin-1"))
 
 
 def redact_mapping(values: dict[Any, Any]) -> tuple[dict[Any, Any], bool]:
