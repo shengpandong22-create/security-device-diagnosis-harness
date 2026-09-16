@@ -63,6 +63,43 @@ class _MediaProfile:
         return (pixels, self.bitrate_kbps or 0, self.frame_rate or 0)
 
 
+class _XmlLimitExceeded(ValueError):
+    """SOAP XML 在建树过程中超过资源边界。"""
+
+
+class _BoundedTreeBuilder(ElementTree.TreeBuilder):
+    def __init__(self, settings: OnvifReadOnlySettings) -> None:
+        super().__init__()
+        self._settings = settings
+        self._elements = 0
+        self._depth = 0
+        self._attributes = 0
+        self._text_chars = 0
+
+    def start(self, tag: str, attrs: dict[str, str]) -> ElementTree.Element:
+        self._elements += 1
+        self._depth += 1
+        self._attributes += len(attrs)
+        if (
+            self._elements > self._settings.max_xml_elements
+            or self._depth > self._settings.max_xml_depth
+            or self._attributes > self._settings.max_xml_attributes
+        ):
+            raise _XmlLimitExceeded
+        return super().start(tag, attrs)
+
+    def end(self, tag: str) -> ElementTree.Element:
+        element = super().end(tag)
+        self._depth -= 1
+        return element
+
+    def data(self, data: str) -> None:
+        self._text_chars += len(data)
+        if self._text_chars > self._settings.max_xml_text_chars:
+            raise _XmlLimitExceeded
+        super().data(data)
+
+
 class OnvifReadOnlySettings(BaseModel):
     """ONVIF 只读端点配置；不保存实际用户名或密码。"""
 
@@ -209,27 +246,10 @@ class OnvifReadOnlyAdapter:
         if b"<!doctype" in lowered or b"<!entity" in lowered:
             raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
         try:
-            root = ElementTree.fromstring(content)
-        except ElementTree.ParseError as exc:
+            parser = ElementTree.XMLParser(target=_BoundedTreeBuilder(self._settings))
+            root = ElementTree.fromstring(content, parser=parser)
+        except (ElementTree.ParseError, _XmlLimitExceeded) as exc:
             raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation) from exc
-
-        element_count = 0
-        attribute_count = 0
-        text_chars = 0
-        stack = [(root, 1)]
-        while stack:
-            element, depth = stack.pop()
-            element_count += 1
-            attribute_count += len(element.attrib)
-            text_chars += len(element.text or "") + len(element.tail or "")
-            if (
-                element_count > self._settings.max_xml_elements
-                or depth > self._settings.max_xml_depth
-                or attribute_count > self._settings.max_xml_attributes
-                or text_chars > self._settings.max_xml_text_chars
-            ):
-                raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
-            stack.extend((child, depth + 1) for child in element)
         return root
 
     @staticmethod
