@@ -7,9 +7,12 @@ Runner 只负责"让模型在预算内通过 Registry 调工具并产出候选�
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from queue import Queue
+from threading import Thread
+from time import monotonic
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +38,12 @@ SYSTEM_PROMPT = (
     "不得把结论标记为 confirmed，最终结论必须由人工确认。"
 )
 
+_T = TypeVar("_T")
+
+
+class _RunnerDeadlineExceeded(TimeoutError):
+    pass
+
 
 @dataclass(frozen=True)
 class ToolLoopBudget:
@@ -42,6 +51,11 @@ class ToolLoopBudget:
 
     max_rounds: int = 3
     max_tool_calls: int = 5
+    timeout_seconds: float = 30.0
+
+    def __post_init__(self) -> None:
+        if self.max_rounds < 1 or self.max_tool_calls < 0 or self.timeout_seconds <= 0:
+            raise ValueError("ToolLoopBudget 必须使用正轮次、非负工具次数和正超时")
 
 
 class ToolLoopResult(BaseModel):
@@ -112,20 +126,34 @@ class ToolLoopRunner:
         tool_results: list[ToolExecutionResult] = []
         evidence_drafts: list[ToolEvidenceDraft] = []
         tool_calls_used = 0
+        deadline = monotonic() + self._budget.timeout_seconds
 
         for round_index in range(1, self._budget.max_rounds + 1):
-            response = self._llm.complete(
-                LLMRequest(
-                    messages=list(messages),
-                    available_tools=allowed,
-                    metadata={
-                        "diagnosis_id": case.diagnosis_id,
-                        "device_id": case.device_id,
-                        "round": round_index,
-                        "fault_type": case.fault_type.value,
-                    },
-                )
+            request = LLMRequest(
+                messages=list(messages),
+                available_tools=allowed,
+                metadata={
+                    "diagnosis_id": case.diagnosis_id,
+                    "device_id": case.device_id,
+                    "round": round_index,
+                    "fault_type": case.fault_type.value,
+                    "deadline_monotonic": deadline,
+                },
             )
+            try:
+                response = self._within_deadline(
+                    lambda request=request: self._llm.complete(request),
+                    deadline,
+                )
+            except _RunnerDeadlineExceeded:
+                return self._deadline_failure(
+                    case.diagnosis_id,
+                    rounds=round_index,
+                    tool_calls=tool_calls_used,
+                    messages=messages,
+                    tool_results=tool_results,
+                    evidence_drafts=evidence_drafts,
+                )
             if response.error or response.finish_reason is FinishReason.ERROR:
                 return self._failure(
                     case.diagnosis_id,
@@ -151,7 +179,25 @@ class ToolLoopRunner:
                         )
                     tool_calls_used += 1
 
-                    result = self._invoke(call.tool_name, call.arguments, allowed, context)
+                    try:
+                        result = self._within_deadline(
+                            lambda call=call: self._invoke(
+                                call.tool_name,
+                                call.arguments,
+                                allowed,
+                                context,
+                            ),
+                            deadline,
+                        )
+                    except _RunnerDeadlineExceeded:
+                        return self._deadline_failure(
+                            case.diagnosis_id,
+                            rounds=round_index,
+                            tool_calls=tool_calls_used,
+                            messages=messages,
+                            tool_results=tool_results,
+                            evidence_drafts=evidence_drafts,
+                        )
                     tool_results.append(result)
                     evidence_drafts.extend(result.evidence_drafts)
                     messages.append(
@@ -216,6 +262,37 @@ class ToolLoopRunner:
             return self._registry.names()
         allowed = [name for name in tool_allowlist if self._registry.has(name)]
         return allowed
+
+    def _deadline_failure(self, diagnosis_id: str, **state: Any) -> ToolLoopResult:
+        return self._failure(
+            diagnosis_id,
+            f"超出运行时间预算 timeout_seconds={self._budget.timeout_seconds}",
+            **state,
+        )
+
+    @staticmethod
+    def _within_deadline(operation: Callable[[], _T], deadline: float) -> _T:
+        """在 daemon worker 中等待只读操作，不让阻塞调用越过 Runner deadline。"""
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise _RunnerDeadlineExceeded
+        outcome: Queue[tuple[bool, _T | BaseException]] = Queue(maxsize=1)
+
+        def execute() -> None:
+            try:
+                outcome.put((True, operation()))
+            except BaseException as exc:  # 原异常交由调用线程按既有语义处理。
+                outcome.put((False, exc))
+
+        worker = Thread(target=execute, daemon=True, name="tool-loop-budget-worker")
+        worker.start()
+        worker.join(remaining)
+        if worker.is_alive():
+            raise _RunnerDeadlineExceeded
+        succeeded, value = outcome.get_nowait()
+        if not succeeded:
+            raise value
+        return value
 
     @staticmethod
     def _failure(

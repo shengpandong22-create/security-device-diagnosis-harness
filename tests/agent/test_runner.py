@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from time import monotonic, sleep
 from typing import Any
 
 import pytest
@@ -220,3 +221,62 @@ def test_runner_does_not_mutate_case(tool_registry, context):
     assert case.conclusion is None
     assert case.reviews == []
     assert case.updated_at == before_updated_at
+
+
+def test_wall_clock_budget_stops_a_slow_model(tool_registry, context):
+    class SlowLLM:
+        def complete(self, request):
+            sleep(0.3)
+            return _final_response()
+
+    runner = ToolLoopRunner(
+        SlowLLM(),
+        tool_registry,
+        ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.03),
+    )
+
+    started = monotonic()
+    result = runner.run(make_case(), context)
+    elapsed = monotonic() - started
+
+    assert result.ok is False
+    assert "timeout_seconds=0.03" in (result.error or "")
+    assert elapsed < 0.2
+    assert result.rounds == 1
+
+
+def test_wall_clock_budget_stops_a_slow_read_only_tool(
+    tool_registry, context, monkeypatch
+):
+    def slow_execute(*args, **kwargs):
+        sleep(0.3)
+        return ToolExecutionResult(tool_name="device__query_status", observation="late")
+
+    monkeypatch.setattr(tool_registry, "execute", slow_execute)
+    runner = ToolLoopRunner(
+        FakeLLM([_tool_call_response()]),
+        tool_registry,
+        ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.03),
+    )
+
+    started = monotonic()
+    result = runner.run(make_case(), context)
+
+    assert result.ok is False
+    assert "timeout_seconds=0.03" in (result.error or "")
+    assert monotonic() - started < 0.2
+    assert result.tool_calls == 1
+    assert result.tool_results == []
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"max_rounds": 0},
+        {"max_tool_calls": -1},
+        {"timeout_seconds": 0},
+    ],
+)
+def test_invalid_budget_is_rejected(changes):
+    with pytest.raises(ValueError, match="ToolLoopBudget"):
+        ToolLoopBudget(**changes)
