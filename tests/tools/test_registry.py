@@ -103,6 +103,30 @@ def test_registering_mutating_tool_is_rejected():
         registry.register(MutatingTool())
 
 
+def test_execute_rejects_tool_mutated_to_mutating_after_registration():
+    executed: list[int] = []
+
+    class SpyTool(DummyTool):
+        name = "dummy__spy"
+
+        def _execute(self, arguments: BaseModel, context: ToolExecutionContext) -> ToolExecutionResult:
+            executed.append(1)
+            return ToolExecutionResult(tool_name=self.name, observation="ok")
+
+    registry = ToolRegistry()
+    tool = SpyTool()
+    registry.register(tool)
+    # 注册后篡改实例级风险等级，试图绕过注册期检查。
+    tool.risk_level = ToolRiskLevel.MUTATING
+
+    result = registry.execute("dummy__spy", {}, make_tool_context("diag_a"))
+
+    assert result.ok is False
+    assert result.evidence_drafts == []
+    assert executed == []
+    assert "只读" in (result.error or "")
+
+
 def test_unknown_tool_is_rejected():
     registry = ToolRegistry()
     context = make_tool_context("diag_a")

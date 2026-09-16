@@ -75,6 +75,11 @@ class ToolRegistry:
 
         tool = self._tools[tool_name]
 
+        if tool.risk_level is not ToolRiskLevel.READ_ONLY:
+            # 注册期已拒绝非只读工具；执行期再复查一次，防止工具对象在注册后被
+            # 篡改风险等级绕过。受控拒绝：不调用工具主体，不产出 Evidence。
+            return failure_result(tool_name, "工具风险等级非只读，拒绝执行")
+
         missing_permissions = tool.required_permissions - context.permissions
         if missing_permissions:
             return failure_result(
