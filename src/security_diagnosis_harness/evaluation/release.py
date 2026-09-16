@@ -460,6 +460,20 @@ def verify_dataset_release(
         }
         for split in DatasetSplit
     }
+    for split in DatasetSplit:
+        source_cases = {
+            case.case_id: case
+            for case in source_registry.cases(split, allow_test=True)
+        }
+        missing_inherited = set(source_cases) - set(by_split[split])
+        if missing_inherited:
+            raise DatasetReleaseError("发布版本删除或移动了来源案例")
+        for case_id, source_case in source_cases.items():
+            expected = source_case.model_copy(
+                update={"dataset_version": receipt.released_version}
+            )
+            if by_split[split][case_id] != expected:
+                raise DatasetReleaseError("发布版本改写了来源继承案例")
     actual_additions = {
         (split, case_id)
         for split in DatasetSplit

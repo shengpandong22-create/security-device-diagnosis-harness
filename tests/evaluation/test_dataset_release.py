@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from security_diagnosis_harness.domain.common import canonical_json, sha256_text
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.evidence import EvidenceType
 from security_diagnosis_harness.evaluation import (
@@ -348,6 +349,36 @@ def test_release_receipt_cannot_omit_an_actual_addition(tmp_path):
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(DatasetReleaseError, match="新增案例清单不完整"):
+        verify_dataset_release(target, source_directory=SOURCE)
+
+
+def test_release_cannot_rewrite_an_inherited_case(tmp_path):
+    target, _ = publish_dataset_version(
+        SOURCE, tmp_path, "1.1.0", (_addition(),),
+        released_at=datetime(2026, 9, 13, tzinfo=UTC),
+    )
+    manifest_path = target / "dev" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    inherited = next(
+        item
+        for item in manifest["files"]
+        if item["path"] != "dev-access-controller-power-loss.json"
+    )
+    case_path = target / "dev" / inherited["path"]
+    case = json.loads(case_path.read_text(encoding="utf-8"))
+    case["expected_candidate"] = "forged-approved-label"
+    case_path.write_text(json.dumps(case), encoding="utf-8")
+    inherited["sha256"] = sha256_text(canonical_json(case))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    receipt_path = target / "release.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["split_manifest_hashes"]["dev"] = sha256_text(canonical_json(manifest))
+    receipt["dataset_content_hash"] = sha256_text(
+        canonical_json(receipt["split_manifest_hashes"])
+    )
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+
+    with pytest.raises(DatasetReleaseError, match="改写了来源继承案例"):
         verify_dataset_release(target, source_directory=SOURCE)
 
 
