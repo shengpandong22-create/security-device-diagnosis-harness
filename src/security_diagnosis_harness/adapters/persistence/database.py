@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 DEFAULT_DATABASE_URL = "sqlite:///./data/security-diagnosis.db"
@@ -61,16 +62,24 @@ def build_database(
 def ensure_sqlite_directory(database_url: str) -> None:
     """为文件型 SQLite URL 预建父目录，避免首次连接失败。
 
-    仅处理 `sqlite:///` 形式（相对路径）与 `sqlite:////`（绝对路径），
-    内存库与其它方言直接跳过。
+    使用 SQLAlchemy URL 解析而非字符串前缀枚举，因此同时支持 `sqlite:///`、
+    `sqlite+pysqlite:///` 等驱动变体与合法的相对 / 绝对路径；显式跳过内存库、
+    `file:` URI 模式与非 SQLite 方言。URL 的查询参数由解析器分离，不会被误认为
+    文件路径。
     """
-    prefix = "sqlite:///"
-    if not database_url.startswith(prefix):
+    try:
+        url = make_url(database_url)
+    except Exception:  # noqa: BLE001 - 非法 URL 交由后续引擎构造报错
         return
-    raw_path = database_url[len(prefix) :]
-    if not raw_path or raw_path == ":memory:":
+    if url.get_backend_name() != "sqlite":
         return
-    Path(raw_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+    database = url.database
+    if not database or database == ":memory:" or database.startswith("file:"):
+        return
+    candidate = Path(database).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    candidate.parent.mkdir(parents=True, exist_ok=True)
 
 
 __all__ = [
