@@ -88,8 +88,18 @@ def test_embedding_failure_falls_back_to_keyword_results():
 
 def test_candidate_status_is_filtered_before_embedding():
     repository = _repository()
-    candidate = _confirmed("unsafe", "不应召回", "控制器离线")
-    candidate.status = "candidate"
+    candidate = KnowledgeCandidate(
+        fault_type=SecurityFaultType.ACCESS_CARD_FAILED,
+        candidate_label="unsafe",
+        title="不应召回",
+        summary="控制器离线",
+        symptoms=["控制器离线"],
+        root_cause="控制器离线",
+        troubleshooting_steps=["检查设备事实"],
+        source_diagnosis_id="diag-unsafe",
+        source_conclusion_id="con-unsafe",
+        source_evidence_ids=["evd-unsafe"],
+    )
     repository.save(candidate)
     retriever = HybridKnowledgeRetriever(repository, SemanticEmbedding())
 
