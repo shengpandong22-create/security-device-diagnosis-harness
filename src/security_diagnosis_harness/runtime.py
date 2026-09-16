@@ -501,7 +501,9 @@ def build_runtime_container(
         audit_repository,
         audited_write,
     )
-    consistency_scanner = ConsistencyScanner(repository, knowledge_repository)
+    consistency_scanner = ConsistencyScanner(
+        repository, knowledge_repository, audit_repository
+    )
     return RuntimeContainer(
         settings=resolved,
         service=service,

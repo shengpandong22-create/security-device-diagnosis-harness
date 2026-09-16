@@ -56,6 +56,16 @@ class SqlAlchemyAuditRepository:
         except SQLAlchemyError as exc:
             raise translate_persistence_error("审计事件", exc) from exc
 
+    def list_all(self) -> list[AuditEvent]:
+        statement = select(AuditEventRow).order_by(
+            AuditEventRow.occurred_at, AuditEventRow.event_id
+        )
+        try:
+            with self._session_factory() as session:
+                return [_to_domain(row) for row in session.scalars(statement)]
+        except SQLAlchemyError as exc:
+            raise translate_persistence_error("审计事件", exc) from exc
+
 
 def _to_domain(row: AuditEventRow) -> AuditEvent:
     values = {

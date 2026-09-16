@@ -36,3 +36,8 @@ class InMemoryAuditRepository:
                 if item.entity_id == entity_id
             ]
         return sorted(events, key=lambda item: (item.occurred_at, item.event_id))
+
+    def list_all(self) -> list[AuditEvent]:
+        with self._lock:
+            events = [deepcopy(item) for item in self._events.values()]
+        return sorted(events, key=lambda item: (item.occurred_at, item.event_id))

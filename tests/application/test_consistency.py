@@ -2,8 +2,13 @@
 
 from security_diagnosis_harness.application.consistency import ConsistencyScanner
 from security_diagnosis_harness.application.errors import RepositoryPersistenceError
+from security_diagnosis_harness.domain.audit import AuditEntityType, AuditEvent
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus
-from security_diagnosis_harness.domain.knowledge import KnowledgeCandidateStatus
+from security_diagnosis_harness.domain.knowledge import (
+    KnowledgeCandidateStatus,
+    KnowledgeReview,
+    KnowledgeReviewAction,
+)
 from tests.persistence._builders import build_confirmed_case, build_knowledge_candidate
 
 
@@ -50,6 +55,24 @@ class _KnowledgeRepo:
 
     def search_confirmed(self, query, fault_type, limit=3):
         return []
+
+
+class _AuditRepo:
+    def __init__(self, items):
+        self.items = items
+        self.write_calls = 0
+
+    def list_all(self):
+        return self.items
+
+    def append(self, item):
+        self.write_calls += 1
+
+    def get(self, item_id):
+        return next(item for item in self.items if item.event_id == item_id)
+
+    def list_for_entity(self, entity_id):
+        return [item for item in self.items if item.entity_id == entity_id]
 
 
 def _scanner(cases, knowledge):
@@ -189,3 +212,63 @@ def test_finds_cross_diagnosis_and_cross_fault_conclusion():
     scanner, _, _ = _scanner([case], [])
     codes = {entry.code for entry in scanner.scan().findings}
     assert {"cross_diagnosis_conclusion", "cross_fault_conclusion"} <= codes
+
+
+def test_finds_cross_diagnosis_evidence_and_review():
+    case = build_confirmed_case().model_copy(deep=True, update={"version": 1})
+    case.evidence[0].diagnosis_id = "another-diagnosis"
+    case.reviews[0].diagnosis_id = "another-diagnosis"
+
+    scanner, _, _ = _scanner([case], [])
+
+    codes = {entry.code for entry in scanner.scan().findings}
+    assert {"cross_diagnosis_evidence", "cross_diagnosis_review"} <= codes
+
+
+def test_finds_cross_knowledge_review():
+    case = build_confirmed_case().model_copy(update={"version": 1})
+    item = build_knowledge_candidate().model_copy(
+        deep=True,
+        update={
+            "version": 1,
+            "source_diagnosis_id": case.diagnosis_id,
+            "source_conclusion_id": case.conclusion.conclusion_id,
+            "source_evidence_ids": list(case.conclusion.cited_evidence_ids),
+        },
+    )
+    item.reviews.append(
+        KnowledgeReview(
+            knowledge_id="another-knowledge",
+            action=KnowledgeReviewAction.CONFIRM,
+            reviewer="expert",
+        )
+    )
+
+    scanner, _, _ = _scanner([case], [item])
+
+    assert "cross_knowledge_review" in {entry.code for entry in scanner.scan().findings}
+
+
+def test_scans_orphan_and_future_audit_events_without_writing():
+    case = build_confirmed_case().model_copy(update={"version": 1})
+    orphan = AuditEvent(
+        entity_type=AuditEntityType.DIAGNOSIS,
+        entity_id="missing-diagnosis",
+        action="create",
+    )
+    ahead = AuditEvent(
+        entity_type=AuditEntityType.DIAGNOSIS,
+        entity_id=case.diagnosis_id,
+        action="review",
+        current_version=2,
+    )
+    audit = _AuditRepo([orphan, ahead])
+    scanner = ConsistencyScanner(_DiagnosisRepo([case]), _KnowledgeRepo([]), audit)
+
+    report = scanner.scan()
+
+    assert report.audit_event_count == 2
+    assert {"orphan_audit_event", "audit_version_ahead"} <= {
+        entry.code for entry in report.findings
+    }
+    assert audit.write_calls == 0
