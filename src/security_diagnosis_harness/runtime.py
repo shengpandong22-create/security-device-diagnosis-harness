@@ -476,6 +476,11 @@ class _ClosedAwareProxy:
 
         return guarded
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        lifecycle = object.__getattribute__(self, "_lifecycle")
+        lifecycle.ensure_open()
+        setattr(object.__getattribute__(self, "_target"), name, value)
+
 
 @dataclass
 class RuntimeContainer:
