@@ -113,8 +113,18 @@ def render_markdown_report(
             f"- confidence: `{conclusion.confidence.value}`",
             f"- root_cause: {conclusion.root_cause or '（未给出）'}",
             f"- created_by: {conclusion.created_by}",
-            "- cited_evidence_ids:",
+            f"- citation_repaired: {'yes' if conclusion.citation_repaired else 'no'}",
+            f"- confidence_downgraded: {'yes' if conclusion.confidence_downgraded else 'no'}",
+            "- model_cited_evidence_ids:",
         ]
+        if conclusion.model_cited_evidence_ids:
+            lines += [
+                f"  - `{evidence_id}`"
+                for evidence_id in conclusion.model_cited_evidence_ids
+            ]
+        else:
+            lines += ["  - （模型未提供引用）"]
+        lines += ["- effective_cited_evidence_ids:"]
         if conclusion.cited_evidence_ids:
             lines += [f"  - `{evidence_id}`" for evidence_id in conclusion.cited_evidence_ids]
         else:

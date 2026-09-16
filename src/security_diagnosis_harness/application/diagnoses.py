@@ -54,7 +54,11 @@ from security_diagnosis_harness.domain.errors import (
     CitationPolicyViolation,
     InvalidStatusTransition,
 )
-from security_diagnosis_harness.domain.evidence import DiagnosisEvidence, EvidenceType
+from security_diagnosis_harness.domain.evidence import (
+    DiagnosisEvidence,
+    EvidenceType,
+    Reliability,
+)
 from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 from security_diagnosis_harness.ports.audit_repository import AuditRepository
 from security_diagnosis_harness.ports.audited_write import AuditedWrite
@@ -75,6 +79,9 @@ class CitationRepair(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     evidence_ids: list[str] = Field(default_factory=list)
+    model_evidence_ids: list[str] = Field(default_factory=list)
+    added_evidence_ids: list[str] = Field(default_factory=list)
+    dropped_evidence_ids: list[str] = Field(default_factory=list)
     confidence: ConclusionConfidence
     repaired: bool = False
     downgraded: bool = False
@@ -156,6 +163,8 @@ def device_fact_evidence_ids(
     for evidence in case.evidence:
         if evidence.evidence_type not in DEVICE_FACT_EVIDENCE_TYPES:
             continue
+        if evidence.reliability is Reliability.LOW:
+            continue
         if evidence.evidence_type in seen_types:
             continue
         seen_types.add(evidence.evidence_type)
@@ -180,6 +189,8 @@ def missing_device_fact_evidence_ids(
     for evidence in case.evidence:
         if evidence.evidence_type not in DEVICE_FACT_EVIDENCE_TYPES:
             continue
+        if evidence.reliability is Reliability.LOW:
+            continue
         if evidence.evidence_type in covered:
             continue
         covered.add(evidence.evidence_type)
@@ -189,7 +200,7 @@ def missing_device_fact_evidence_ids(
     return picked
 
 
-def repair_cited_evidence_ids(
+def _repair_cited_evidence_ids(
     case: SecurityDiagnosisCase,
     cited_evidence_ids: list[str],
     confidence: ConclusionConfidence,
@@ -264,6 +275,25 @@ def repair_cited_evidence_ids(
         repaired=True,
         downgraded=False,
     )
+
+
+def repair_cited_evidence_ids(
+    case: SecurityDiagnosisCase,
+    cited_evidence_ids: list[str],
+    confidence: ConclusionConfidence,
+) -> CitationRepair:
+    """执行引用修正，并显式记录模型引用与最终引用之间的差异。"""
+    model_ids = list(cited_evidence_ids)
+    result = _repair_cited_evidence_ids(case, model_ids, confidence)
+    result.model_evidence_ids = model_ids
+    result.added_evidence_ids = [
+        item for item in result.evidence_ids if item not in model_ids
+    ]
+    result.dropped_evidence_ids = [
+        item for item in model_ids if item not in result.evidence_ids
+    ]
+    result.repaired = bool(result.added_evidence_ids or result.dropped_evidence_ids)
+    return result
 
 
 class SecurityDiagnosisApplicationService:
@@ -446,7 +476,10 @@ class SecurityDiagnosisApplicationService:
             summary=draft_conclusion.summary,
             root_cause=draft_conclusion.root_cause,
             confidence=repair.confidence,
+            model_cited_evidence_ids=repair.model_evidence_ids,
             cited_evidence_ids=repair.evidence_ids,
+            citation_repaired=repair.repaired,
+            confidence_downgraded=repair.downgraded,
             next_steps=list(draft_conclusion.next_steps),
             created_by="model",
         )

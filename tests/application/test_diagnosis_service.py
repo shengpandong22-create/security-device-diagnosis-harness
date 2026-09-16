@@ -110,6 +110,20 @@ def test_empty_citations_are_repaired_to_real_evidence_ids(app_service):
     assert set(result.conclusion.cited_evidence_ids) <= evidence_ids
 
 
+def test_citation_repair_preserves_model_and_effective_citations(app_service):
+    diagnosis_id = create_black_screen_case(app_service)
+
+    result = app_service.run_diagnosis(diagnosis_id)
+    persisted = app_service.get_diagnosis(diagnosis_id).conclusion
+
+    assert result.conclusion is not None
+    assert persisted is not None
+    assert persisted.model_cited_evidence_ids == []
+    assert persisted.cited_evidence_ids
+    assert persisted.citation_repaired is True
+    assert result.citations_repaired is True
+
+
 def test_probable_cites_device_fact_evidence(app_service):
     diagnosis_id = create_black_screen_case(app_service)
 

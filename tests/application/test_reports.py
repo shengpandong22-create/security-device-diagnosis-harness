@@ -64,7 +64,10 @@ def test_report_contains_cited_evidence_ids(app_service):
 
     report = render_markdown_report(case)
 
-    assert "cited_evidence_ids" in report
+    assert "model_cited_evidence_ids" in report
+    assert "effective_cited_evidence_ids" in report
+    assert "模型未提供引用" in report
+    assert "citation_repaired: yes" in report
     for evidence_id in case.conclusion.cited_evidence_ids:
         assert evidence_id in report
 

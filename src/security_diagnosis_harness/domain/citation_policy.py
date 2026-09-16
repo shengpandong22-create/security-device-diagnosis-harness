@@ -24,7 +24,7 @@ from security_diagnosis_harness.domain.errors import (
     CitationPolicyViolation,
     ConclusionFaultTypeMismatch,
 )
-from security_diagnosis_harness.domain.evidence import EvidenceType
+from security_diagnosis_harness.domain.evidence import EvidenceType, Reliability
 
 # 设备事实类证据：设备状态、告警事件、配置快照、通道、码流、平台拉流，
 # 录像计划、存储状态、回放检查，门禁控制器、门、凭证、授权策略和刷卡事件，
@@ -123,4 +123,16 @@ class CitationPolicy:
             raise CitationPolicyViolation(
                 f"probable 结论必须至少引用 {MIN_DEVICE_FACT_TYPES_FOR_PROBABLE} 类"
                 f"设备事实 Evidence，当前只有 {fact_types} 类（{allowed}）"
+            )
+
+        low_reliability = [
+            evidence.evidence_id
+            for evidence in cited
+            if evidence.evidence_type in DEVICE_FACT_EVIDENCE_TYPES
+            and evidence.reliability is Reliability.LOW
+        ]
+        if low_reliability:
+            raise CitationPolicyViolation(
+                "probable 结论不能依赖低可靠性设备事实 Evidence: "
+                f"{low_reliability}"
             )

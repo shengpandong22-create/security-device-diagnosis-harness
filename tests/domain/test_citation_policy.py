@@ -16,6 +16,7 @@ from security_diagnosis_harness.domain.conclusion import (
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.errors import CitationPolicyViolation
 from security_diagnosis_harness.domain.evidence import (
+    DiagnosisEvidence,
     EvidenceSource,
     EvidenceType,
     Reliability,
@@ -180,11 +181,37 @@ def test_device_fact_evidence_types_exclude_knowledge():
             EvidenceType.ALARM_CORRELATION,
         }
     )
-
     assert expected == DEVICE_FACT_EVIDENCE_TYPES
     assert EvidenceType.KNOWLEDGE_SOP not in DEVICE_FACT_EVIDENCE_TYPES
     assert EvidenceType.HUMAN_FEEDBACK not in DEVICE_FACT_EVIDENCE_TYPES
 
+
+def test_policy_rejects_probable_supported_by_low_reliability_facts():
+    case = make_case(DIAG_A)
+    status = case.add_evidence(
+        DiagnosisEvidence(
+            diagnosis_id=DIAG_A,
+            evidence_type=EvidenceType.DEVICE_STATUS,
+            source=EvidenceSource.DEVICE_GATEWAY,
+            summary="低可靠设备状态",
+            reliability=Reliability.LOW,
+        )
+    )
+    stream = case.add_evidence(
+        DiagnosisEvidence(
+            diagnosis_id=DIAG_A,
+            evidence_type=EvidenceType.DEVICE_STREAM,
+            source=EvidenceSource.DEVICE_GATEWAY,
+            summary="低可靠码流状态",
+            reliability=Reliability.LOW,
+        )
+    )
+
+    with pytest.raises(CitationPolicyViolation, match="低可靠性"):
+        CitationPolicy().validate(
+            _conclusion(DIAG_A, [status.evidence_id, stream.evidence_id], "probable"),
+            case,
+        )
 
 def test_new_camera_evidence_types_are_device_facts():
     """Phase 1 新增的三个 EvidenceType 必须纳入设备事实集合。"""

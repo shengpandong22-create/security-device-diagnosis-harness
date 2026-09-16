@@ -79,7 +79,9 @@ def test_run_diagnosis_returns_waiting_for_confirmation(client):
     assert data["status"] == "waiting_for_confirmation"
     assert data["evidence_count"] >= 3
     assert data["conclusion"]["confidence"] == "probable"
+    assert data["conclusion"]["model_cited_evidence_ids"] == []
     assert data["conclusion"]["cited_evidence_ids"]
+    assert data["conclusion"]["citation_repaired"] is True
 
 
 def test_list_evidence_returns_evidence(client):

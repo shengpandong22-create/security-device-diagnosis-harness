@@ -79,7 +79,10 @@ class ConclusionData(BaseModel):
     summary: str
     root_cause: str | None = None
     confidence: ConclusionConfidence
+    model_cited_evidence_ids: list[str] = Field(default_factory=list)
     cited_evidence_ids: list[str] = Field(default_factory=list)
+    citation_repaired: bool = False
+    confidence_downgraded: bool = False
     next_steps: list[str] = Field(default_factory=list)
 
 
@@ -154,6 +157,9 @@ def to_conclusion_data(conclusion: object) -> ConclusionData:
         summary=conclusion.summary,
         root_cause=conclusion.root_cause,
         confidence=conclusion.confidence,
+        model_cited_evidence_ids=list(conclusion.model_cited_evidence_ids),
         cited_evidence_ids=list(conclusion.cited_evidence_ids),
+        citation_repaired=conclusion.citation_repaired,
+        confidence_downgraded=conclusion.confidence_downgraded,
         next_steps=list(conclusion.next_steps),
     )
