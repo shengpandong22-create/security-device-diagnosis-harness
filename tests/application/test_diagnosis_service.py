@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from security_diagnosis_harness.adapters.llm.fake import FakeLLM
 from security_diagnosis_harness.application.diagnoses import repair_cited_evidence_ids
 from security_diagnosis_harness.application.errors import DiagnosisNotFoundError
 from security_diagnosis_harness.domain.citation_policy import (
@@ -19,6 +20,12 @@ from security_diagnosis_harness.domain.errors import (
 )
 from security_diagnosis_harness.domain.evidence import EvidenceType
 from security_diagnosis_harness.domain.review import HumanReviewAction
+from security_diagnosis_harness.ports.llm import (
+    ConclusionDraft,
+    FinishReason,
+    LLMResponse,
+    ToolCall,
+)
 
 from ..conftest import make_case, make_evidence
 from .conftest import (
@@ -133,6 +140,52 @@ def test_probable_cites_device_fact_evidence(app_service):
 
     assert result.conclusion.confidence is ConclusionConfidence.PROBABLE
     assert any(item.evidence_type is EvidenceType.DEVICE_STATUS for item in cited)
+
+
+def test_conflicting_model_and_rule_candidate_is_blocked(sample_gateway):
+    llm = FakeLLM(
+        [
+            LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        call_id="c1",
+                        tool_name="device__query_status",
+                        arguments={"device_id": "camera-3f-001"},
+                    ),
+                    ToolCall(
+                        call_id="c2",
+                        tool_name="device__search_alarm_events",
+                        arguments={"device_id": "camera-3f-001", "limit": 20},
+                    ),
+                    ToolCall(
+                        call_id="c3",
+                        tool_name="device__read_config_snapshot",
+                        arguments={"device_id": "camera-3f-001"},
+                    ),
+                ],
+                finish_reason=FinishReason.TOOL_CALLS,
+            ),
+            LLMResponse(
+                final_conclusion=ConclusionDraft(
+                    fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
+                    summary="与规则冲突的模型结论",
+                    candidate_label="recording_plan_disabled",
+                    confidence="probable",
+                ),
+                finish_reason=FinishReason.STOP,
+            ),
+        ]
+    )
+    service, _ = build_service(llm, sample_gateway)
+    diagnosis_id = create_black_screen_case(service)
+
+    result = service.run_diagnosis(diagnosis_id)
+
+    assert result.ok is False
+    assert result.status is SecurityDiagnosisStatus.INCONCLUSIVE
+    assert result.error == "模型候选标签与确定性规则冲突，禁止形成候选结论"
+    assert result.candidate_label is not None
+    assert service.get_diagnosis(diagnosis_id).conclusion is None
 
 
 def test_citation_policy_is_executed(app_service, monkeypatch):

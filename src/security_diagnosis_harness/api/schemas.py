@@ -78,6 +78,9 @@ class ConclusionData(BaseModel):
     fault_type: SecurityFaultType
     summary: str
     root_cause: str | None = None
+    model_candidate_label: str | None = None
+    rule_candidate_label: str | None = None
+    rule_consistency: str = "not_provided"
     confidence: ConclusionConfidence
     model_cited_evidence_ids: list[str] = Field(default_factory=list)
     cited_evidence_ids: list[str] = Field(default_factory=list)
@@ -101,6 +104,13 @@ class RunDiagnosisData(BaseModel):
     rounds: int = 0
     tool_calls: int = 0
     error: str | None = None
+    candidate_label: str | None = None
+    candidate_explanation: str = ""
+    evidence_chain: list[str] = Field(default_factory=list)
+    excluded_candidates: list[str] = Field(default_factory=list)
+    troubleshooting_order: list[str] = Field(default_factory=list)
+    degraded: bool = False
+    failure_kinds: list[str] = Field(default_factory=list)
 
 
 class ReviewRequest(BaseModel):
@@ -156,6 +166,9 @@ def to_conclusion_data(conclusion: object) -> ConclusionData:
         fault_type=conclusion.fault_type,
         summary=conclusion.summary,
         root_cause=conclusion.root_cause,
+        model_candidate_label=conclusion.model_candidate_label,
+        rule_candidate_label=conclusion.rule_candidate_label,
+        rule_consistency=conclusion.rule_consistency,
         confidence=conclusion.confidence,
         model_cited_evidence_ids=list(conclusion.model_cited_evidence_ids),
         cited_evidence_ids=list(conclusion.cited_evidence_ids),

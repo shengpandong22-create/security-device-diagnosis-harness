@@ -37,6 +37,9 @@ class DiagnosisConclusion(BaseModel):
     fault_type: SecurityFaultType
     summary: str = Field(min_length=1)
     root_cause: str | None = None
+    model_candidate_label: str | None = None
+    rule_candidate_label: str | None = None
+    rule_consistency: str = "not_provided"
     confidence: ConclusionConfidence = ConclusionConfidence.POSSIBLE
     # 模型原始引用与 Harness 最终生效引用必须分开保存，避免自动修复被
     # 误解为模型本身完成了正确引用。旧数据缺少该字段时按空列表兼容。

@@ -62,6 +62,15 @@ def create_diagnoses_router(service: SecurityDiagnosisApplicationService) -> API
             rounds=result.rounds,
             tool_calls=result.tool_calls,
             error=result.error,
+            candidate_label=(
+                result.candidate_label.value if result.candidate_label is not None else None
+            ),
+            candidate_explanation=result.candidate_explanation,
+            evidence_chain=list(result.evidence_chain),
+            excluded_candidates=list(result.excluded_candidates),
+            troubleshooting_order=list(result.troubleshooting_order),
+            degraded=result.degraded,
+            failure_kinds=list(result.failure_kinds),
         )
         return ApiResponse(data=data)
 

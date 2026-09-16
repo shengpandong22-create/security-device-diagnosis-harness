@@ -470,11 +470,38 @@ class SecurityDiagnosisApplicationService:
                 failure_kinds=failure_kinds,
             )
 
+        insight = self.infer_candidate_label(case)
+        model_candidate_label = draft_conclusion.candidate_label
+        if (
+            model_candidate_label is not None
+            and model_candidate_label != insight.label.value
+        ):
+            failed = self._finish_failure(
+                case,
+                result,
+                "模型候选标签与确定性规则冲突，禁止形成候选结论",
+                status=SecurityDiagnosisStatus.INCONCLUSIVE,
+                before=before,
+                degraded=degraded,
+                failure_kinds=failure_kinds,
+            )
+            failed.candidate_label = insight.label
+            failed.candidate_explanation = insight.explanation
+            failed.evidence_chain = list(insight.evidence_chain)
+            failed.excluded_candidates = list(insight.excluded_candidates)
+            failed.troubleshooting_order = list(insight.troubleshooting_order)
+            return failed
+
         conclusion = DiagnosisConclusion(
             diagnosis_id=case.diagnosis_id,
             fault_type=draft_conclusion.fault_type,
             summary=draft_conclusion.summary,
             root_cause=draft_conclusion.root_cause,
+            model_candidate_label=model_candidate_label,
+            rule_candidate_label=insight.label.value,
+            rule_consistency=(
+                "consistent" if model_candidate_label is not None else "not_provided"
+            ),
             confidence=repair.confidence,
             model_cited_evidence_ids=repair.model_evidence_ids,
             cited_evidence_ids=repair.evidence_ids,
@@ -508,8 +535,6 @@ class SecurityDiagnosisApplicationService:
             before=before,
             summary="诊断运行完成并产出候选结论",
         )
-
-        insight = self.infer_candidate_label(case)
 
         return RunDiagnosisResult(
             diagnosis_id=case.diagnosis_id,

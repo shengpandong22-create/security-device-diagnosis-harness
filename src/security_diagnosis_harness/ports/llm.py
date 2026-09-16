@@ -55,6 +55,9 @@ class ConclusionDraft(BaseModel):
     fault_type: SecurityFaultType
     summary: str = Field(min_length=1)
     root_cause: str | None = None
+    # 可选的受控分类标签。提供时必须与确定性规则标签一致；自由文本
+    # root_cause 不再被当作可可靠比较的分类字段。
+    candidate_label: str | None = None
     confidence: ConclusionConfidence = ConclusionConfidence.POSSIBLE
     cited_evidence_ids: list[str] = Field(default_factory=list)
     next_steps: list[str] = Field(default_factory=list)

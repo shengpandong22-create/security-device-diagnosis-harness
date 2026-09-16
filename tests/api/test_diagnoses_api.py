@@ -82,6 +82,16 @@ def test_run_diagnosis_returns_waiting_for_confirmation(client):
     assert data["conclusion"]["model_cited_evidence_ids"] == []
     assert data["conclusion"]["cited_evidence_ids"]
     assert data["conclusion"]["citation_repaired"] is True
+    assert data["conclusion"]["model_candidate_label"] is None
+    assert data["conclusion"]["rule_candidate_label"]
+    assert data["conclusion"]["rule_consistency"] == "not_provided"
+    assert data["candidate_label"] == data["conclusion"]["rule_candidate_label"]
+    assert data["candidate_explanation"]
+    assert data["evidence_chain"]
+    assert isinstance(data["excluded_candidates"], list)
+    assert data["troubleshooting_order"]
+    assert data["degraded"] is False
+    assert data["failure_kinds"] == []
 
 
 def test_list_evidence_returns_evidence(client):
