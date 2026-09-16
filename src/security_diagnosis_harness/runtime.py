@@ -26,7 +26,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from types import MappingProxyType
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from alembic import command
 from alembic.config import Config
@@ -413,26 +413,48 @@ def supported_runtime_fault_types() -> frozenset[SecurityFaultType]:
     )
 
 
+class RuntimeClosedError(RuntimeError):
+    """运行时容器已关闭，拒绝继续通过正式入口操作。"""
+
+    def __init__(self) -> None:
+        super().__init__("RuntimeContainer 已关闭，拒绝继续操作")
+
+
+class _ClosedAwareSessionFactory:
+    """包装 sessionmaker：容器关闭后稳定拒绝建立新会话。
+
+    这样 SQLite Engine 被 dispose 之后，仓储持有的旧 Session factory 不会再
+    隐式新建连接；memory 与 sqlite 两种模式对"关闭后继续操作"的语义一致。
+    """
+
+    def __init__(self, factory: sessionmaker[Session]) -> None:
+        self._factory = factory
+        self._closed = False
+
+    def mark_closed(self) -> None:
+        self._closed = True
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Session:
+        if self._closed:
+            raise RuntimeClosedError()
+        return self._factory(*args, **kwargs)
+
+
 @dataclass
 class RuntimeContainer:
     """正式本地运行装配结果。
 
     与评测用 `bootstrap.Container` 分离：这里持有 Engine 生命周期的所有权。
-    `capability_support` / `asset_catalog` / `adapter_registry` 以只读属性暴露。
+    `capability_support` / `asset_catalog` / `adapter_registry` 以只读属性暴露；
+    `service` / `repository` / `gateway` 在 close() 之后访问会稳定抛出
+    `RuntimeClosedError`，而不是静默继续读写。
     """
 
     settings: RuntimeSettings
-    service: SecurityDiagnosisApplicationService
-    repository: DiagnosisRepository
     engine: Engine | None
-    session_factory: sessionmaker[Session] | None
+    session_factory: sessionmaker[Session] | _ClosedAwareSessionFactory | None
     runner: ToolLoopRunner
     registry: ToolRegistry
-    # Phase 9C-2B：契约是 DeviceGateway；默认实例是 RoutedDeviceGateway，
-    # StaticDeviceGateway 只作为 Router 内部 Adapter，不再直接传给 Service。
-    gateway: DeviceGateway
-    # 设备授权会话：网关持有它做调用前预检；容器负责在 close() 时关闭它。
-    authorization: DeviceAuthorizationSession
     llm: FakeLLM
     citation_policy: CitationPolicy
     audit_repository: AuditRepository
@@ -440,6 +462,13 @@ class RuntimeContainer:
     audited_write: AuditedWrite
     knowledge_service: KnowledgeGovernanceApplicationService
     consistency_scanner: ConsistencyScanner
+    # 设备授权会话：网关持有它做调用前预检；容器负责在 close() 时关闭它。
+    authorization: DeviceAuthorizationSession
+    _service: SecurityDiagnosisApplicationService
+    _repository: DiagnosisRepository
+    # Phase 9C-2B：契约是 DeviceGateway；默认实例是 RoutedDeviceGateway，
+    # StaticDeviceGateway 只作为 Router 内部 Adapter，不再直接传给 Service。
+    _gateway: DeviceGateway
     _asset_catalog: InMemoryDeviceAssetCatalog
     _adapter_registry: InMemoryDeviceAdapterRegistry
     _capability_support: RuntimeCapabilitySupport
@@ -461,13 +490,36 @@ class RuntimeContainer:
         """`resolve_fault_support()` 的推导结果（只读、不可变）。"""
         return self._capability_support
 
+    # ------------------------------------------------------ 关闭后受控拒绝入口
+    def ensure_open(self) -> None:
+        """容器关闭后，正式入口继续操作时稳定拒绝。"""
+        if self._closed:
+            raise RuntimeClosedError()
+
+    @property
+    def service(self) -> SecurityDiagnosisApplicationService:
+        self.ensure_open()
+        return self._service
+
+    @property
+    def repository(self) -> DiagnosisRepository:
+        self.ensure_open()
+        return self._repository
+
+    @property
+    def gateway(self) -> DeviceGateway:
+        self.ensure_open()
+        return self._gateway
+
     # ------------------------------------------------------------------ 生命周期
     def close(self) -> None:
-        """关闭授权会话并释放 Engine；可重复调用。memory 模式下安全无副作用。"""
+        """关闭授权会话与持久化入口；可重复调用。memory 模式下安全无副作用。"""
         if self._closed:
             return
         self._closed = True
         self.authorization.close()
+        if isinstance(self.session_factory, _ClosedAwareSessionFactory):
+            self.session_factory.mark_closed()
         if self.engine is not None:
             self.engine.dispose()
             self.engine = None
@@ -603,7 +655,7 @@ def build_runtime_container(
             if resolved.auto_migrate:
                 upgrade_database(resolved.database_url)
             engine = build_engine(resolved.database_url, echo=resolved.database_echo)
-            session_factory = build_session_factory(engine)
+            session_factory = _ClosedAwareSessionFactory(build_session_factory(engine))
             repository = SqlAlchemyDiagnosisRepository(session_factory)
             audit_repository = SqlAlchemyAuditRepository(session_factory)
             knowledge_repository = SqlAlchemyKnowledgeRepository(session_factory)
@@ -645,13 +697,13 @@ def build_runtime_container(
     )
     return RuntimeContainer(
         settings=resolved,
-        service=service,
-        repository=repository,
+        _service=service,
+        _repository=repository,
         engine=engine,
         session_factory=session_factory,
         runner=runner,
         registry=resolved_registry,
-        gateway=gateway,
+        _gateway=gateway,
         authorization=resolved_authorization,
         llm=llm,
         citation_policy=citation_policy,

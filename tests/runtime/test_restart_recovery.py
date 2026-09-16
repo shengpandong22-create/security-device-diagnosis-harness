@@ -60,6 +60,11 @@ def test_restart_recovers_full_aggregate(tmp_path: Path):
     settings = _settings(tmp_path)
 
     runtime_a = build_runtime_container(settings)
+    # 关闭后的容器入口按设计拒绝访问，因此在 close 前捕获 A 的组件身份用于比较。
+    a_engine = runtime_a.engine
+    a_session_factory = runtime_a.session_factory
+    a_repository = runtime_a.repository
+    a_service = runtime_a.service
     try:
         snapshot = _run_and_confirm(runtime_a)
     finally:
@@ -68,10 +73,10 @@ def test_restart_recovers_full_aggregate(tmp_path: Path):
     runtime_b = build_runtime_container(settings)
     try:
         assert runtime_b is not runtime_a
-        assert runtime_b.engine is not runtime_a.engine
-        assert runtime_b.session_factory is not runtime_a.session_factory
-        assert runtime_b.repository is not runtime_a.repository
-        assert runtime_b.service is not runtime_a.service
+        assert runtime_b.engine is not a_engine
+        assert runtime_b.session_factory is not a_session_factory
+        assert runtime_b.repository is not a_repository
+        assert runtime_b.service is not a_service
 
         recovered = runtime_b.service.get_diagnosis(snapshot["diagnosis_id"])
 
@@ -97,6 +102,8 @@ def test_restart_only_shares_sqlite_file(tmp_path: Path):
     database_path = Path(settings.database_url.replace("sqlite:///", ""))
 
     runtime_a = build_runtime_container(settings)
+    a_engine = runtime_a.engine
+    a_repository = runtime_a.repository
     try:
         _run_and_confirm(runtime_a)
         assert database_path.exists()
@@ -108,8 +115,8 @@ def test_restart_only_shares_sqlite_file(tmp_path: Path):
 
     runtime_b = build_runtime_container(settings)
     try:
-        assert runtime_b.engine is not runtime_a.engine
-        assert runtime_b.repository is not runtime_a.repository
+        assert runtime_b.engine is not a_engine
+        assert runtime_b.repository is not a_repository
     finally:
         runtime_b.close()
 

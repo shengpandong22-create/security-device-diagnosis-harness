@@ -210,3 +210,42 @@ def test_close_closes_authorization_session():
     # close 幂等，不改变终态。
     runtime.close()
     assert runtime.authorization.closed is True
+
+
+# ---------------------------------------------------------------- 关闭后生命周期
+def test_sqlite_closed_container_rejects_all_entry_points(tmp_path: Path):
+    from security_diagnosis_harness.runtime import RuntimeClosedError
+
+    with build_runtime_container(_sqlite_settings(tmp_path)) as runtime:
+        pass
+
+    with pytest.raises(RuntimeClosedError):
+        _ = runtime.service
+    with pytest.raises(RuntimeClosedError):
+        _ = runtime.repository
+    with pytest.raises(RuntimeClosedError):
+        _ = runtime.gateway
+
+
+def test_memory_closed_container_rejects_entry_points():
+    from security_diagnosis_harness.runtime import RuntimeClosedError
+
+    runtime = build_runtime_container(RuntimeSettings(repository_mode="memory"))
+    runtime.close()
+
+    with pytest.raises(RuntimeClosedError):
+        _ = runtime.service
+    with pytest.raises(RuntimeClosedError):
+        runtime.ensure_open()
+
+
+def test_sqlite_session_factory_rejects_after_close(tmp_path: Path):
+    from security_diagnosis_harness.runtime import RuntimeClosedError
+
+    runtime = build_runtime_container(_sqlite_settings(tmp_path))
+    factory = runtime.session_factory
+    runtime.close()
+
+    # Engine dispose 后，旧 Session factory 不得隐式重连。
+    with pytest.raises(RuntimeClosedError):
+        factory()
