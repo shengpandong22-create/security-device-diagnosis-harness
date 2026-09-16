@@ -104,6 +104,8 @@ class CaseGrade(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     case_id: str
+    expected_candidate: str
+    predicted_candidate: str | None
     passed: bool
     p0_blocked: bool
     metrics: CaseMetrics
@@ -235,6 +237,8 @@ class CodeBasedGrader:
         )
         return CaseGrade(
             case_id=case.case_id,
+            expected_candidate=case.expected_candidate,
+            predicted_candidate=output.candidate_label,
             passed=not findings,
             p0_blocked=p0_blocked,
             metrics=metrics,

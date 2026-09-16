@@ -40,6 +40,8 @@
     "cases": [
       {
         "case_id": "dev-camera-stream-timeout",
+        "expected_candidate": "overloaded_encoding_configuration",
+        "predicted_candidate": "overloaded_encoding_configuration",
         "passed": true,
         "p0_blocked": false,
         "metrics": {
@@ -55,6 +57,8 @@
       },
       {
         "case_id": "dev-recording-storage-full",
+        "expected_candidate": "storage_capacity_or_pool_issue",
+        "predicted_candidate": "storage_capacity_or_pool_issue",
         "passed": true,
         "p0_blocked": false,
         "metrics": {

@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from security_diagnosis_harness.domain.common import canonical_json, sha256_text
 from security_diagnosis_harness.domain.redaction import redact_mapping
 from security_diagnosis_harness.evaluation.dataset import DatasetSplit
-from security_diagnosis_harness.evaluation.grader import SuiteGrade
+from security_diagnosis_harness.evaluation.grader import SuiteGrade, _macro_f1
 
 
 class ComparisonConfigurationError(ValueError):
@@ -265,12 +265,26 @@ def _validate_grade_consistency(run: EvaluationRun) -> None:
             raise ComparisonConfigurationError(
                 f"{run.run_id} 的案例 {case.case_id} 状态与 findings 不一致"
             )
+        expected_correct = float(case.expected_candidate == case.predicted_candidate)
+        _require_metric(
+            run.run_id,
+            f"{case.case_id}.candidate_correct",
+            case.metrics.candidate_correct,
+            expected_correct,
+        )
 
     expected_pass_rate = _average(float(item.passed) for item in cases)
     _require_metric(run.run_id, "pass_rate", metrics.pass_rate, expected_pass_rate)
     for suite_field, case_field in _AVERAGED_SUITE_FIELDS:
         expected = _average(float(getattr(item.metrics, case_field)) for item in cases)
         _require_metric(run.run_id, suite_field, float(getattr(metrics, suite_field)), expected)
+    expected_macro_f1 = _macro_f1(
+        [item.expected_candidate for item in cases],
+        [item.predicted_candidate for item in cases],
+    )
+    _require_metric(
+        run.run_id, "candidate_macro_f1", metrics.candidate_macro_f1, expected_macro_f1
+    )
     expected_cost = sum(item.metrics.estimated_cost for item in cases)
     _require_metric(run.run_id, "estimated_cost", metrics.estimated_cost, expected_cost)
 

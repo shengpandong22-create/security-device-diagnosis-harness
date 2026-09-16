@@ -148,6 +148,32 @@ def test_forged_zero_p0_summary_cannot_bypass_case_level_gate(cases):
     assert report.blocked_by_p0 is True
 
 
+def test_forged_candidate_macro_f1_is_rejected(cases):
+    baseline, candidate = _pair(cases)
+    forged_metrics = candidate.grade.metrics.model_copy(update={"candidate_macro_f1": 0.5})
+    forged = candidate.model_copy(
+        update={"grade": candidate.grade.model_copy(update={"metrics": forged_metrics})}
+    )
+
+    with pytest.raises(ComparisonConfigurationError, match="candidate_macro_f1"):
+        compare_runs(baseline, forged)
+
+
+def test_forged_case_candidate_labels_are_rejected(cases):
+    baseline, candidate = _pair(cases)
+    first = candidate.grade.cases[0].model_copy(update={"predicted_candidate": "forged"})
+    forged = candidate.model_copy(
+        update={
+            "grade": candidate.grade.model_copy(
+                update={"cases": (first, *candidate.grade.cases[1:])}
+            )
+        }
+    )
+
+    with pytest.raises(ComparisonConfigurationError, match="candidate_correct"):
+        compare_runs(baseline, forged)
+
+
 def test_forged_suite_metrics_cannot_hide_new_case_failure(cases):
     baseline, candidate = _pair(cases)
     case = candidate.grade.cases[0]
