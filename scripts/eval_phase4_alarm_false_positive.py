@@ -227,7 +227,8 @@ def main() -> int:
     MD_PATH.write_text(render_markdown(payload), encoding="utf-8")
 
     print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
-    return 0
+    summary = payload["summary"]
+    return 0 if summary["total"] > 0 and summary["passed"] == summary["total"] else 1
 
 
 if __name__ == "__main__":

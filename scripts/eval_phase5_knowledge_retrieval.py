@@ -146,5 +146,19 @@ def evaluate(
     return report
 
 
+def main() -> int:
+    report = evaluate()
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    modes = report["modes"]
+    passed = (
+        report["total"] > 0
+        and modes["keyword"]["recall_at_3"] >= 0.75
+        and modes["vector"]["recall_at_3"] >= 1.0
+        and modes["hybrid"]["recall_at_3"] >= 1.0
+        and modes["hybrid"]["recall_at_1"] >= modes["vector"]["recall_at_1"]
+    )
+    return 0 if passed else 1
+
+
 if __name__ == "__main__":
-    print(json.dumps(evaluate(), ensure_ascii=False, indent=2))
+    raise SystemExit(main())

@@ -355,7 +355,8 @@ def _finding(code: str, level: FindingLevel, stage: str) -> GraderFinding:
 
 
 def _rate(items: tuple[Any, ...], predicate: Any) -> float:
-    return _mean(predicate(item) for item in items) if items else 1.0
+    # 没有观测就没有成功率；空集不能被当成 100% 合规。
+    return _mean(predicate(item) for item in items) if items else 0.0
 
 
 def _mean(values: Any) -> float:

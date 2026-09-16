@@ -77,6 +77,19 @@ def test_perfect_case_passes_with_full_core_scores(cases):
     assert grade.metrics.evidence_coverage == 1
 
 
+def test_empty_tool_and_evidence_sets_do_not_report_perfect_rates(cases):
+    output = _successful_output(cases[0]).model_copy(
+        update={"tool_calls": (), "evidence": (), "cited_evidence_ids": ()}
+    )
+
+    metrics = CodeBasedGrader().grade_case(cases[0], output).metrics
+
+    assert metrics.parameter_valid_rate == 0
+    assert metrics.fault_type_match_rate == 0
+    assert metrics.evidence_ownership_rate == 0
+    assert metrics.evidence_reliability_rate == 0
+
+
 @pytest.mark.parametrize(
     ("changes", "code"),
     [

@@ -48,6 +48,21 @@ def test_eval_script_runs_and_writes_outputs():
     _cleanup(module)
 
 
+def test_eval_script_returns_nonzero_when_any_case_fails(monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "run_eval",
+        lambda: {"summary": {"total": 2, "passed": 1}, "cases": []},
+    )
+    monkeypatch.setattr(module, "render_markdown", lambda _payload: "failed\n")
+
+    try:
+        assert module.main() == 1
+    finally:
+        _cleanup(module)
+
+
 def test_eval_covers_at_least_four_cases():
     module = _load_module()
     payload = module.run_eval()
