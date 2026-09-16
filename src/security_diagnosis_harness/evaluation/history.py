@@ -99,6 +99,9 @@ class EvaluationHistoryRecord(BaseModel):
     gate_allowed: bool | None = None
     blocked_by_p0: bool = False
     blocking_reasons: tuple[str, ...] = ()
+    # 非敏感 GatePolicy 快照与其规范化哈希；用于加载期复验策略未被篡改。
+    gate_policy: dict[str, Any] | None = None
+    gate_policy_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class EvaluationHistoryDocument(BaseModel):
@@ -106,6 +109,44 @@ class EvaluationHistoryDocument(BaseModel):
 
     schema_version: str = "1.0.0"
     records: tuple[EvaluationHistoryRecord, ...] = ()
+
+
+#: 当前受支持的评测历史 schema 版本。其它版本明确拒绝（fail-closed），
+#: 不做隐式兼容，避免"格式合法但语义不同"的历史被静默接受。
+SUPPORTED_HISTORY_SCHEMA_VERSIONS: frozenset[str] = frozenset({"1.0.0"})
+
+
+def _validate_document(document: EvaluationHistoryDocument) -> EvaluationHistoryDocument:
+    """复验历史文档的结构不变量；拒绝被篡改或顺序错误的历史。"""
+    if document.schema_version not in SUPPORTED_HISTORY_SCHEMA_VERSIONS:
+        raise EvaluationHistoryError("不支持的评测历史 schema_version")
+    seen: set[str] = set()
+    for record in document.records:
+        summary = record.summary
+        if summary.run_id in seen:
+            raise EvaluationHistoryError(f"评测历史存在重复 run_id: {summary.run_id}")
+        baseline_id = record.baseline_run_id
+        if baseline_id is None:
+            if record.gate_allowed is not None:
+                raise EvaluationHistoryError("基线记录不得携带 Gate 结论")
+            if record.blocked_by_p0 or record.blocking_reasons:
+                raise EvaluationHistoryError("基线记录不得携带阻塞原因")
+        else:
+            if baseline_id not in seen:
+                raise EvaluationHistoryError("Baseline 必须指向此前已入历史的记录")
+            if record.gate_allowed is None:
+                raise EvaluationHistoryError("非基线记录必须携带 Gate 结论")
+            if record.gate_allowed != (not record.blocking_reasons):
+                raise EvaluationHistoryError("Gate 结论与阻塞原因不一致")
+            if record.blocked_by_p0 and record.gate_allowed:
+                raise EvaluationHistoryError("P0 阻塞记录的 Gate 结论不能为允许")
+        if record.gate_policy_hash is not None:
+            if record.gate_policy is None:
+                raise EvaluationHistoryError("Gate 策略哈希必须绑定策略快照")
+            if sha256_text(canonical_json(record.gate_policy)) != record.gate_policy_hash:
+                raise EvaluationHistoryError("Gate 策略快照与哈希不一致")
+        seen.add(summary.run_id)
+    return document
 
 
 class TrendPoint(BaseModel):
@@ -166,11 +207,12 @@ class JsonEvaluationHistory:
         if not self._path.exists():
             return EvaluationHistoryDocument()
         try:
-            return EvaluationHistoryDocument.model_validate_json(
+            document = EvaluationHistoryDocument.model_validate_json(
                 self._path.read_text(encoding="utf-8")
             )
         except (OSError, ValueError) as exc:
             raise EvaluationHistoryError("评测历史文件无法通过协议校验") from exc
+        return _validate_document(document)
 
     def append(
         self,
@@ -202,12 +244,15 @@ class JsonEvaluationHistory:
             gate = compare_runs(
                 baseline, run, policy, expected_candidates=expected_candidates
             )
+            policy_snapshot = (policy or GatePolicy()).model_dump(mode="json")
             record = EvaluationHistoryRecord(
                 summary=EvaluationRunSummary.from_run(run),
                 baseline_run_id=baseline.run_id,
                 gate_allowed=gate.allowed,
                 blocked_by_p0=gate.blocked_by_p0,
                 blocking_reasons=gate.blocking_reasons,
+                gate_policy=policy_snapshot,
+                gate_policy_hash=sha256_text(canonical_json(policy_snapshot)),
             )
         updated = document.model_copy(update={"records": (*document.records, record)})
         self._write(updated)

@@ -238,6 +238,68 @@ def test_invalid_or_mixed_history_is_rejected(tmp_path, cases):
         history.trend()
 
 
+def _two_record_history(tmp_path, cases) -> tuple[JsonEvaluationHistory, object]:
+    path = tmp_path / "history.json"
+    history = JsonEvaluationHistory(path)
+    baseline = _run(cases, "a" * 40)
+    candidate = _run(cases, "b" * 40)
+    history.append(baseline)
+    history.append(candidate, baseline=baseline, expected_candidates=_expected(cases))
+    return history, path
+
+
+def test_load_rejects_duplicate_run_id(tmp_path, cases):
+    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history.append(_run(cases, "a" * 40))
+    data = json.loads(history._path.read_text(encoding="utf-8"))
+    data["records"].append(data["records"][0])
+    history._path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="重复 run_id"):
+        history.load()
+
+
+def test_load_rejects_future_baseline(tmp_path, cases):
+    history, path = _two_record_history(tmp_path, cases)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["records"] = list(reversed(data["records"]))
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="Baseline"):
+        history.load()
+
+
+def test_load_rejects_tampered_gate_conclusion(tmp_path, cases):
+    history, path = _two_record_history(tmp_path, cases)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["records"][1]["gate_allowed"] = not data["records"][1]["gate_allowed"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="Gate 结论"):
+        history.load()
+
+
+def test_load_rejects_tampered_policy_snapshot(tmp_path, cases):
+    history, path = _two_record_history(tmp_path, cases)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["records"][1]["gate_policy"]["tool_recall_tolerance"] = 1.0
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="策略快照"):
+        history.load()
+
+
+def test_load_rejects_unsupported_schema_version(tmp_path, cases):
+    history = JsonEvaluationHistory(tmp_path / "history.json")
+    history.append(_run(cases, "a" * 40))
+    data = json.loads(history._path.read_text(encoding="utf-8"))
+    data["schema_version"] = "2.0.0"
+    history._path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="schema_version"):
+        history.load()
+
+
 def test_model_copy_cannot_bypass_sensitive_identity_validation(tmp_path, cases):
     run = _run(cases, "a" * 40)
     unsafe_identity = run.identity.model_copy(
