@@ -352,6 +352,20 @@ def test_release_receipt_cannot_omit_an_actual_addition(tmp_path):
         verify_dataset_release(target, source_directory=SOURCE)
 
 
+def test_release_receipt_rejects_unknown_schema_version(tmp_path):
+    target, _ = publish_dataset_version(
+        SOURCE, tmp_path, "1.1.0", (_addition(),),
+        released_at=datetime(2026, 9, 13, tzinfo=UTC),
+    )
+    receipt_path = target / "release.json"
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    payload["schema_version"] = "1.0.0"
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(DatasetReleaseError, match="协议不合法"):
+        verify_dataset_release(target, source_directory=SOURCE)
+
+
 def test_release_cannot_rewrite_an_inherited_case(tmp_path):
     target, _ = publish_dataset_version(
         SOURCE, tmp_path, "1.1.0", (_addition(),),

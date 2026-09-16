@@ -7,6 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -91,6 +92,7 @@ class ReleasedAddition(BaseModel):
 class DatasetReleaseReceipt(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    schema_version: Literal["2.0.0"]
     dataset_name: str
     source_version: str
     released_version: str
@@ -338,6 +340,7 @@ def _receipt(
         for split, items in cases.items()
     }
     return DatasetReleaseReceipt(
+        schema_version="2.0.0",
         dataset_name="security-diagnosis",
         source_version=source_version,
         released_version=target_version,
