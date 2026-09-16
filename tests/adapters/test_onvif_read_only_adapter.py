@@ -304,6 +304,35 @@ def test_invalid_xml_is_controlled() -> None:
     assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
 
 
+@pytest.mark.parametrize(
+    ("xml", "setting"),
+    [
+        (
+            '<!DOCTYPE x [<!ENTITY payload "expanded">]><Envelope>&payload;</Envelope>',
+            {},
+        ),
+        ("<a><b><c><d><e/></d></c></b></a>", {"max_xml_depth": 4}),
+        ("<a><b/><c/><d/></a>", {"max_xml_elements": 3}),
+        ('<a one="1" two="2"><b three="3"/></a>', {"max_xml_attributes": 2}),
+        ("<a>123456789</a>", {"max_xml_text_chars": 8}),
+    ],
+)
+def test_xml_resource_boundaries_fail_closed(xml: str, setting: dict[str, int]) -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, text=xml, request=request)
+    )
+    adapter = OnvifReadOnlyAdapter(
+        _settings(**setting),
+        _Resolver(),
+        transport=transport,
+    )
+
+    with adapter, pytest.raises(DeviceAdapterError) as exc_info:
+        adapter.query_status("lab-camera")
+
+    assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
+
+
 def test_chunked_oversized_soap_stops_before_buffering_the_tail() -> None:
     yielded: list[int] = []
 
