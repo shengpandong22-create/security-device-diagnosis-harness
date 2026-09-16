@@ -91,11 +91,30 @@ class SecurityDiagnosisCase(BaseModel):
     # 新建聚合为 0；首次 save 后持久化为 1；每次 update 成功后 +1。
     version: int = Field(default=0, ge=0)
 
+    def __setattr__(self, name: str, value: object) -> None:
+        if name == "status" and "status" in self.__dict__ and value != self.status:
+            raise InvalidStatusTransition("诊断状态只能通过领域状态机方法变更")
+        super().__setattr__(name, value)
+
     @model_validator(mode="after")
-    def _redact_description(self) -> SecurityDiagnosisCase:
-        """描述属于自由文本，进入领域对象前先做统一脱敏。"""
+    def _validate_aggregate(self) -> SecurityDiagnosisCase:
+        """统一校验聚合不变量，并在领域入口完成自由文本脱敏。"""
         cleaned, _ = redact_text(self.description)
-        self.description = cleaned
+        object.__setattr__(self, "description", cleaned)
+
+        if any(not review.belongs_to(self.diagnosis_id) for review in self.reviews):
+            raise ReviewNotAllowed("诊断包含不属于当前 diagnosis_id 的人工审核记录")
+
+        confirm_reviews = [
+            review for review in self.reviews if review.action is HumanReviewAction.CONFIRM
+        ]
+        if self.status is SecurityDiagnosisStatus.CONFIRMED:
+            if self.conclusion is None:
+                raise ReviewNotAllowed("confirmed 诊断必须包含候选结论")
+            if not confirm_reviews or self.reviews[-1].action is not HumanReviewAction.CONFIRM:
+                raise ReviewNotAllowed("confirmed 诊断必须由当前诊断的 confirm review 产生")
+        elif confirm_reviews:
+            raise ReviewNotAllowed("存在 confirm review 时诊断状态必须为 confirmed")
         return self
 
     # ------------------------------------------------------------------ 状态
@@ -115,7 +134,7 @@ class SecurityDiagnosisCase(BaseModel):
             raise InvalidStatusTransition(
                 f"非法状态跳转: {self.status.value} -> {target.value}"
             )
-        self.status = target
+        object.__setattr__(self, "status", target)
         self._touch()
 
     # ------------------------------------------------------------------ 证据
@@ -191,7 +210,7 @@ class SecurityDiagnosisCase(BaseModel):
             target = SecurityDiagnosisStatus.WAITING_FOR_INPUT
 
         self.reviews.append(review)
-        self.status = target
+        object.__setattr__(self, "status", target)
         self._touch()
         return review
 

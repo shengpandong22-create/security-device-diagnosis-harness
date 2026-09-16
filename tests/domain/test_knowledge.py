@@ -131,6 +131,40 @@ def test_confirm_review_produces_confirmed_knowledge():
     assert candidate.reviews == [review]
 
 
+def test_constructor_rejects_confirmed_knowledge_with_foreign_review():
+    review = _review("other-knowledge", KnowledgeReviewAction.CONFIRM)
+
+    with pytest.raises(
+        (pydantic.ValidationError, KnowledgeReviewNotAllowed), match="knowledge_id"
+    ):
+        _candidate(status=KnowledgeCandidateStatus.CONFIRMED, reviews=[review])
+
+
+def test_constructor_rejects_status_review_action_mismatch():
+    candidate = _candidate()
+    review = _review(candidate.knowledge_id, KnowledgeReviewAction.REJECT)
+
+    with pytest.raises(
+        (pydantic.ValidationError, KnowledgeReviewNotAllowed), match="动作序列"
+    ):
+        _candidate(
+            knowledge_id=candidate.knowledge_id,
+            status=KnowledgeCandidateStatus.CONFIRMED,
+            reviews=[review],
+        )
+
+
+def test_direct_assignment_cannot_forge_confirmed_knowledge():
+    candidate = _candidate()
+
+    with pytest.raises(
+        (pydantic.ValidationError, KnowledgeReviewNotAllowed), match="人工审核"
+    ):
+        candidate.status = KnowledgeCandidateStatus.CONFIRMED
+
+    assert candidate.status is KnowledgeCandidateStatus.CANDIDATE
+
+
 def test_reject_review_produces_rejected_knowledge():
     candidate = _candidate()
 

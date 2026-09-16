@@ -137,7 +137,7 @@ class KnowledgeReview(BaseModel):
     def _redact_comment(self) -> KnowledgeReview:
         cleaned, changed = _redact_text(self.comment)
         if changed:
-            self.comment = cleaned
+            object.__setattr__(self, "comment", cleaned)
         return self
 
     def belongs_to(self, knowledge_id: str) -> bool:
@@ -171,38 +171,74 @@ class KnowledgeCandidate(BaseModel):
     # 乐观锁版本号：语义与 SecurityDiagnosisCase.version 一致。
     version: int = Field(default=0, ge=0)
 
+    def __setattr__(self, name: str, value: object) -> None:
+        if name == "status" and "status" in self.__dict__ and value != self.status:
+            raise KnowledgeReviewNotAllowed("知识状态只能通过人工审核 apply_review() 变更")
+        super().__setattr__(name, value)
+
     @model_validator(mode="after")
     def _validate_and_redact(self) -> KnowledgeCandidate:
-        if self.status is not KnowledgeCandidateStatus.CANDIDATE and not self.reviews:
-            raise KnowledgeReviewNotAllowed(
-                "知识候选初始状态只能是 candidate，confirmed/rejected/retired 必须由人工审核产生"
-            )
+        self._validate_review_history()
 
         changed = False
-        self.title, item_changed = _redact_text(self.title)
+        title, item_changed = _redact_text(self.title)
+        object.__setattr__(self, "title", title)
         changed = changed or item_changed
-        self.summary, item_changed = _redact_text(self.summary)
+        summary, item_changed = _redact_text(self.summary)
+        object.__setattr__(self, "summary", summary)
         changed = changed or item_changed
-        self.root_cause, item_changed = _redact_text(self.root_cause)
+        root_cause, item_changed = _redact_text(self.root_cause)
+        object.__setattr__(self, "root_cause", root_cause)
         changed = changed or item_changed
 
-        self.symptoms, item_changed = _redact_text_list(self.symptoms, "symptoms")
+        symptoms, item_changed = _redact_text_list(self.symptoms, "symptoms")
+        object.__setattr__(self, "symptoms", symptoms)
         changed = changed or item_changed
-        self.troubleshooting_steps, item_changed = _redact_text_list(
+        troubleshooting_steps, item_changed = _redact_text_list(
             self.troubleshooting_steps, "troubleshooting_steps"
         )
+        object.__setattr__(self, "troubleshooting_steps", troubleshooting_steps)
         changed = changed or item_changed
-        self.excluded_causes, item_changed = _redact_text_list(
+        excluded_causes, item_changed = _redact_text_list(
             self.excluded_causes, "excluded_causes"
         )
+        object.__setattr__(self, "excluded_causes", excluded_causes)
         changed = changed or item_changed
 
-        self.metadata, item_changed = redact_knowledge_sensitive_values(self.metadata)
+        metadata, item_changed = redact_knowledge_sensitive_values(self.metadata)
+        object.__setattr__(self, "metadata", metadata)
         changed = changed or item_changed
 
         if changed:
-            self.redacted = True
+            object.__setattr__(self, "redacted", True)
         return self
+
+    def _validate_review_history(self) -> None:
+        if any(not review.belongs_to(self.knowledge_id) for review in self.reviews):
+            raise KnowledgeReviewNotAllowed(
+                "知识候选包含不属于当前 knowledge_id 的审核记录"
+            )
+
+        actions = [review.action for review in self.reviews]
+        if self.status is KnowledgeCandidateStatus.CANDIDATE:
+            if actions:
+                raise KnowledgeReviewNotAllowed("candidate 状态不能预先包含审核记录")
+            return
+        if not actions:
+            raise KnowledgeReviewNotAllowed(
+                "知识候选初始状态只能是 candidate，confirmed/rejected/retired "
+                "必须由人工审核产生"
+            )
+        if self.status is KnowledgeCandidateStatus.CONFIRMED:
+            expected = [KnowledgeReviewAction.CONFIRM]
+        elif self.status is KnowledgeCandidateStatus.REJECTED:
+            expected = [KnowledgeReviewAction.REJECT]
+        else:
+            expected = [KnowledgeReviewAction.CONFIRM, KnowledgeReviewAction.RETIRE]
+        if actions != expected:
+            raise KnowledgeReviewNotAllowed(
+                f"知识状态 {self.status.value} 与人工审核动作序列不一致"
+            )
 
     def apply_review(self, review: KnowledgeReview) -> KnowledgeReview:
         """执行知识审核。confirmed knowledge 只能由这里产生。"""
@@ -231,7 +267,7 @@ class KnowledgeCandidate(BaseModel):
             target = KnowledgeCandidateStatus.RETIRED
 
         self.reviews.append(review)
-        self.status = target
+        object.__setattr__(self, "status", target)
         self._touch()
         return review
 

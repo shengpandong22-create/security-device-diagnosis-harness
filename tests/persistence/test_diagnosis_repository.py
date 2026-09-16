@@ -121,7 +121,7 @@ def test_local_mutation_does_not_implicitly_persist(diagnosis_repository):
 
     loaded = diagnosis_repository.get(case.diagnosis_id)
     loaded.description = "外部改坏了"
-    loaded.status = SecurityDiagnosisStatus.REJECTED
+    object.__setattr__(loaded, "status", SecurityDiagnosisStatus.REJECTED)
 
     fresh = diagnosis_repository.get(case.diagnosis_id)
     assert fresh.description == case.description

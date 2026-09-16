@@ -14,7 +14,8 @@ from security_diagnosis_harness.domain.enums import (
     SecurityDiagnosisStatus,
     SecurityFaultType,
 )
-from security_diagnosis_harness.domain.errors import InvalidStatusTransition
+from security_diagnosis_harness.domain.errors import InvalidStatusTransition, ReviewNotAllowed
+from security_diagnosis_harness.domain.review import HumanReview, HumanReviewAction
 
 from ..conftest import DEVICE_ID, make_case
 
@@ -78,3 +79,29 @@ def test_transition_to_confirmed_always_raises():
         case.transition_to(SecurityDiagnosisStatus.CONFIRMED)
 
     assert case.status is SecurityDiagnosisStatus.WAITING_FOR_CONFIRMATION
+
+
+def test_direct_assignment_cannot_forge_confirmed_case():
+    case = make_case()
+
+    with pytest.raises(InvalidStatusTransition, match="状态机"):
+        case.status = SecurityDiagnosisStatus.CONFIRMED
+
+    assert case.status is SecurityDiagnosisStatus.CREATED
+
+
+def test_constructor_rejects_confirmed_case_with_foreign_review():
+    review = HumanReview(
+        diagnosis_id="other-diagnosis",
+        action=HumanReviewAction.CONFIRM,
+        reviewer="expert",
+    )
+
+    with pytest.raises((pydantic.ValidationError, ReviewNotAllowed), match="diagnosis_id"):
+        SecurityDiagnosisCase(
+            fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
+            device_id=DEVICE_ID,
+            reporter="ops-zhang",
+            status=SecurityDiagnosisStatus.CONFIRMED,
+            reviews=[review],
+        )

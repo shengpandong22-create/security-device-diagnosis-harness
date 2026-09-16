@@ -172,7 +172,7 @@ def test_unconfirmed_diagnosis_is_rejected():
 
 def test_forged_confirmed_status_without_human_review_is_rejected():
     case = _case(confirm=False)
-    case.status = SecurityDiagnosisStatus.CONFIRMED
+    object.__setattr__(case, "status", SecurityDiagnosisStatus.CONFIRMED)
 
     with pytest.raises(KnowledgeCandidateGenerationError, match="人工 confirm"):
         _generator(case).generate_from_diagnosis(case.diagnosis_id)
