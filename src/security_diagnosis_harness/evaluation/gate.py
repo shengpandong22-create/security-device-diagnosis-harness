@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from math import isclose
 from pathlib import Path
 from typing import Any
 
@@ -165,16 +166,18 @@ def compare_runs(
         raise ComparisonConfigurationError("Baseline 与 Candidate run_id 必须不同")
     if baseline.identity.code_commit == candidate.identity.code_commit:
         raise ComparisonConfigurationError("Baseline 与 Candidate 必须来自不同代码 commit")
+    baseline_cases = {item.case_id: item for item in baseline.grade.cases}
+    candidate_cases = {item.case_id: item for item in candidate.grade.cases}
+    if set(baseline_cases) != set(candidate_cases):
+        raise ComparisonConfigurationError("Baseline 与 Candidate 的案例集合必须一致")
+    _validate_grade_consistency(baseline)
+    _validate_grade_consistency(candidate)
 
     policy = policy or GatePolicy()
     deltas = tuple(
         _metric_delta(baseline, candidate, policy, metric, tolerance)
         for metric, tolerance in CORE_METRICS
     )
-    baseline_cases = {item.case_id: item for item in baseline.grade.cases}
-    candidate_cases = {item.case_id: item for item in candidate.grade.cases}
-    if set(baseline_cases) != set(candidate_cases):
-        raise ComparisonConfigurationError("Baseline 与 Candidate 的案例集合必须一致")
 
     case_diffs = tuple(
         _case_diff(case_id, baseline_cases[case_id], candidate_cases[case_id])
@@ -226,6 +229,62 @@ def _metric_delta(
         tolerance=tolerance,
         regressed=delta < -tolerance,
     )
+
+
+_AVERAGED_SUITE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("task_completion_rate", "task_completed"),
+    ("controlled_degradation_rate", "controlled_degradation"),
+    ("candidate_accuracy", "candidate_correct"),
+    ("citation_compliance", "citation_compliance"),
+    ("unsupported_claim_rate", "unsupported_claim_rate"),
+    ("tool_precision", "tool_precision"),
+    ("tool_recall", "tool_recall"),
+    ("parameter_valid_rate", "parameter_valid_rate"),
+    ("fault_type_match_rate", "fault_type_match_rate"),
+    ("repeated_failed_call_rate", "repeated_failed_call_rate"),
+    ("evidence_coverage", "evidence_coverage"),
+    ("evidence_ownership_rate", "evidence_ownership_rate"),
+    ("evidence_reliability_rate", "evidence_reliability_rate"),
+    ("average_rounds", "rounds"),
+    ("average_tool_calls", "tool_call_count"),
+    ("average_latency_ms", "latency_ms"),
+)
+
+
+def _validate_grade_consistency(run: EvaluationRun) -> None:
+    """拒绝逐案例与汇总指标不一致的外部评测产物。"""
+    cases = run.grade.cases
+    metrics = run.grade.metrics
+    if metrics.total != len(cases):
+        raise ComparisonConfigurationError(f"{run.run_id} 的 total 与逐案例数量不一致")
+
+    for case in cases:
+        expected_p0 = any(item.level.value == "p0" for item in case.findings)
+        expected_passed = not case.findings
+        if case.p0_blocked != expected_p0 or case.passed != expected_passed:
+            raise ComparisonConfigurationError(
+                f"{run.run_id} 的案例 {case.case_id} 状态与 findings 不一致"
+            )
+
+    expected_pass_rate = _average(float(item.passed) for item in cases)
+    _require_metric(run.run_id, "pass_rate", metrics.pass_rate, expected_pass_rate)
+    for suite_field, case_field in _AVERAGED_SUITE_FIELDS:
+        expected = _average(float(getattr(item.metrics, case_field)) for item in cases)
+        _require_metric(run.run_id, suite_field, float(getattr(metrics, suite_field)), expected)
+    expected_cost = sum(item.metrics.estimated_cost for item in cases)
+    _require_metric(run.run_id, "estimated_cost", metrics.estimated_cost, expected_cost)
+
+
+def _average(values: Any) -> float:
+    items = list(values)
+    return sum(items) / len(items) if items else 0.0
+
+
+def _require_metric(run_id: str, name: str, actual: float, expected: float) -> None:
+    if not isclose(float(actual), float(expected), rel_tol=1e-9, abs_tol=1e-9):
+        raise ComparisonConfigurationError(
+            f"{run_id} 的汇总指标 {name} 与逐案例结果不一致"
+        )
 
 
 def _case_diff(case_id: str, baseline: Any, candidate: Any) -> CaseDiff:

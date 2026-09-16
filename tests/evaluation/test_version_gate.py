@@ -19,7 +19,9 @@ from security_diagnosis_harness.evaluation import (
     EvaluationOutput,
     EvaluationRun,
     EvidenceTrace,
+    FindingLevel,
     GatePolicy,
+    GraderFinding,
     RunIdentity,
     ToolCallTrace,
     compare_runs,
@@ -144,6 +146,46 @@ def test_forged_zero_p0_summary_cannot_bypass_case_level_gate(cases):
     report = compare_runs(baseline, candidate)
     assert report.allowed is False
     assert report.blocked_by_p0 is True
+
+
+def test_forged_suite_metrics_cannot_hide_new_case_failure(cases):
+    baseline, candidate = _pair(cases)
+    case = candidate.grade.cases[0]
+    forged_failure = case.model_copy(
+        update={
+            "passed": False,
+            "findings": case.findings
+            + (
+                GraderFinding(
+                    code="forged_new_failure",
+                    level=FindingLevel.ERROR,
+                    stage="workflow",
+                    message="forged",
+                ),
+            ),
+        }
+    )
+    candidate = candidate.model_copy(
+        update={
+            "grade": candidate.grade.model_copy(
+                update={"cases": (forged_failure, *candidate.grade.cases[1:])}
+            )
+        }
+    )
+
+    with pytest.raises(ComparisonConfigurationError, match="pass_rate"):
+        compare_runs(baseline, candidate)
+
+
+def test_forged_candidate_accuracy_is_rejected(cases):
+    baseline, candidate = _pair(cases)
+    forged = candidate.grade.metrics.model_copy(update={"candidate_accuracy": 0.0})
+    candidate = candidate.model_copy(
+        update={"grade": candidate.grade.model_copy(update={"metrics": forged})}
+    )
+
+    with pytest.raises(ComparisonConfigurationError, match="candidate_accuracy"):
+        compare_runs(baseline, candidate)
 
 
 def test_core_metric_regression_blocks_release(cases):
