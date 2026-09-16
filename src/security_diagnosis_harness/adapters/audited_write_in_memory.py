@@ -18,12 +18,14 @@ class InMemoryAuditedWrite:
         diagnoses: InMemoryDiagnosisRepository,
         knowledge: InMemoryKnowledgeRepository,
         audit: InMemoryAuditRepository,
-        lock: RLock | None = None,
+        lock: RLock,
     ) -> None:
+        # 锁必须由装配方显式提供并与三个内存仓储共享：静默创建独立锁会让
+        # 回滚快照与其他线程的直接写入交错，导致失败回滚覆盖他人已成功的写入。
         self._diagnoses = diagnoses
         self._knowledge = knowledge
         self._audit = audit
-        self._lock = lock or RLock()
+        self._lock = lock
 
     def save_diagnosis(self, case, event):
         return self._write(self._diagnoses, "_cases", "save", case, event)

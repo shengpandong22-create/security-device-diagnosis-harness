@@ -252,3 +252,40 @@ def test_sqlite_audit_failure_rolls_back_knowledge_insert(tmp_path: Path):
         with pytest.raises(RepositoryPersistenceError):
             container.knowledge_service.generate_and_save(case.diagnosis_id, "knowledge-curator")
         assert container.knowledge_repository.list_all() == []
+
+
+def test_in_memory_audited_write_rollback_preserves_other_writes():
+    """审计写入失败回滚时，不得覆盖其他线程已成功的直接写入。"""
+    from threading import RLock
+
+    from security_diagnosis_harness.adapters.audited_write_in_memory import (
+        InMemoryAuditedWrite,
+    )
+    from security_diagnosis_harness.adapters.knowledge.in_memory import (
+        InMemoryKnowledgeRepository,
+    )
+    from security_diagnosis_harness.application.repository import (
+        InMemoryDiagnosisRepository,
+    )
+    from tests.persistence._builders import build_confirmed_case
+
+    lock = RLock()
+    diagnoses = InMemoryDiagnosisRepository(lock)
+    knowledge = InMemoryKnowledgeRepository(lock)
+    audit = InMemoryAuditRepository(lock)
+
+    direct = build_confirmed_case("diag-direct")
+    diagnoses.save(direct)
+
+    class ExplodingAudit(InMemoryAuditRepository):
+        def append(self, event):
+            raise RuntimeError("audit unavailable")
+
+    writer = InMemoryAuditedWrite(diagnoses, knowledge, ExplodingAudit(lock), lock)
+    other = build_confirmed_case("diag-audited")
+    with pytest.raises(RuntimeError):
+        writer.save_diagnosis(other, _event(other.diagnosis_id))
+
+    # 直接写入的聚合仍在，失败写入未落库（回滚不覆盖他人已成功的写入）。
+    assert diagnoses.exists("diag-direct")
+    assert not diagnoses.exists("diag-audited")
