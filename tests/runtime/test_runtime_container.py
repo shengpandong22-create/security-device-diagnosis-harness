@@ -266,6 +266,22 @@ def test_held_runtime_entry_points_are_revoked_after_close():
             call()
 
 
+def test_adapter_returned_by_registry_is_revoked_after_close():
+    from security_diagnosis_harness.runtime import (
+        DEFAULT_RUNTIME_ADAPTER_KEY,
+        RuntimeClosedError,
+    )
+
+    runtime = build_runtime_container(RuntimeSettings(repository_mode="memory"))
+    adapter = runtime.adapter_registry.get_ready(DEFAULT_RUNTIME_ADAPTER_KEY)
+    with pytest.raises(AttributeError):
+        _ = runtime.repository._target
+    runtime.close()
+
+    with pytest.raises(RuntimeClosedError):
+        adapter.query_status("camera-3f-001")
+
+
 def test_sqlite_session_factory_rejects_after_close(tmp_path: Path):
     from security_diagnosis_harness.runtime import RuntimeClosedError
 

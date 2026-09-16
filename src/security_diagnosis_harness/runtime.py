@@ -454,9 +454,21 @@ class _RuntimeLifecycle:
 class _ClosedAwareProxy:
     """Revoke an already-held formal runtime entry point after container close."""
 
-    def __init__(self, target: Any, lifecycle: _RuntimeLifecycle) -> None:
+    def __init__(
+        self,
+        target: Any,
+        lifecycle: _RuntimeLifecycle,
+        *,
+        wrap_results: bool = False,
+    ) -> None:
         object.__setattr__(self, "_target", target)
         object.__setattr__(self, "_lifecycle", lifecycle)
+        object.__setattr__(self, "_wrap_results", wrap_results)
+
+    def __getattribute__(self, name: str) -> Any:
+        if name in {"_target", "_lifecycle", "_wrap_results"}:
+            raise AttributeError("runtime entry point internals are not exposed")
+        return object.__getattribute__(self, name)
 
     @property
     def __class__(self) -> type[Any]:
@@ -472,7 +484,10 @@ class _ClosedAwareProxy:
 
         def guarded(*args: Any, **kwargs: Any) -> Any:
             lifecycle.ensure_open()
-            return value(*args, **kwargs)
+            result = value(*args, **kwargs)
+            if object.__getattribute__(self, "_wrap_results"):
+                return _ClosedAwareProxy(result, lifecycle)
+            return result
 
         return guarded
 
@@ -747,8 +762,8 @@ def build_runtime_container(
     )
     lifecycle = _RuntimeLifecycle()
 
-    def exposed(value: Any) -> Any:
-        return _ClosedAwareProxy(value, lifecycle)
+    def exposed(value: Any, *, wrap_results: bool = False) -> Any:
+        return _ClosedAwareProxy(value, lifecycle, wrap_results=wrap_results)
 
     return RuntimeContainer(
         settings=resolved,
@@ -770,7 +785,7 @@ def build_runtime_container(
         knowledge_service=exposed(knowledge_service),
         consistency_scanner=exposed(consistency_scanner),
         _asset_catalog=exposed(asset_catalog),
-        _adapter_registry=exposed(adapter_registry),
+        _adapter_registry=exposed(adapter_registry, wrap_results=True),
         _capability_support=capability_support,
         _lifecycle=lifecycle,
     )
