@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from security_diagnosis_harness.evaluation import (
+    AuthenticatedEvaluationRun,
     ComparisonConfigurationError,
     DatasetRegistry,
-    EvaluationRun,
     compare_runs,
     write_gate_report,
 )
@@ -17,13 +18,13 @@ from security_diagnosis_harness.evaluation import (
 DEFAULT_DATASET_ROOT = Path("datasets")
 
 
-def _load_dataset_cases(run: EvaluationRun, dataset_root: Path):
+def _load_dataset_cases(run: AuthenticatedEvaluationRun, dataset_root: Path):
     """从受控数据集加载 expected_candidate 锚；禁止隐式搜索任意路径。
 
     只按 RunIdentity 的 dataset_name/version/split 在显式 dataset_root 下定位，
     并与物理目录名、manifest 校验一致；不信任评分产物自带的 expected。
     """
-    identity = run.identity
+    identity = run.run.identity
     version_directory = dataset_root / identity.dataset_name / identity.dataset_version
     if not version_directory.is_dir():
         raise ComparisonConfigurationError("受控数据集版本目录不存在")
@@ -39,12 +40,22 @@ def main() -> int:
     parser.add_argument("--dataset-root", type=Path, default=DEFAULT_DATASET_ROOT)
     args = parser.parse_args()
     try:
-        baseline = EvaluationRun.model_validate_json(args.baseline.read_text(encoding="utf-8"))
-        candidate = EvaluationRun.model_validate_json(args.candidate.read_text(encoding="utf-8"))
+        integrity_key = os.environ["SECURITY_DIAGNOSIS_EVAL_INTEGRITY_KEY"].encode()
+        baseline = AuthenticatedEvaluationRun.model_validate_json(
+            args.baseline.read_text(encoding="utf-8")
+        )
+        candidate = AuthenticatedEvaluationRun.model_validate_json(
+            args.candidate.read_text(encoding="utf-8")
+        )
         dataset_cases = _load_dataset_cases(candidate, args.dataset_root)
-        report = compare_runs(baseline, candidate, dataset_cases=dataset_cases)
+        report = compare_runs(
+            baseline,
+            candidate,
+            dataset_cases=dataset_cases,
+            integrity_key=integrity_key,
+        )
         json_path, markdown_path = write_gate_report(report, args.output_dir)
-    except (OSError, ValueError, ComparisonConfigurationError) as exc:
+    except (KeyError, OSError, ValueError, ComparisonConfigurationError) as exc:
         print(json.dumps({"allowed": False, "error": str(exc)}, ensure_ascii=False))
         return 2
     print(

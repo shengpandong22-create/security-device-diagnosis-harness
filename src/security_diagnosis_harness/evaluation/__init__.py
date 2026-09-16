@@ -44,6 +44,7 @@ from security_diagnosis_harness.evaluation.dataset import (
     load_dataset_split,
 )
 from security_diagnosis_harness.evaluation.gate import (
+    AuthenticatedEvaluationRun,
     CaseDiff,
     ComparisonConfigurationError,
     EvaluationRun,
@@ -139,6 +140,7 @@ from security_diagnosis_harness.evaluation.taxonomy import (
 __all__ = [
     "ADAPTER_KIND",
     "AdjudicationAction",
+    "AuthenticatedEvaluationRun",
     "AdjudicationDecision",
     "AnnotationAgreementReport",
     "AnnotationConfidence",

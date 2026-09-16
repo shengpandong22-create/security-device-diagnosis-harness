@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from collections.abc import Mapping
 from datetime import datetime
 from math import isclose
@@ -60,6 +62,39 @@ class EvaluationRun(BaseModel):
 
     def content_hash(self) -> str:
         return sha256_text(canonical_json(self.model_dump(mode="json")))
+
+
+class AuthenticatedEvaluationRun(BaseModel):
+    """Evaluation run authenticated by the trusted grading boundary."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run: EvaluationRun
+    auth_tag: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def issue(cls, run: EvaluationRun, integrity_key: bytes) -> AuthenticatedEvaluationRun:
+        _require_integrity_key(integrity_key)
+        return cls(run=run, auth_tag=_run_auth_tag(run, integrity_key))
+
+    def verify(self, integrity_key: bytes) -> EvaluationRun:
+        _require_integrity_key(integrity_key)
+        if not hmac.compare_digest(self.auth_tag, _run_auth_tag(self.run, integrity_key)):
+            raise ComparisonConfigurationError("评测运行认证失败")
+        return self.run
+
+
+def _require_integrity_key(integrity_key: bytes) -> None:
+    if len(integrity_key) < 32:
+        raise ComparisonConfigurationError("评测运行完整性密钥至少需要 32 字节")
+
+
+def _run_auth_tag(run: EvaluationRun, integrity_key: bytes) -> str:
+    return hmac.new(
+        integrity_key,
+        canonical_json(run.model_dump(mode="json")).encode(),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 class GatePolicy(BaseModel):
@@ -156,11 +191,12 @@ CORE_METRICS: tuple[tuple[str, str], ...] = (
 
 
 def compare_runs(
-    baseline: EvaluationRun,
-    candidate: EvaluationRun,
+    baseline: AuthenticatedEvaluationRun,
+    candidate: AuthenticatedEvaluationRun,
     policy: GatePolicy | None = None,
     *,
     dataset_cases: tuple[DatasetCase, ...] | None = None,
+    integrity_key: bytes,
 ) -> GateReport:
     """在控制变量一致时比较两个版本；Candidate 的 P0 永远阻塞。
 
@@ -174,24 +210,29 @@ def compare_runs(
             "版本门禁必须显式提供受控 dataset_cases，"
             "禁止信任评分产物自带的 expected_candidate"
         )
-    if baseline.identity.controlled_variables() != candidate.identity.controlled_variables():
+    baseline_run = baseline.verify(integrity_key)
+    candidate_run = candidate.verify(integrity_key)
+    if (
+        baseline_run.identity.controlled_variables()
+        != candidate_run.identity.controlled_variables()
+    ):
         raise ComparisonConfigurationError("除 code_commit 外的评测变量必须完全一致")
-    if baseline.run_id == candidate.run_id:
+    if baseline_run.run_id == candidate_run.run_id:
         raise ComparisonConfigurationError("Baseline 与 Candidate run_id 必须不同")
-    if baseline.identity.code_commit == candidate.identity.code_commit:
+    if baseline_run.identity.code_commit == candidate_run.identity.code_commit:
         raise ComparisonConfigurationError("Baseline 与 Candidate 必须来自不同代码 commit")
-    baseline_cases = {item.case_id: item for item in baseline.grade.cases}
-    candidate_cases = {item.case_id: item for item in candidate.grade.cases}
+    baseline_cases = {item.case_id: item for item in baseline_run.grade.cases}
+    candidate_cases = {item.case_id: item for item in candidate_run.grade.cases}
     if set(baseline_cases) != set(candidate_cases):
         raise ComparisonConfigurationError("Baseline 与 Candidate 的案例集合必须一致")
-    expected_candidates = _validate_dataset_anchor(baseline, dataset_cases)
-    _validate_dataset_anchor(candidate, dataset_cases)
-    _validate_grade_consistency(baseline, expected_candidates)
-    _validate_grade_consistency(candidate, expected_candidates)
+    expected_candidates = _validate_dataset_anchor(baseline_run, dataset_cases)
+    _validate_dataset_anchor(candidate_run, dataset_cases)
+    _validate_grade_consistency(baseline_run, expected_candidates)
+    _validate_grade_consistency(candidate_run, expected_candidates)
 
     policy = policy or GatePolicy()
     deltas = tuple(
-        _metric_delta(baseline, candidate, policy, metric, tolerance)
+        _metric_delta(baseline_run, candidate_run, policy, metric, tolerance)
         for metric, tolerance in CORE_METRICS
     )
 
@@ -200,14 +241,14 @@ def compare_runs(
         for case_id in sorted(baseline_cases)
     )
     # 不信任可由外部文件提供的汇总字段，P0 必须从逐案例结果重新计算。
-    p0_count = sum(item.p0_blocked for item in candidate.grade.cases)
+    p0_count = sum(item.p0_blocked for item in candidate_run.grade.cases)
     reasons = [f"Candidate 存在 {p0_count} 个 P0 失败"] if p0_count else []
     reasons.extend(f"核心指标退化: {item.metric}" for item in deltas if item.regressed)
     return GateReport(
-        baseline_run_id=baseline.run_id,
-        candidate_run_id=candidate.run_id,
-        baseline_hash=baseline.content_hash(),
-        candidate_hash=candidate.content_hash(),
+        baseline_run_id=baseline_run.run_id,
+        candidate_run_id=candidate_run.run_id,
+        baseline_hash=baseline_run.content_hash(),
+        candidate_hash=candidate_run.content_hash(),
         allowed=not reasons,
         blocked_by_p0=bool(p0_count),
         blocking_reasons=tuple(reasons),
