@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
+from security_diagnosis_harness.adapters.knowledge.in_memory import (
+    InMemoryKnowledgeRepository,
+)
 from security_diagnosis_harness.adapters.persistence import (
     SqlAlchemyDiagnosisRepository,
     SqlAlchemyKnowledgeRepository,
@@ -17,6 +20,7 @@ from security_diagnosis_harness.adapters.persistence.models import (
     DiagnosisCaseRow,
     KnowledgeCandidateRow,
 )
+from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.common import content_hash
 from security_diagnosis_harness.domain.conclusion import (
@@ -316,3 +320,29 @@ def test_construction_time_hash_is_stable_for_unmutated_object():
     second = _evidence()
     assert first.content_hash == second.content_hash
     assert first.content_hash != ""
+
+
+def test_in_memory_diagnosis_repository_sanitizes_post_construction_mutation():
+    repository = InMemoryDiagnosisRepository()
+    case = _case()
+    evidence = _evidence()
+    evidence.payload["password"] = SECRET
+    case.evidence.append(evidence)
+
+    returned = repository.save(case)
+
+    assert returned.evidence[0].payload["password"] == REDACTED_VALUE
+    assert SECRET not in str(repository.get(case.diagnosis_id).model_dump())
+    assert case.evidence[0].payload["password"] == SECRET
+
+
+def test_in_memory_knowledge_repository_sanitizes_post_construction_mutation():
+    repository = InMemoryKnowledgeRepository()
+    candidate = _knowledge()
+    candidate.metadata["nested"] = {"client_secret": SECRET}
+
+    returned = repository.save(candidate)
+
+    assert returned.metadata["nested"]["client_secret"] == REDACTED_VALUE
+    assert SECRET not in str(repository.get(candidate.knowledge_id).model_dump())
+    assert candidate.metadata["nested"]["client_secret"] == SECRET

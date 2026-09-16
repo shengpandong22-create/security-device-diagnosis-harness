@@ -15,8 +15,12 @@ from security_diagnosis_harness.domain.knowledge import (
 )
 
 
-def _candidate(label: str = "device_offline") -> KnowledgeCandidate:
+def _candidate(
+    label: str = "device_offline", *, knowledge_id: str | None = None
+) -> KnowledgeCandidate:
+    identity = {"knowledge_id": knowledge_id} if knowledge_id is not None else {}
     return KnowledgeCandidate(
+        **identity,
         fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
         candidate_label=label,
         title="摄像头离线黑屏",
@@ -120,8 +124,7 @@ def test_keyword_results_rank_more_matching_terms_first():
     repository = InMemoryKnowledgeRepository()
     weak = _confirm(_candidate("weak"))
     weak.title = "摄像头黑屏"
-    strong = _confirm(_candidate("strong"))
-    strong.knowledge_id = "knw-strong"
+    strong = _confirm(_candidate("strong", knowledge_id="knw-strong"))
     repository.save(weak)
     repository.save(strong)
 

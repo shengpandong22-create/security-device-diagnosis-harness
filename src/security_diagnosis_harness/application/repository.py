@@ -21,6 +21,7 @@ from security_diagnosis_harness.application.errors import (
     DiagnosisAlreadyExistsError,
     DiagnosisNotFoundError,
 )
+from security_diagnosis_harness.domain.aggregate_sanitization import sanitize_case
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 
 _ENTITY = "诊断"
@@ -47,7 +48,7 @@ class InMemoryDiagnosisRepository:
         with self._lock:
             if case.diagnosis_id in self._cases:
                 raise DiagnosisAlreadyExistsError(case.diagnosis_id)
-            persisted = case.model_copy(deep=True)
+            persisted = sanitize_case(case)
             persisted.version = 1
             self._cases[case.diagnosis_id] = persisted
             return persisted.model_copy(deep=True)
@@ -66,7 +67,7 @@ class InMemoryDiagnosisRepository:
             if current.version != case.version:
                 raise ConcurrentUpdateError(_ENTITY, case.diagnosis_id, case.version)
 
-            persisted = case.model_copy(deep=True)
+            persisted = sanitize_case(case)
             persisted.version = case.version + 1
             self._cases[case.diagnosis_id] = persisted
             return persisted.model_copy(deep=True)

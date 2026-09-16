@@ -19,6 +19,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from security_diagnosis_harness.domain.aggregate_sanitization import (
+    sanitize_case,
+    sanitize_knowledge,
+)
 from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.conclusion import DiagnosisConclusion
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence
@@ -41,8 +45,7 @@ def sanitize_case_for_persistence(case: SecurityDiagnosisCase) -> SecurityDiagno
       validators 全部再次执行（含脱敏与 content_hash 重算）；
     - Evidence 的 hash 会基于**脱敏后的最终内容**重新计算。
     """
-    dumped = case.model_dump(mode="python")
-    return SecurityDiagnosisCase.model_validate(dumped)
+    return sanitize_case(case)
 
 
 def sanitize_knowledge_for_persistence(
@@ -53,8 +56,7 @@ def sanitize_knowledge_for_persistence(
     覆盖 title / summary / root_cause / symptoms / troubleshooting_steps /
     excluded_causes / metadata 以及嵌套 KnowledgeReview。
     """
-    dumped = candidate.model_dump(mode="python")
-    return KnowledgeCandidate.model_validate(dumped)
+    return sanitize_knowledge(candidate)
 
 
 def case_to_columns(case: SecurityDiagnosisCase) -> dict[str, Any]:

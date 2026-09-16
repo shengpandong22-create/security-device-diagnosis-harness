@@ -10,6 +10,7 @@ from security_diagnosis_harness.application.errors import (
     KnowledgeAlreadyExistsError,
     KnowledgeNotFoundError,
 )
+from security_diagnosis_harness.domain.aggregate_sanitization import sanitize_knowledge
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidate,
@@ -44,7 +45,7 @@ class InMemoryKnowledgeRepository:
         with self._lock:
             if candidate.knowledge_id in self._items:
                 raise KnowledgeAlreadyExistsError(candidate.knowledge_id)
-            persisted = deepcopy(candidate)
+            persisted = sanitize_knowledge(candidate)
             persisted.version = 1
             self._items[candidate.knowledge_id] = persisted
             return deepcopy(persisted)
@@ -71,7 +72,7 @@ class InMemoryKnowledgeRepository:
                 raise ConcurrentUpdateError(
                     _ENTITY, candidate.knowledge_id, candidate.version
                 )
-            persisted = deepcopy(candidate)
+            persisted = sanitize_knowledge(candidate)
             persisted.version = candidate.version + 1
             self._items[candidate.knowledge_id] = persisted
             return deepcopy(persisted)
