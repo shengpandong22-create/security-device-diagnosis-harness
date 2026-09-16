@@ -67,6 +67,25 @@ class _XmlLimitExceeded(ValueError):
     """SOAP XML 在建树过程中超过资源边界。"""
 
 
+#: 禁止出现在 SOAP 响应中的标记（DTD / 内部与外部实体声明）。
+_FORBIDDEN_MARKUP = (b"<!doctype", b"<!entity")
+
+
+def _contains_forbidden_markup(content: bytes) -> bool:
+    """编码无关地检测 DTD / 实体声明，覆盖 UTF-8、UTF-16 与 UTF-32。
+
+    先在原始字节上比较；再对"去除 NUL 后"的字节序列比较一次——UTF-16/UTF-32 的
+    每个 ASCII 字符之间会插入 NUL 字节，去 NUL 后仍能还原出 ``<!DOCTYPE`` /
+    ``<!ENTITY``，因此无法通过改变编码绕过检测。ONVIF SOAP 响应不需要 DTD，
+    命中即 fail-closed。
+    """
+    lowered = content.lower()
+    if any(marker in lowered for marker in _FORBIDDEN_MARKUP):
+        return True
+    without_nul = lowered.replace(b"\x00", b"")
+    return any(marker in without_nul for marker in _FORBIDDEN_MARKUP)
+
+
 class _BoundedTreeBuilder(ElementTree.TreeBuilder):
     def __init__(self, settings: OnvifReadOnlySettings) -> None:
         super().__init__()
@@ -74,16 +93,22 @@ class _BoundedTreeBuilder(ElementTree.TreeBuilder):
         self._elements = 0
         self._depth = 0
         self._attributes = 0
+        self._attribute_chars = 0
         self._text_chars = 0
 
     def start(self, tag: str, attrs: dict[str, str]) -> ElementTree.Element:
         self._elements += 1
         self._depth += 1
         self._attributes += len(attrs)
+        # 属性名与值的总字符预算：属性数量有限不代表内容规模有限。
+        self._attribute_chars += len(tag) + sum(
+            len(name) + len(value) for name, value in attrs.items()
+        )
         if (
             self._elements > self._settings.max_xml_elements
             or self._depth > self._settings.max_xml_depth
             or self._attributes > self._settings.max_xml_attributes
+            or self._attribute_chars > self._settings.max_xml_attribute_chars
         ):
             raise _XmlLimitExceeded
         return super().start(tag, attrs)
@@ -116,6 +141,7 @@ class OnvifReadOnlySettings(BaseModel):
     max_xml_elements: int = Field(default=4_096, ge=1, le=20_000)
     max_xml_depth: int = Field(default=32, ge=2, le=128)
     max_xml_attributes: int = Field(default=4_096, ge=0, le=20_000)
+    max_xml_attribute_chars: int = Field(default=64_000, ge=0, le=2_000_000)
     max_xml_text_chars: int = Field(default=128_000, ge=0, le=2_000_000)
 
     @model_validator(mode="after")
@@ -241,14 +267,22 @@ class OnvifReadOnlyAdapter:
         return root
 
     def _parse_xml(self, content: bytes, operation: str) -> ElementTree.Element:
-        """解析受限 SOAP XML；拒绝 DTD/实体并限制树规模、深度和文本。"""
-        lowered = content.lower()
-        if b"<!doctype" in lowered or b"<!entity" in lowered:
+        """解析受限 SOAP XML；拒绝 DTD/实体并限制树规模、深度、属性和文本。
+
+        DTD / 实体检测是**编码无关**的（见 ``_contains_forbidden_markup``），
+        因此 UTF-16 / UTF-32 无法借"字符间夹 NUL 字节"绕过字节子串检查。所有越界
+        统一映射为稳定的 INVALID_RESPONSE，不回显原始 XML。
+
+        仅使用标准库（ElementTree + 有界 TreeBuilder + 字节级检测）：不引入
+        defusedxml 等依赖，因为"禁止 DTD/实体 + 有界建树"已由标准库覆盖，且解析器
+        不接触网络或本地文件（expat 默认不加载外部实体）。
+        """
+        if _contains_forbidden_markup(content):
             raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
         try:
             parser = ElementTree.XMLParser(target=_BoundedTreeBuilder(self._settings))
             root = ElementTree.fromstring(content, parser=parser)
-        except (ElementTree.ParseError, _XmlLimitExceeded) as exc:
+        except (ElementTree.ParseError, _XmlLimitExceeded, ValueError) as exc:
             raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation) from exc
         return root
 

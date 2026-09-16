@@ -333,6 +333,51 @@ def test_xml_resource_boundaries_fail_closed(xml: str, setting: dict[str, int]) 
     assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
 
 
+_FORBIDDEN_SOAP_DOCUMENTS = (
+    '<!DOCTYPE x [<!ENTITY payload "expanded">]><Envelope>&payload;</Envelope>',
+    '<!DOCTYPE x [<!ENTITY ext SYSTEM "file:///etc/passwd">]><Envelope>&ext;</Envelope>',
+)
+
+
+@pytest.mark.parametrize(
+    "encoding", ["utf-8", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"]
+)
+@pytest.mark.parametrize("xml", _FORBIDDEN_SOAP_DOCUMENTS)
+def test_dtd_and_entities_are_rejected_across_encodings(xml: str, encoding: str) -> None:
+    payload = xml.encode(encoding)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=payload,
+            headers={"content-type": f"application/soap+xml; charset={encoding}"},
+            request=request,
+        )
+
+    with _adapter(httpx.MockTransport(handler)) as adapter:
+        with pytest.raises(DeviceAdapterError) as exc_info:
+            adapter.query_status("lab-camera")
+
+    assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
+
+
+def test_oversized_attribute_value_fails_closed() -> None:
+    xml = '<a big="' + "x" * 200 + '"><b/></a>'
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, text=xml, request=request)
+    )
+    adapter = OnvifReadOnlyAdapter(
+        _settings(max_xml_attribute_chars=64),
+        _Resolver(),
+        transport=transport,
+    )
+
+    with adapter, pytest.raises(DeviceAdapterError) as exc_info:
+        adapter.query_status("lab-camera")
+
+    assert exc_info.value.kind is DeviceAdapterErrorKind.INVALID_RESPONSE
+
+
 def test_chunked_oversized_soap_stops_before_buffering_the_tail() -> None:
     yielded: list[int] = []
 
