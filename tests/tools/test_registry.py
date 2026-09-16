@@ -109,7 +109,9 @@ def test_execute_rejects_tool_mutated_to_mutating_after_registration():
     class SpyTool(DummyTool):
         name = "dummy__spy"
 
-        def _execute(self, arguments: BaseModel, context: ToolExecutionContext) -> ToolExecutionResult:
+        def _execute(
+            self, arguments: BaseModel, context: ToolExecutionContext
+        ) -> ToolExecutionResult:
             executed.append(1)
             return ToolExecutionResult(tool_name=self.name, observation="ok")
 
