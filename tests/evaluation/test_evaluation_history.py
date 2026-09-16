@@ -344,4 +344,3 @@ def test_loaded_summary_rejects_sensitive_model_parameters(tmp_path, cases):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(EvaluationHistoryError, match="协议"):
         history.load()
-

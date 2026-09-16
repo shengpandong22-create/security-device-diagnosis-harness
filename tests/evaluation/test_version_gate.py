@@ -439,4 +439,3 @@ def test_cli_exit_code_is_usable_as_release_gate(
         ],
     )
     assert compare_main() == expected_exit
-

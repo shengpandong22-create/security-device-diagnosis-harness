@@ -378,4 +378,3 @@ def test_release_receipt_source_record_must_match_case(tmp_path):
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DatasetReleaseError, match="来源记录"):
         verify_dataset_release(target, source_directory=SOURCE)
-
