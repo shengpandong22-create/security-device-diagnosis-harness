@@ -69,14 +69,13 @@ def _run(cases: tuple[DatasetCase, ...], commit: str, *, mismatch: bool) -> Eval
 
 def main() -> int:
     cases = DatasetRegistry.load(DATASET_ROOT).cases(DatasetSplit.DEV)
-    expected_candidates = {case.case_id: case.expected_candidate for case in cases}
     baseline = _run(cases, "a" * 40, mismatch=False)
     candidate = _run(cases, "b" * 40, mismatch=True)
     with TemporaryDirectory(prefix="phase8c-") as directory:
         history = JsonEvaluationHistory(Path(directory) / "history.json")
         history.append(baseline)
         candidate_record = history.append(
-            candidate, baseline=baseline, expected_candidates=expected_candidates
+            candidate, baseline=baseline, dataset_cases=cases
         )
         trend = history.trend()
     json_path, markdown_path = write_evaluation_trend_report(trend, ROOT / "demo-output")
@@ -100,3 +99,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

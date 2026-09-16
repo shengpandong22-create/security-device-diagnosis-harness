@@ -17,7 +17,7 @@ from security_diagnosis_harness.evaluation import (
 DEFAULT_DATASET_ROOT = Path("datasets")
 
 
-def _load_expected_candidates(run: EvaluationRun, dataset_root: Path) -> dict[str, str]:
+def _load_dataset_cases(run: EvaluationRun, dataset_root: Path):
     """从受控数据集加载 expected_candidate 锚；禁止隐式搜索任意路径。
 
     只按 RunIdentity 的 dataset_name/version/split 在显式 dataset_root 下定位，
@@ -28,10 +28,7 @@ def _load_expected_candidates(run: EvaluationRun, dataset_root: Path) -> dict[st
     if not version_directory.is_dir():
         raise ComparisonConfigurationError("受控数据集版本目录不存在")
     registry = DatasetRegistry.load(version_directory)
-    return {
-        case.case_id: case.expected_candidate
-        for case in registry.cases(identity.split, allow_test=True)
-    }
+    return registry.cases(identity.split, allow_test=True)
 
 
 def main() -> int:
@@ -44,8 +41,8 @@ def main() -> int:
     try:
         baseline = EvaluationRun.model_validate_json(args.baseline.read_text(encoding="utf-8"))
         candidate = EvaluationRun.model_validate_json(args.candidate.read_text(encoding="utf-8"))
-        expected_candidates = _load_expected_candidates(candidate, args.dataset_root)
-        report = compare_runs(baseline, candidate, expected_candidates=expected_candidates)
+        dataset_cases = _load_dataset_cases(candidate, args.dataset_root)
+        report = compare_runs(baseline, candidate, dataset_cases=dataset_cases)
         json_path, markdown_path = write_gate_report(report, args.output_dir)
     except (OSError, ValueError, ComparisonConfigurationError) as exc:
         print(json.dumps({"allowed": False, "error": str(exc)}, ensure_ascii=False))

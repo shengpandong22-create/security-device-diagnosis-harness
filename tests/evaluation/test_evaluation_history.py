@@ -85,9 +85,9 @@ def _run(
     )
 
 
-def _expected(cases) -> dict[str, str]:
+def _expected(cases) -> tuple[DatasetCase, ...]:
     """受控 expected 锚：来自 DatasetCase，而非评分产物。"""
-    return {case.case_id: case.expected_candidate for case in cases}
+    return tuple(cases)
 
 
 def test_first_run_is_persisted_as_baseline_summary(tmp_path, cases):
@@ -159,7 +159,7 @@ def test_incomparable_runs_never_enter_trend(tmp_path, cases, changes):
     history.append(baseline)
     candidate = _run(cases, "b" * 40, **changes)
     with pytest.raises(TrendComparabilityError, match="变量") as excinfo:
-        history.append(candidate, baseline=baseline, expected_candidates=_expected(cases))
+        history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
     assert excinfo.value.changed_fields
     assert len(history.load().records) == 1
 
@@ -169,7 +169,7 @@ def test_regression_reuses_phase7_gate_and_is_recorded(tmp_path, cases):
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40, wrong=True)
     history.append(baseline)
-    record = history.append(candidate, baseline=baseline, expected_candidates=_expected(cases))
+    record = history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
     assert record.gate_allowed is False
     assert any("candidate_accuracy" in reason for reason in record.blocking_reasons)
     assert history.trend().blocked_run_ids == (candidate.run_id,)
@@ -184,7 +184,7 @@ def test_p0_is_recomputed_from_cases_and_blocks_trend_run(tmp_path, cases):
         update={"grade": candidate.grade.model_copy(update={"metrics": tampered_metrics})}
     )
     history.append(baseline)
-    record = history.append(candidate, baseline=baseline, expected_candidates=_expected(cases))
+    record = history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
     assert record.blocked_by_p0 is True
     assert record.summary.deterministic_p0_count == len(cases)
     assert record.summary.metrics.p0_failure_count == len(cases)
@@ -195,7 +195,7 @@ def test_trend_contains_only_core_aggregate_metrics(tmp_path, cases):
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40)
     history.append(baseline)
-    history.append(candidate, baseline=baseline, expected_candidates=_expected(cases))
+    history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
     report = history.trend()
     assert len(report.points) == 2
     assert set(report.points[0].metrics) == {
@@ -209,7 +209,7 @@ def test_trend_report_is_atomic_and_contains_lineage(tmp_path, cases):
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40)
     history.append(baseline)
-    history.append(candidate, baseline=baseline, expected_candidates=_expected(cases))
+    history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
     json_path, markdown_path = write_evaluation_trend_report(history.trend(), tmp_path)
     assert baseline.run_id in markdown_path.read_text(encoding="utf-8")
     assert candidate.run_id in json_path.read_text(encoding="utf-8")
@@ -244,7 +244,7 @@ def _two_record_history(tmp_path, cases) -> tuple[JsonEvaluationHistory, object]
     baseline = _run(cases, "a" * 40)
     candidate = _run(cases, "b" * 40)
     history.append(baseline)
-    history.append(candidate, baseline=baseline, expected_candidates=_expected(cases))
+    history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
     return history, path
 
 
@@ -344,3 +344,4 @@ def test_loaded_summary_rejects_sensitive_model_parameters(tmp_path, cases):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(EvaluationHistoryError, match="协议"):
         history.load()
+

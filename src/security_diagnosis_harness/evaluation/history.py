@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from security_diagnosis_harness.domain.common import canonical_json, sha256_text
 from security_diagnosis_harness.domain.redaction import redact_mapping
-from security_diagnosis_harness.evaluation.dataset import DatasetSplit
+from security_diagnosis_harness.evaluation.dataset import DatasetCase, DatasetSplit
 from security_diagnosis_harness.evaluation.gate import (
     CORE_METRICS,
     ComparisonConfigurationError,
@@ -288,7 +287,7 @@ class JsonEvaluationHistory:
         *,
         baseline: EvaluationRun | None = None,
         policy: GatePolicy | None = None,
-        expected_candidates: Mapping[str, str] | None = None,
+        dataset_cases: tuple[DatasetCase, ...] | None = None,
     ) -> EvaluationHistoryRecord:
         document = self.load()
         summaries = {record.summary.run_id: record.summary for record in document.records}
@@ -310,7 +309,7 @@ class JsonEvaluationHistory:
             if changes:
                 raise TrendComparabilityError(changes)
             gate = compare_runs(
-                baseline, run, policy, expected_candidates=expected_candidates
+                baseline, run, policy, dataset_cases=dataset_cases
             )
             policy_snapshot = (policy or GatePolicy()).model_dump(mode="json")
             record = EvaluationHistoryRecord(

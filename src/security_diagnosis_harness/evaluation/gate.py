@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from security_diagnosis_harness.domain.common import canonical_json, sha256_text
 from security_diagnosis_harness.domain.redaction import redact_mapping
-from security_diagnosis_harness.evaluation.dataset import DatasetSplit
+from security_diagnosis_harness.evaluation.dataset import DatasetCase, DatasetSplit
 from security_diagnosis_harness.evaluation.grader import SuiteGrade, _macro_f1
 
 
@@ -160,19 +160,18 @@ def compare_runs(
     candidate: EvaluationRun,
     policy: GatePolicy | None = None,
     *,
-    expected_candidates: Mapping[str, str] | None = None,
+    dataset_cases: tuple[DatasetCase, ...] | None = None,
 ) -> GateReport:
     """在控制变量一致时比较两个版本；Candidate 的 P0 永远阻塞。
 
-    ``expected_candidates`` 是版本门禁的**可信锚**：必须由调用方从受控
-    DatasetCase 集合显式传入（``case_id -> expected_candidate``）。门禁不信任评分
+    ``dataset_cases`` 是版本门禁的可信锚，必须显式传入受控 DatasetCase 集合。门禁不信任评分
     产物自带的 ``CaseGrade.expected_candidate``，而是用它交叉复核并重算
     ``candidate_correct`` / ``candidate_accuracy`` / ``candidate_macro_f1``。
     缺失时 fail-closed（禁止隐式信任或搜索任意路径）。
     """
-    if expected_candidates is None:
+    if dataset_cases is None:
         raise ComparisonConfigurationError(
-            "版本门禁必须显式提供受控 expected_candidates（来自 DatasetCase），"
+            "版本门禁必须显式提供受控 dataset_cases，"
             "禁止信任评分产物自带的 expected_candidate"
         )
     if baseline.identity.controlled_variables() != candidate.identity.controlled_variables():
@@ -185,6 +184,8 @@ def compare_runs(
     candidate_cases = {item.case_id: item for item in candidate.grade.cases}
     if set(baseline_cases) != set(candidate_cases):
         raise ComparisonConfigurationError("Baseline 与 Candidate 的案例集合必须一致")
+    expected_candidates = _validate_dataset_anchor(baseline, dataset_cases)
+    _validate_dataset_anchor(candidate, dataset_cases)
     _validate_grade_consistency(baseline, expected_candidates)
     _validate_grade_consistency(candidate, expected_candidates)
 
@@ -319,6 +320,23 @@ def _validate_grade_consistency(
     _require_metric(run.run_id, "estimated_cost", metrics.estimated_cost, expected_cost)
 
 
+def _validate_dataset_anchor(
+    run: EvaluationRun, dataset_cases: tuple[DatasetCase, ...]
+) -> dict[str, str]:
+    if not dataset_cases:
+        raise ComparisonConfigurationError("受控 DatasetCase 集合不能为空")
+    if any(
+        case.dataset_version != run.identity.dataset_version
+        or case.split is not run.identity.split
+        for case in dataset_cases
+    ):
+        raise ComparisonConfigurationError("DatasetCase 与运行的数据集版本或 split 不一致")
+    expected = {case.case_id: case.expected_candidate for case in dataset_cases}
+    if len(expected) != len(dataset_cases):
+        raise ComparisonConfigurationError("受控 DatasetCase 集合包含重复 case_id")
+    return expected
+
+
 def _average(values: Any) -> float:
     items = list(values)
     return sum(items) / len(items) if items else 0.0
@@ -347,3 +365,4 @@ def _atomic_write(path: Path, content: str) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(content, encoding="utf-8")
     temporary.replace(path)
+
