@@ -28,13 +28,18 @@
 
 稳定门禁实测：10/10 轮，场景断言 80/80，完整 Agent Loop 40/40；每轮
 `before_clean=true` 且 `after_clean=true`，未调用外部模型或真实设备。
-全量回归为 1633 passed；停止后 `contract/onvif/toxiproxy=false`，运行时凭证、
+封版全量回归为 1810 passed；停止后 `contract/onvif/toxiproxy=false`，运行时凭证、
 ONVIF 配置与状态文件残留数为 0，Device Lab 容器残留数为 0。
 
 ## 4. Phase 11D 与封版
 
-- [ ] 用户明确授权设备、时间窗、只读范围和最大调用次数
-- [ ] Wi-Fi 真机完成发现、认证、Profile 与 RTSP 最小联调
-- [ ] 真机报告已脱敏并与 Simulator 报告分开
-- [ ] 无写操作、无自动重试、无真实凭证入库或入 Git
+- [x] 用户明确授权设备、时间窗、只读范围和最大调用次数
+- [x] Wi-Fi 真机完成发现、认证、Profile、Stream URI 与 RTSP Digest 最小联调
+- [x] 真机报告已脱敏并与 Simulator 报告分开
+- [x] 无写操作、无自动重试、无真实凭证入库或入 Git
+- [x] 明确真机最小协议验收与生产上线、长期稳定、真实诊断准确率的边界
 - [ ] 完成最终面试材料与教学路线，项目停止功能堆砌
+
+详细证据见[Phase 11D 真机验收记录](./Phase%2011D%20真机验收记录.md)。
+最终代码与边界审计见
+[Phase 11 最终封版审计](../05-audits/2026-09-18-Phase11最终封版审计.md)。

@@ -8,7 +8,7 @@
 
 - 业务域：安防设备运维诊断，优先覆盖摄像头黑屏、录像缺失、门禁刷卡异常、报警误报等场景。
 - 技术目标：验证 Agent 如何在设备状态、告警事件、配置快照、知识库 SOP 和人工反馈之间形成可信闭环。
-- 当前阶段：Phase 0～11C 工程基线已完成；Phase 11D 真实设备授权联调待设备到位。
+- 当前阶段：Phase 0～11D 已完成；授权 Wi-Fi 真机最小只读协议链路已验证，项目进入封版。
 - 重要边界：本项目不继承应用日志诊断主线，不迁移 Java Lab、NPE、服务日志、源码诊断、Gateway/Nacos/Trace 作为主叙事。
 
 ## 当前进度
@@ -50,7 +50,7 @@
 | Phase 11A | 严格只读 ONVIF Adapter | 已完成 |
 | Phase 11B | ONVIF、RTSP、平台与内容事实的完整 Agent Loop | 已完成 |
 | Phase 11C | 十轮 Device Lab 稳定门禁 | 已完成（80/80，Agent Loop 40/40） |
-| Phase 11D | Wi-Fi / 有线授权真机只读联调与项目封版 | 待真实设备 |
+| Phase 11D | Wi-Fi 授权真机发现、ONVIF/RTSP Digest 只读联调 | 已完成（不代表生产上线） |
 
 Phase 11 将 ONVIF 设备事实、RTSP 可达性、平台拉流事实和受控视频内容分析接入
 正式 Runner、Tool Registry、Routed Gateway、Evidence 与 CitationPolicy 链路。

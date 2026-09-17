@@ -57,6 +57,7 @@
 - [Phase 9 验收标准](./04-validation/Phase%209%20验收标准.md)
 - [Phase 10 验收标准](./04-validation/Phase%2010%20验收标准.md)
 - [Phase 11 验收标准](./04-validation/Phase%2011%20验收标准.md)
+- [Phase 11D 真机验收记录](./04-validation/Phase%2011D%20真机验收记录.md)
 - [Phase 9 专项严格审计](./05-audits/Phase%209%20专项严格审计报告.md)
 - [Phase 7 诊断质量评测体系实施规格](./02-specifications/Phase%207%20诊断质量评测体系实施规格.md)
 - [Phase 8 评测运营与标注可信度实施规格](./02-specifications/Phase%208%20评测运营与标注可信度实施规格.md)
@@ -73,6 +74,7 @@
 - [2026-09-15 封版前逆向审计第一轮报告](./05-audits/2026-09-15封版前逆向审计第一轮报告.md)
 - [2026-09-15 封版前逆向审计第二轮报告](./05-audits/2026-09-15封版前逆向审计第二轮报告.md)
 - [第四轮严格审计报告](./05-audits/第四轮严格审计报告.md)
+- [2026-09-18 Phase 11 最终封版审计](./05-audits/2026-09-18-Phase11最终封版审计.md)
 - [Phase 9A 开发总结](./03-progress/Phase%209A%20开发总结.md)
 - [Phase 9B 开发总结](./03-progress/Phase%209B%20开发总结.md)
 
