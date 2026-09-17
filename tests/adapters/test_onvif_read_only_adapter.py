@@ -4,6 +4,7 @@ from pydantic import ValidationError
 
 from security_diagnosis_harness.adapters.device_gateway import onvif as onvif_module
 from security_diagnosis_harness.adapters.device_gateway.onvif import (
+    OnvifAuthenticationMode,
     OnvifReadOnlyAdapter,
     OnvifReadOnlySettings,
 )
@@ -58,10 +59,138 @@ def _settings(**changes) -> OnvifReadOnlySettings:
     return OnvifReadOnlySettings(**values)
 
 
+def test_private_http_requires_explicit_opt_in() -> None:
+    with pytest.raises(ValidationError):
+        _settings(
+            base_url="http://192.168.1.20",
+            allowed_hosts={"192.168.1.20"},
+            rtsp_probe_host="192.168.1.20",
+        )
+
+
+def test_private_http_is_allowed_only_with_explicit_opt_in() -> None:
+    settings = _settings(
+        base_url="http://192.168.1.20",
+        allowed_hosts={"192.168.1.20"},
+        rtsp_probe_host="192.168.1.20",
+        allow_private_http=True,
+    )
+    assert settings.allow_private_http is True
+
+
+def test_public_http_remains_rejected_with_private_opt_in() -> None:
+    with pytest.raises(ValidationError):
+        _settings(
+            base_url="http://8.8.8.8",
+            allowed_hosts={"8.8.8.8"},
+            rtsp_probe_host="8.8.8.8",
+            allow_private_http=True,
+        )
+
+
+def test_private_stream_uri_rewrite_requires_explicit_opt_in() -> None:
+    response = _URI_RESPONSE.replace("127.0.0.1:28554", "169.254.34.223:8554")
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, text=response))
+    with _adapter(transport) as adapter:
+        with pytest.raises(DeviceAdapterError):
+            adapter._stream_uri("profile-main")
+
+
+def test_private_stream_uri_rewrite_uses_only_configured_probe_target() -> None:
+    response = _URI_RESPONSE.replace("127.0.0.1:28554", "169.254.34.223:8554")
+    settings = _settings(allow_private_stream_uri_host_rewrite=True)
+    with OnvifReadOnlyAdapter(
+        settings,
+        _Resolver(),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, text=response)),
+    ) as adapter:
+        uri = adapter._stream_uri("profile-main")
+
+    assert uri == "rtsp://127.0.0.1:28554/profile_main"
+    assert "169.254.34.223" not in uri
+
+
+def test_http_digest_requires_two_exchange_budget() -> None:
+    with pytest.raises(ValidationError):
+        _settings(authentication_mode=OnvifAuthenticationMode.HTTP_DIGEST)
+
+
+def test_http_digest_uses_exactly_one_challenge_and_one_authenticated_exchange() -> None:
+    requests: list[tuple[bool, str, bytes]] = []
+
+    def digest_transport(request: httpx.Request) -> httpx.Response:
+        requests.append(
+            (
+                "Authorization" in request.headers,
+                request.headers.get("Authorization", ""),
+                request.content,
+            )
+        )
+        if "Authorization" not in request.headers:
+            return httpx.Response(
+                401,
+                headers={
+                    "WWW-Authenticate": (
+                        'Digest realm="camera", nonce="unit-nonce", '
+                        'algorithm=MD5, qop="auth"'
+                    )
+                },
+                request=request,
+            )
+        return httpx.Response(200, text=_DEVICE_RESPONSE, request=request)
+
+    settings = _settings(
+        authentication_mode=OnvifAuthenticationMode.HTTP_DIGEST,
+        max_http_exchanges_per_operation=2,
+    )
+    with OnvifReadOnlyAdapter(
+        settings, _Resolver(), transport=httpx.MockTransport(digest_transport)
+    ) as adapter:
+        result = adapter.query_status("lab-camera")
+
+    assert result.online is True
+    assert len(requests) == 2
+    assert requests[0][0] is False
+    assert requests[1][1].startswith("Digest ")
+    assert "PasswordDigest" not in requests[0][2].decode()
+
+
+def test_single_probe_calls_each_network_stage_once(monkeypatch) -> None:
+    operations: list[str] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "GetDeviceInformation" in body:
+            operations.append("device")
+            content = _DEVICE_RESPONSE
+        elif "GetProfiles" in body:
+            operations.append("profiles")
+            content = _GENERIC_PROFILES_RESPONSE
+        else:
+            operations.append("uri")
+            content = _URI_RESPONSE
+        return httpx.Response(200, text=content, request=request)
+
+    monkeypatch.setattr(OnvifReadOnlyAdapter, "_rtsp_available", lambda *_: True)
+    with _adapter(httpx.MockTransport(transport)) as adapter:
+        result = adapter.probe_once()
+
+    assert operations == ["device", "profiles", "uri"]
+    assert result.authenticated is True
+    assert result.profile_count == 2
+    assert result.rtsp_reachable is True
+    serialized = repr(result)
+    assert "unit-user" not in serialized
+    assert "unit-password" not in serialized
+    assert "rtsp://" not in serialized
+
+
 def _transport(request: httpx.Request) -> httpx.Response:
     body = request.content.decode()
     assert "unit-password-not-real" not in body
     assert "PasswordDigest" in body
+    assert "action=" in request.headers["Content-Type"]
+    assert request.headers["SOAPAction"].startswith('"http://www.onvif.org/ver10/')
     if "GetDeviceInformation" in body:
         content = _DEVICE_RESPONSE
     elif "GetProfiles" in body:
@@ -266,6 +395,127 @@ def test_rtsp_probe_requires_success_for_the_actual_uri(monkeypatch, status_line
     assert result is expected
     assert b"OPTIONS rtsp://127.0.0.1:28554/profile_main RTSP/1.0" in sent[0]
     assert b"do-not-store" not in sent[0]
+
+
+@pytest.mark.parametrize(
+    ("response", "category", "scheme"),
+    [
+        (b"RTSP/1.0 200 OK\r\n\r\n", "success", None),
+        (
+            b'RTSP/1.0 401 Unauthorized\r\nWWW-Authenticate: Digest realm="camera"\r\n\r\n',
+            "authentication_required",
+            "digest",
+        ),
+        (b"RTSP/1.0 405 Method Not Allowed\r\n\r\n", "method_unsupported", None),
+    ],
+)
+def test_rtsp_diagnostic_returns_only_safe_categories(monkeypatch, response, category, scheme):
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def settimeout(self, _timeout):
+            return None
+
+        def sendall(self, _value):
+            return None
+
+        def recv(self, _size):
+            return response
+
+    monkeypatch.setattr(
+        "security_diagnosis_harness.adapters.device_gateway.onvif.socket.create_connection",
+        lambda *_args, **_kwargs: Connection(),
+    )
+    with _adapter() as adapter:
+        result = adapter._rtsp_diagnostic("rtsp://127.0.0.1:28554/profile_main")
+
+    assert result.connection_stage == "response_received"
+    assert result.status_category == category
+    assert result.authentication_scheme == scheme
+    assert "camera" not in repr(result)
+
+
+def test_rtsp_digest_uses_two_requests_without_sending_plaintext_password(monkeypatch):
+    sent: list[bytes] = []
+    responses = iter(
+        [
+            b'RTSP/1.0 401 Unauthorized\r\nWWW-Authenticate: Digest realm="camera", '
+            b'nonce="nonce-value", qop="auth"\r\n\r\n',
+            b"RTSP/1.0 200 OK\r\n\r\n",
+        ]
+    )
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def settimeout(self, _timeout):
+            return None
+
+        def sendall(self, value):
+            sent.append(value)
+
+        def recv(self, _size):
+            return next(responses)
+
+    monkeypatch.setattr(
+        "security_diagnosis_harness.adapters.device_gateway.onvif.socket.create_connection",
+        lambda *_args, **_kwargs: Connection(),
+    )
+    with _adapter() as adapter:
+        result = adapter._rtsp_digest_diagnostic(
+            "rtsp://127.0.0.1:28554/profile_main"
+        )
+
+    assert result.reachable is True
+    assert result.authentication_scheme == "digest"
+    assert len(sent) == 2
+    assert b"Authorization: Digest " in sent[1]
+    assert _SECRET.encode() not in b"".join(sent)
+
+
+def test_rtsp_digest_accepts_lf_only_challenge_headers(monkeypatch):
+    responses = iter(
+        [
+            b'RTSP/1.0 401 Unauthorized\nWWW-Authenticate: Digest realm="camera", '
+            b'nonce="nonce-value"\n\n',
+            b"RTSP/1.0 200 OK\n\n",
+        ]
+    )
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return None
+
+        def settimeout(self, _timeout):
+            return None
+
+        def sendall(self, _value):
+            return None
+
+        def recv(self, _size):
+            return next(responses)
+
+    monkeypatch.setattr(
+        "security_diagnosis_harness.adapters.device_gateway.onvif.socket.create_connection",
+        lambda *_args, **_kwargs: Connection(),
+    )
+    with _adapter() as adapter:
+        result = adapter._rtsp_digest_diagnostic(
+            "rtsp://127.0.0.1:28554/profile_main"
+        )
+
+    assert result.reachable is True
 
 
 @pytest.mark.parametrize(

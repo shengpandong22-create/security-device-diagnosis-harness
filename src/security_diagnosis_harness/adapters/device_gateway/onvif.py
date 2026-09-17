@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
+import re
 import secrets
 import socket
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree
 from xml.parsers import expat
 from xml.sax.saxutils import escape
@@ -39,7 +42,60 @@ from security_diagnosis_harness.domain.device_integration import (
 )
 from security_diagnosis_harness.ports.credentials import CredentialResolverPort
 
-__all__ = ["OnvifReadOnlyAdapter", "OnvifReadOnlySettings"]
+__all__ = [
+    "OnvifAuthenticationMode",
+    "OnvifReadOnlyAdapter",
+    "OnvifReadOnlySettings",
+    "OnvifMediaDiagnosticResult",
+    "OnvifSingleProbeResult",
+    "RtspDiagnosticResult",
+]
+
+
+class OnvifAuthenticationMode(StrEnum):
+    """ONVIF 认证策略；必须由授权真机配置显式选择。"""
+
+    WS_SECURITY = "ws_security"
+    HTTP_DIGEST = "http_digest"
+
+
+@dataclass(frozen=True)
+class OnvifSingleProbeResult:
+    """单次真机只读探针的脱敏结果；不包含地址、凭证、URI 或 Profile token。"""
+
+    authenticated: bool
+    manufacturer_present: bool
+    model_present: bool
+    firmware_present: bool
+    profile_count: int
+    main_profile_present: bool
+    main_encoding: str | None
+    main_resolution: str | None
+    rtsp_reachable: bool
+
+
+@dataclass(frozen=True)
+class RtspDiagnosticResult:
+    """单次未认证 OPTIONS 的脱敏分类，不保留 URI、地址或原始响应。"""
+
+    connection_stage: str
+    status_category: str | None = None
+    authentication_scheme: str | None = None
+
+    @property
+    def reachable(self) -> bool:
+        return self.status_category == "success"
+
+
+@dataclass(frozen=True)
+class OnvifMediaDiagnosticResult:
+    """Profiles、Stream URI 与单次 RTSP OPTIONS 的脱敏诊断结果。"""
+
+    profile_count: int
+    main_profile_present: bool
+    main_encoding: str | None
+    main_resolution: str | None
+    rtsp: RtspDiagnosticResult
 
 
 @dataclass(frozen=True)
@@ -70,6 +126,7 @@ class _XmlLimitExceeded(ValueError):
 
 #: 禁止出现在 SOAP 响应中的标记（DTD / 内部与外部实体声明）。
 _FORBIDDEN_MARKUP = (b"<!doctype", b"<!entity")
+_DIGEST_PARAMETER = re.compile(r'(\w+)=(?:"([^"]*)"|([^,\s]+))')
 
 
 def _contains_forbidden_markup(content: bytes) -> bool:
@@ -154,6 +211,12 @@ class OnvifReadOnlySettings(BaseModel):
     credential_reference: str = Field(min_length=1)
     rtsp_probe_host: str
     rtsp_probe_port: int = Field(ge=1, le=65535)
+    allow_private_http: bool = False
+    authentication_mode: OnvifAuthenticationMode = OnvifAuthenticationMode.WS_SECURITY
+    max_http_exchanges_per_operation: int = Field(default=1, ge=1, le=2)
+    device_service_path: str = "/onvif/device_service"
+    media_service_path: str = "/onvif/media_service"
+    allow_private_stream_uri_host_rewrite: bool = False
     connect_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     read_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     max_response_bytes: int = Field(default=256_000, ge=1_024, le=2_000_000)
@@ -169,12 +232,29 @@ class OnvifReadOnlySettings(BaseModel):
         host = (parsed.hostname or "").lower()
         allowed = {item.lower() for item in self.allowed_hosts}
         local = host in {"localhost", "127.0.0.1", "::1"}
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and local):
+        try:
+            private_ip = ipaddress.ip_address(host).is_private
+        except ValueError:
+            private_ip = False
+        private_http = parsed.scheme == "http" and self.allow_private_http and private_ip
+        if (
+            parsed.scheme != "https"
+            and not (parsed.scheme == "http" and local)
+            and not private_http
+        ):
             raise ValueError("ONVIF base_url 只允许 HTTPS 或本机 HTTP")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("ONVIF base_url 禁止 userinfo、查询参数和 fragment")
         if host not in allowed or self.rtsp_probe_host.lower() not in allowed:
             raise ValueError("ONVIF/RTSP host 不在 allowlist")
+        if self.authentication_mode is OnvifAuthenticationMode.HTTP_DIGEST:
+            if self.max_http_exchanges_per_operation != 2:
+                raise ValueError("HTTP Digest 必须显式预算两次 HTTP 交换")
+        elif self.max_http_exchanges_per_operation != 1:
+            raise ValueError("WS-Security 只允许一次 HTTP 交换")
+        for path in (self.device_service_path, self.media_service_path):
+            if not path.startswith("/") or "?" in path or "#" in path or ".." in path:
+                raise ValueError("ONVIF service path 必须是受控绝对路径")
         lowered = self.credential_reference.lower()
         if any(token in lowered for token in ("=", "bearer ", "://", "@")):
             raise ValueError("credential_reference 不能包含实际凭证")
@@ -250,25 +330,66 @@ class OnvifReadOnlyAdapter:
 
     def _soap(self, service: str, body: str, operation: str) -> ElementTree.Element:
         username, password = self._credentials()
+        security = (
+            self._security_header(username, password)
+            if self._settings.authentication_mode is OnvifAuthenticationMode.WS_SECURITY
+            else ""
+        )
         envelope = f"""<?xml version="1.0" encoding="UTF-8"?>
         <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">
-          <s:Header>{self._security_header(username, password)}</s:Header>
+          <s:Header>{security}</s:Header>
           <s:Body>{body}</s:Body>
         </s:Envelope>"""
-        del username, password
+        auth = (
+            httpx.DigestAuth(username, password)
+            if self._settings.authentication_mode is OnvifAuthenticationMode.HTTP_DIGEST
+            else None
+        )
+        del username, password, security
+        namespace = (
+            "http://www.onvif.org/ver10/device/wsdl"
+            if service == "device"
+            else "http://www.onvif.org/ver10/media/wsdl"
+        )
+        action = f"{namespace}/{''.join(part.title() for part in operation.split('_'))}"
         try:
             with self._client.stream(
                 "POST",
-                f"/onvif/{quote(service, safe='')}_service",
+                (
+                    self._settings.device_service_path
+                    if service == "device"
+                    else self._settings.media_service_path
+                ),
                 content=envelope.encode(),
-                headers={"Content-Type": "application/soap+xml; charset=utf-8"},
+                headers={
+                    "Content-Type": (
+                        'application/soap+xml; charset=utf-8; action="'
+                        f'{action}"'
+                    ),
+                    # 部分大华/IMOU 固件仍要求兼容 SOAPAction header。
+                    "SOAPAction": f'"{action}"',
+                },
+                auth=auth,
             ) as response:
                 if response.status_code in {401, 403}:
-                    raise DeviceAdapterError(DeviceAdapterErrorKind.AUTHENTICATION, operation)
+                    raise DeviceAdapterError(
+                        DeviceAdapterErrorKind.AUTHENTICATION,
+                        operation,
+                        f"http_{response.status_code}",
+                    )
                 if response.status_code >= 500:
-                    raise DeviceAdapterError(DeviceAdapterErrorKind.UNAVAILABLE, operation)
+                    raise DeviceAdapterError(
+                        DeviceAdapterErrorKind.UNAVAILABLE,
+                        operation,
+                        "http_5xx",
+                    )
                 if response.status_code >= 400 or response.is_redirect:
-                    raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation)
+                    code = "redirect" if response.is_redirect else f"http_{response.status_code}"
+                    raise DeviceAdapterError(
+                        DeviceAdapterErrorKind.INVALID_RESPONSE,
+                        operation,
+                        code,
+                    )
                 content = read_limited_response(
                     response,
                     max_bytes=self._settings.max_response_bytes,
@@ -279,10 +400,14 @@ class OnvifReadOnlyAdapter:
         except httpx.RequestError as exc:
             raise DeviceAdapterError(DeviceAdapterErrorKind.UNAVAILABLE, operation) from exc
         finally:
-            del envelope
+            del auth, envelope
         root = self._parse_xml(content, operation)
         if any(element.tag.endswith("Fault") for element in root.iter()):
-            raise DeviceAdapterError(DeviceAdapterErrorKind.AUTHENTICATION, operation)
+            raise DeviceAdapterError(
+                DeviceAdapterErrorKind.AUTHENTICATION,
+                operation,
+                "soap_fault",
+            )
         return root
 
     def _parse_xml(self, content: bytes, operation: str) -> ElementTree.Element:
@@ -302,7 +427,11 @@ class OnvifReadOnlyAdapter:
             parser = ElementTree.XMLParser(target=_BoundedTreeBuilder(self._settings))
             root = ElementTree.fromstring(content, parser=parser)
         except (ElementTree.ParseError, expat.ExpatError, _XmlLimitExceeded, ValueError) as exc:
-            raise DeviceAdapterError(DeviceAdapterErrorKind.INVALID_RESPONSE, operation) from exc
+            raise DeviceAdapterError(
+                DeviceAdapterErrorKind.INVALID_RESPONSE,
+                operation,
+                "xml_invalid",
+            ) from exc
         return root
 
     @staticmethod
@@ -416,10 +545,17 @@ class OnvifReadOnlyAdapter:
                 DeviceAdapterErrorKind.INVALID_RESPONSE, "get_stream_uri"
             ) from exc
         allowed_hosts = {item.lower() for item in self._settings.allowed_hosts}
+        try:
+            private_stream_host = ipaddress.ip_address(host).is_private
+        except ValueError:
+            private_stream_host = False
+        stream_host_allowed = host in allowed_hosts or (
+            self._settings.allow_private_stream_uri_host_rewrite and private_stream_host
+        )
         if (
             parsed.scheme.lower() != "rtsp"
             or not host
-            or host not in allowed_hosts
+            or not stream_host_allowed
             or not parsed.path.startswith("/")
             or parsed.fragment
         ):
@@ -435,8 +571,8 @@ class OnvifReadOnlyAdapter:
         )
         return urlunsplit(("rtsp", netloc, parsed.path, parsed.query, ""))
 
-    def _rtsp_available(self, stream_uri: str) -> bool:
-        """对 ONVIF 返回的具体 URI 做只读 OPTIONS 探针，仅 2xx 视为可用。"""
+    def _rtsp_diagnostic(self, stream_uri: str) -> RtspDiagnosticResult:
+        """执行一次未认证 OPTIONS，并将结果压缩为非敏感类别。"""
         try:
             with socket.create_connection(
                 (self._settings.rtsp_probe_host, self._settings.rtsp_probe_port),
@@ -450,16 +586,169 @@ class OnvifReadOnlyAdapter:
                         "User-Agent: security-diagnosis-harness\r\n\r\n"
                     ).encode("ascii")
                 )
-                status_line = connection.recv(512).split(b"\r\n", 1)[0]
+                response = connection.recv(512)
+                status_line = response.split(b"\r\n", 1)[0]
                 parts = status_line.split()
-                return (
-                    len(parts) >= 2
-                    and parts[0].startswith(b"RTSP/")
-                    and parts[1].isdigit()
-                    and 200 <= int(parts[1]) < 300
-                )
+                if len(parts) < 2 or not parts[0].startswith(b"RTSP/") or not parts[1].isdigit():
+                    return RtspDiagnosticResult("response_received", "invalid_response")
+                status = int(parts[1])
+                if 200 <= status < 300:
+                    category = "success"
+                elif status == 401:
+                    category = "authentication_required"
+                elif status in {405, 501}:
+                    category = "method_unsupported"
+                elif 400 <= status < 500:
+                    category = "client_error"
+                elif 500 <= status < 600:
+                    category = "server_error"
+                else:
+                    category = "other_status"
+                scheme = None
+                if status == 401:
+                    lowered = response.lower()
+                    if b"www-authenticate:" in lowered:
+                        if b"digest " in lowered:
+                            scheme = "digest"
+                        elif b"basic " in lowered:
+                            scheme = "basic"
+                        else:
+                            scheme = "other"
+                return RtspDiagnosticResult("response_received", category, scheme)
+        except TimeoutError:
+            return RtspDiagnosticResult("read_or_connect_timeout")
+        except ConnectionRefusedError:
+            return RtspDiagnosticResult("connection_refused")
+        except ConnectionResetError:
+            return RtspDiagnosticResult("connection_reset")
         except (OSError, UnicodeEncodeError):
-            return False
+            return RtspDiagnosticResult("network_or_encoding_error")
+
+    def _rtsp_available(self, stream_uri: str) -> bool:
+        """对 ONVIF 返回的具体 URI 做一次未认证 OPTIONS，仅 2xx 视为可用。"""
+        return self._rtsp_diagnostic(stream_uri).reachable
+
+    @staticmethod
+    def _digest_parameters(response: bytes) -> dict[str, str]:
+        """从有界 RTSP 响应中提取 Digest challenge，拒绝未知算法与 qop。"""
+        normalized_lines = response.replace(b"\r\n", b"\n").split(b"\n")
+        header = next(
+            (
+                line.decode("ascii", errors="ignore")
+                for line in normalized_lines
+                if line.lower().startswith(b"www-authenticate:")
+            ),
+            "",
+        )
+        _, _, value = header.partition(":")
+        if not value.strip().lower().startswith("digest "):
+            return {}
+        parameters = {
+            match.group(1).lower(): match.group(2) or match.group(3) or ""
+            for match in _DIGEST_PARAMETER.finditer(value)
+        }
+        algorithm = parameters.get("algorithm", "MD5").upper()
+        qop_values = {
+            item.strip().lower()
+            for item in parameters.get("qop", "").split(",")
+            if item.strip()
+        }
+        if algorithm != "MD5" or (qop_values and "auth" not in qop_values):
+            return {}
+        if not parameters.get("realm") or not parameters.get("nonce"):
+            return {}
+        return parameters
+
+    @staticmethod
+    def _md5_hex(value: str) -> str:
+        return hashlib.md5(value.encode("utf-8"), usedforsecurity=False).hexdigest()
+
+    def _rtsp_digest_diagnostic(self, stream_uri: str) -> RtspDiagnosticResult:
+        """执行严格两步 RTSP Digest OPTIONS；不重试、不保留 challenge 或凭证。"""
+        username, password = self._credentials()
+        try:
+            with socket.create_connection(
+                (self._settings.rtsp_probe_host, self._settings.rtsp_probe_port),
+                timeout=self._settings.connect_timeout_seconds,
+            ) as connection:
+                connection.settimeout(self._settings.read_timeout_seconds)
+                first = (
+                    f"OPTIONS {stream_uri} RTSP/1.0\r\n"
+                    "CSeq: 1\r\n"
+                    "User-Agent: security-diagnosis-harness\r\n\r\n"
+                ).encode("ascii")
+                connection.sendall(first)
+                challenge_response = connection.recv(2048)
+                parameters = self._digest_parameters(challenge_response)
+                if not parameters:
+                    return RtspDiagnosticResult("challenge_received", "invalid_digest_challenge")
+
+                realm = parameters["realm"]
+                nonce = parameters["nonce"]
+                cnonce = secrets.token_hex(8)
+                nc = "00000001"
+                ha1 = self._md5_hex(f"{username}:{realm}:{password}")
+                ha2 = self._md5_hex(f"OPTIONS:{stream_uri}")
+                if parameters.get("qop"):
+                    response_digest = self._md5_hex(
+                        f"{ha1}:{nonce}:{nc}:{cnonce}:auth:{ha2}"
+                    )
+                    qop_fragment = f", qop=auth, nc={nc}, cnonce=\"{cnonce}\""
+                else:
+                    response_digest = self._md5_hex(f"{ha1}:{nonce}:{ha2}")
+                    qop_fragment = ""
+                opaque_fragment = (
+                    f', opaque="{parameters["opaque"]}"'
+                    if parameters.get("opaque")
+                    else ""
+                )
+                authorization = (
+                    f'Digest username="{username}", realm="{realm}", nonce="{nonce}", '
+                    f'uri="{stream_uri}", response="{response_digest}", algorithm=MD5'
+                    f"{opaque_fragment}{qop_fragment}"
+                )
+                second = (
+                    f"OPTIONS {stream_uri} RTSP/1.0\r\n"
+                    "CSeq: 2\r\n"
+                    "User-Agent: security-diagnosis-harness\r\n"
+                    f"Authorization: {authorization}\r\n\r\n"
+                ).encode("ascii")
+                del ha1, response_digest, authorization
+                connection.sendall(second)
+                final_response = connection.recv(512)
+                status_line = final_response.split(b"\r\n", 1)[0].split()
+                if (
+                    len(status_line) >= 2
+                    and status_line[0].startswith(b"RTSP/")
+                    and status_line[1].isdigit()
+                ):
+                    status = int(status_line[1])
+                    if 200 <= status < 300:
+                        return RtspDiagnosticResult("authenticated_response", "success", "digest")
+                    if status == 401:
+                        return RtspDiagnosticResult(
+                            "authenticated_response", "authentication_rejected", "digest"
+                        )
+                    if status in {405, 501}:
+                        return RtspDiagnosticResult(
+                            "authenticated_response", "method_unsupported", "digest"
+                        )
+                    return RtspDiagnosticResult(
+                        "authenticated_response", "other_status", "digest"
+                    )
+                return RtspDiagnosticResult(
+                    "authenticated_response", "invalid_response", "digest"
+                )
+        except TimeoutError:
+            return RtspDiagnosticResult("read_or_connect_timeout")
+        except ConnectionRefusedError:
+            return RtspDiagnosticResult("connection_refused")
+        except ConnectionResetError:
+            return RtspDiagnosticResult("connection_reset")
+        except (OSError, UnicodeEncodeError):
+            return RtspDiagnosticResult("network_or_encoding_error")
+        finally:
+            del password
 
     def query_status(self, device_id: str) -> DeviceSnapshot:
         info = self._device_information()
@@ -470,6 +759,95 @@ class OnvifReadOnlyAdapter:
             recording_status=RecordingStatus.UNKNOWN,
             source=self.adapter_key,
             extra={key: value for key, value in info.items() if value},
+        )
+
+    def probe_once(self) -> OnvifSingleProbeResult:
+        """按固定顺序执行一次认证、Profile、Stream URI 与 RTSP 探活。
+
+        每个网络阶段至多调用一次，不重试；返回值刻意省略设备标识、地址、完整 URI、
+        Profile token 与原始响应，供授权真机验收使用。
+        """
+        info = self._device_information()
+        profiles = self._profiles()
+        main = self._profile(profiles, StreamKind.MAIN)
+        rtsp_reachable = False
+        if main is not None:
+            stream_uri = self._stream_uri(main.token)
+            try:
+                rtsp_reachable = self._rtsp_available(stream_uri)
+            finally:
+                del stream_uri
+        return OnvifSingleProbeResult(
+            authenticated=True,
+            manufacturer_present=bool(info.get("manufacturer")),
+            model_present=bool(info.get("model")),
+            firmware_present=bool(info.get("firmware")),
+            profile_count=len(profiles),
+            main_profile_present=main is not None,
+            main_encoding=main.encoding if main else None,
+            main_resolution=main.resolution if main else None,
+            rtsp_reachable=rtsp_reachable,
+        )
+
+    def probe_media_once(self) -> OnvifSingleProbeResult:
+        """仅探测 Profiles、主码流 URI 与 RTSP，可用于已完成认证后的授权复验。"""
+        profiles = self._profiles()
+        main = self._profile(profiles, StreamKind.MAIN)
+        rtsp_reachable = False
+        if main is not None:
+            stream_uri = self._stream_uri(main.token)
+            try:
+                rtsp_reachable = self._rtsp_available(stream_uri)
+            finally:
+                del stream_uri
+        return OnvifSingleProbeResult(
+            authenticated=True,
+            manufacturer_present=False,
+            model_present=False,
+            firmware_present=False,
+            profile_count=len(profiles),
+            main_profile_present=main is not None,
+            main_encoding=main.encoding if main else None,
+            main_resolution=main.resolution if main else None,
+            rtsp_reachable=rtsp_reachable,
+        )
+
+    def probe_media_diagnostic_once(self) -> OnvifMediaDiagnosticResult:
+        """查询媒体事实，并对设备给出的主码流 URI 发送一次未认证 OPTIONS。"""
+        profiles = self._profiles()
+        main = self._profile(profiles, StreamKind.MAIN)
+        diagnostic = RtspDiagnosticResult("not_attempted")
+        if main is not None:
+            stream_uri = self._stream_uri(main.token)
+            try:
+                diagnostic = self._rtsp_diagnostic(stream_uri)
+            finally:
+                del stream_uri
+        return OnvifMediaDiagnosticResult(
+            profile_count=len(profiles),
+            main_profile_present=main is not None,
+            main_encoding=main.encoding if main else None,
+            main_resolution=main.resolution if main else None,
+            rtsp=diagnostic,
+        )
+
+    def probe_media_digest_once(self) -> OnvifMediaDiagnosticResult:
+        """查询媒体事实，并对主码流执行一次严格两步 RTSP Digest OPTIONS。"""
+        profiles = self._profiles()
+        main = self._profile(profiles, StreamKind.MAIN)
+        diagnostic = RtspDiagnosticResult("not_attempted")
+        if main is not None:
+            stream_uri = self._stream_uri(main.token)
+            try:
+                diagnostic = self._rtsp_digest_diagnostic(stream_uri)
+            finally:
+                del stream_uri
+        return OnvifMediaDiagnosticResult(
+            profile_count=len(profiles),
+            main_profile_present=main is not None,
+            main_encoding=main.encoding if main else None,
+            main_resolution=main.resolution if main else None,
+            rtsp=diagnostic,
         )
 
     def query_channel_snapshot(self, device_id: str) -> ChannelSnapshot:

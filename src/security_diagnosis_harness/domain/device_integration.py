@@ -100,7 +100,18 @@ class ResolvedCredential(BaseModel):
 class DeviceAdapterError(Exception):
     """可安全跨边界传递的设备 Adapter 错误。"""
 
-    def __init__(self, kind: DeviceAdapterErrorKind, operation: str) -> None:
+    def __init__(
+        self,
+        kind: DeviceAdapterErrorKind,
+        operation: str,
+        diagnostic_code: str | None = None,
+    ) -> None:
         self.kind = kind
         self.operation = operation if operation.replace("_", "").isalnum() else "unknown"
+        self.diagnostic_code = (
+            diagnostic_code
+            if diagnostic_code
+            and diagnostic_code.replace("_", "").isalnum()
+            else None
+        )
         super().__init__(f"设备只读操作失败: kind={kind.value}, operation={self.operation}")
