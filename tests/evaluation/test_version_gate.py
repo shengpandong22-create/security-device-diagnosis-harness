@@ -510,6 +510,7 @@ def test_cli_exit_code_is_usable_as_release_gate(
     baseline, candidate = _pair(cases, outputs)
     baseline_path = tmp_path / "baseline.json"
     candidate_path = tmp_path / "candidate.json"
+    anchor_path = tmp_path / "dataset-anchor.json"
     baseline_path.write_text(
         AuthenticatedEvaluationRun.issue(
             baseline, RUN_INTEGRITY_KEY
@@ -519,6 +520,14 @@ def test_cli_exit_code_is_usable_as_release_gate(
     candidate_path.write_text(
         AuthenticatedEvaluationRun.issue(
             candidate, RUN_INTEGRITY_KEY
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    anchor_path.write_text(
+        AuthenticatedDatasetCases.issue(
+            candidate.identity.dataset_name,
+            tuple(cases),
+            RUN_INTEGRITY_KEY,
         ).model_dump_json(),
         encoding="utf-8",
     )
@@ -536,6 +545,8 @@ def test_cli_exit_code_is_usable_as_release_gate(
             str(candidate_path),
             "--output-dir",
             str(tmp_path / "reports"),
+            "--dataset-anchor",
+            str(anchor_path),
         ],
     )
     assert compare_main() == expected_exit
