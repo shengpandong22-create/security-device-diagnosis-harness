@@ -24,6 +24,7 @@ from security_diagnosis_harness.evaluation import (
     FindingLevel,
     GatePolicy,
     GraderFinding,
+    PublishedDatasetAnchor,
     RunIdentity,
     ToolCallTrace,
     write_gate_report,
@@ -523,11 +524,14 @@ def test_cli_exit_code_is_usable_as_release_gate(
         ).model_dump_json(),
         encoding="utf-8",
     )
+    anchor = AuthenticatedDatasetCases.issue(
+        candidate.identity.dataset_name,
+        tuple(cases),
+        RUN_INTEGRITY_KEY,
+    )
     anchor_path.write_text(
-        AuthenticatedDatasetCases.issue(
-            candidate.identity.dataset_name,
-            tuple(cases),
-            RUN_INTEGRITY_KEY,
+        PublishedDatasetAnchor.issue(
+            "a" * 64, anchor, RUN_INTEGRITY_KEY
         ).model_dump_json(),
         encoding="utf-8",
     )
@@ -550,4 +554,3 @@ def test_cli_exit_code_is_usable_as_release_gate(
         ],
     )
     assert compare_main() == expected_exit
-

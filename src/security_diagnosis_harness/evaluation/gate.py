@@ -117,6 +117,39 @@ class AuthenticatedDatasetCases(BaseModel):
         return self.cases
 
 
+class PublishedDatasetAnchor(BaseModel):
+    """Pre-signed dataset anchor bound to one governed release identity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = "1.0.0"
+    release_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    anchor: AuthenticatedDatasetCases
+    auth_tag: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @classmethod
+    def issue(
+        cls,
+        release_id: str,
+        anchor: AuthenticatedDatasetCases,
+        integrity_key: bytes,
+    ) -> PublishedDatasetAnchor:
+        _require_integrity_key(integrity_key)
+        payload = {"schema_version": "1.0.0", "release_id": release_id,
+                   "anchor": anchor.model_dump(mode="json")}
+        tag = hmac.new(
+            integrity_key, canonical_json(payload).encode(), hashlib.sha256
+        ).hexdigest()
+        return cls(release_id=release_id, anchor=anchor, auth_tag=tag)
+
+    def verify(self, integrity_key: bytes) -> AuthenticatedDatasetCases:
+        trusted = self.issue(self.release_id, self.anchor, integrity_key)
+        if not hmac.compare_digest(self.auth_tag, trusted.auth_tag):
+            raise ComparisonConfigurationError("发布数据集 Anchor 认证失败")
+        self.anchor.verify(integrity_key)
+        return self.anchor
+
+
 def _require_integrity_key(integrity_key: bytes) -> None:
     if len(integrity_key) < 32:
         raise ComparisonConfigurationError("评测运行完整性密钥至少需要 32 字节")

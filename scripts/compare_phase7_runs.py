@@ -8,9 +8,9 @@ import os
 from pathlib import Path
 
 from security_diagnosis_harness.evaluation import (
-    AuthenticatedDatasetCases,
     AuthenticatedEvaluationRun,
     ComparisonConfigurationError,
+    PublishedDatasetAnchor,
     compare_runs,
     write_gate_report,
 )
@@ -31,9 +31,10 @@ def main() -> int:
         candidate = AuthenticatedEvaluationRun.model_validate_json(
             args.candidate.read_text(encoding="utf-8")
         )
-        dataset_anchor = AuthenticatedDatasetCases.model_validate_json(
+        published_anchor = PublishedDatasetAnchor.model_validate_json(
             args.dataset_anchor.read_text(encoding="utf-8")
         )
+        dataset_anchor = published_anchor.verify(integrity_key)
         report = compare_runs(
             baseline,
             candidate,

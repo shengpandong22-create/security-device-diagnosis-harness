@@ -31,7 +31,10 @@ from security_diagnosis_harness.evaluation.dataset import (
     ManifestFile,
     are_near_duplicate_cases,
 )
-from security_diagnosis_harness.evaluation.gate import AuthenticatedDatasetCases
+from security_diagnosis_harness.evaluation.gate import (
+    AuthenticatedDatasetCases,
+    PublishedDatasetAnchor,
+)
 
 
 class DatasetReleaseError(DatasetProtocolError):
@@ -99,6 +102,7 @@ class DatasetReleaseReceipt(BaseModel):
     dataset_name: str
     source_version: str
     released_version: str
+    release_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     released_at: datetime
     release_kind: str = "governed_dataset_release"
     synthetic_case_count: int = Field(ge=0)
@@ -187,9 +191,21 @@ def publish_dataset_version(
         source_attestation_tag,
         integrity_key,
     )
+    release_id = sha256_text(
+        canonical_json(
+            {
+                split.value: [case.model_dump(mode="json") for case in cases]
+                for split, cases in cases_by_split.items()
+            }
+        )
+    )
     gate_anchors = {
-        split: AuthenticatedDatasetCases.issue(
-            "security-diagnosis", cases, integrity_key
+        split: PublishedDatasetAnchor.issue(
+            release_id,
+            AuthenticatedDatasetCases.issue(
+                "security-diagnosis", cases, integrity_key
+            ),
+            integrity_key,
         )
         for split, cases in cases_by_split.items()
     }
@@ -206,6 +222,7 @@ def publish_dataset_version(
         source_manifest_hashes,
         source_attestation_tag,
         gate_anchor_hashes,
+        release_id,
         integrity_key,
     )
     dataset_root.mkdir(parents=True, exist_ok=True)
@@ -343,6 +360,7 @@ def _receipt(
     source_manifest_hashes: dict[DatasetSplit, str],
     source_attestation_tag: str,
     gate_anchor_hashes: dict[DatasetSplit, str],
+    release_id: str,
     integrity_key: bytes,
 ) -> DatasetReleaseReceipt:
     additions = tuple(
@@ -382,6 +400,7 @@ def _receipt(
         dataset_name="security-diagnosis",
         source_version=source_version,
         released_version=target_version,
+        release_id=release_id,
         released_at=released_at,
         synthetic_case_count=sum(item.source_kind is SourceKind.SYNTHETIC for item in additions),
         authorized_case_count=sum(
@@ -546,8 +565,8 @@ def verify_dataset_release(
             anchor_payload = json.loads(
                 (root / f"gate-anchor-{split.value}.json").read_text(encoding="utf-8")
             )
-            anchor = AuthenticatedDatasetCases.model_validate(anchor_payload)
-            anchor.verify(integrity_key)
+            published_anchor = PublishedDatasetAnchor.model_validate(anchor_payload)
+            anchor = published_anchor.verify(integrity_key)
         except (OSError, ValueError) as exc:
             raise DatasetReleaseError("发布数据集 Gate Anchor 无法认证") from exc
         anchor_hash = sha256_text(canonical_json(anchor_payload))
@@ -555,6 +574,8 @@ def verify_dataset_release(
             raise DatasetReleaseError("发布回执与 Gate Anchor 哈希不一致")
         if anchor.dataset_name != receipt.dataset_name:
             raise DatasetReleaseError("Gate Anchor 数据集名称不一致")
+        if published_anchor.release_id != receipt.release_id:
+            raise DatasetReleaseError("Gate Anchor 与发布身份不一致")
         verified_anchors[split] = anchor
     actual_counts = {split: registry.case_count(split) for split in DatasetSplit}
     if (
