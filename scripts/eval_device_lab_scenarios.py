@@ -97,6 +97,7 @@ def _onvif_adapter(password: str) -> OnvifReadOnlyAdapter:
             credential_reference="device-lab/onvif",
             rtsp_probe_host="127.0.0.1",
             rtsp_probe_port=28554,
+            allow_private_stream_uri_host_rewrite=True,
             connect_timeout_seconds=1,
             read_timeout_seconds=2,
         ),

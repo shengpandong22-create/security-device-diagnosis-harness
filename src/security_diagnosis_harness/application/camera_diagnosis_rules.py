@@ -134,6 +134,8 @@ class CameraFacts(BaseModel):
     bitrate_kbps: int | None = None
     resolution: str | None = None
     content_black: bool | None = None
+    any_stream_failed: bool = False
+    failed_stream_kinds: list[str] = Field(default_factory=list)
     alarm_types: list[str] = Field(default_factory=list)
     device_fact_types: list[str] = Field(default_factory=list)
     conflicting_evidence_types: list[str] = Field(default_factory=list)
@@ -204,12 +206,29 @@ def extract_camera_facts(evidence: list[DiagnosisEvidence]) -> CameraFacts:
     alarm_types: list[str] = []
     device_fact_types: list[str] = []
 
-    resolved = resolve_evidence(evidence, _CAMERA_EVIDENCE_TYPES)
+    non_stream_types = _CAMERA_EVIDENCE_TYPES - {EvidenceType.DEVICE_STREAM}
+    resolved = resolve_evidence(evidence, non_stream_types)
     facts.conflicting_evidence_types = [
         item.value for item in resolved.conflicting_types
     ]
 
-    for item in resolved.selected.values():
+    stream_groups: dict[str, list[DiagnosisEvidence]] = {}
+    for item in evidence:
+        if item.evidence_type is EvidenceType.DEVICE_STREAM:
+            stream_kind = str((item.payload or {}).get("stream_kind") or "unknown")
+            stream_groups.setdefault(stream_kind, []).append(item)
+    selected_streams: list[DiagnosisEvidence] = []
+    for items in stream_groups.values():
+        stream_result = resolve_evidence(items, {EvidenceType.DEVICE_STREAM})
+        if stream_result.conflicts:
+            if EvidenceType.DEVICE_STREAM.value not in facts.conflicting_evidence_types:
+                facts.conflicting_evidence_types.append(EvidenceType.DEVICE_STREAM.value)
+            continue
+        selected = stream_result.selected.get(EvidenceType.DEVICE_STREAM)
+        if selected is not None:
+            selected_streams.append(selected)
+
+    for item in [*resolved.selected.values(), *selected_streams]:
         payload = item.payload or {}
         if item.evidence_type in DEVICE_FACT_EVIDENCE_TYPES:
             device_fact_types.append(item.evidence_type.value)
@@ -225,12 +244,22 @@ def extract_camera_facts(evidence: list[DiagnosisEvidence]) -> CameraFacts:
             facts.platform_registered = _as_bool(payload.get("platform_registered"))
         elif item.evidence_type is EvidenceType.DEVICE_STREAM:
             facts.has_stream = True
-            facts.stream_pull_status = _as_str(payload.get("pull_status"))
-            facts.stream_error_code = _as_str(payload.get("error_code"))
-            facts.bitrate_kbps = _as_int(payload.get("bitrate_kbps"))
-            facts.resolution = _as_str(payload.get("resolution"))
+            stream_kind = _as_str(payload.get("stream_kind")) or "unknown"
+            pull_status = _as_str(payload.get("pull_status"))
+            if (pull_status or "") in _FAILED_PULL_STATUSES:
+                facts.any_stream_failed = True
+                facts.failed_stream_kinds.append(stream_kind)
+            if stream_kind == "main" or facts.stream_pull_status is None:
+                facts.stream_pull_status = pull_status
+                facts.stream_error_code = _as_str(payload.get("error_code"))
+                facts.bitrate_kbps = _as_int(payload.get("bitrate_kbps"))
+                facts.resolution = _as_str(payload.get("resolution"))
             extra = payload.get("extra")
-            if isinstance(extra, dict) and "content_black" in extra:
+            if (
+                (stream_kind == "main" or facts.content_black is None)
+                and isinstance(extra, dict)
+                and "content_black" in extra
+            ):
                 facts.content_black = _as_bool(extra.get("content_black"))
         elif item.evidence_type is EvidenceType.PLATFORM_PULL:
             facts.has_platform_pull = True
@@ -249,6 +278,7 @@ def extract_camera_facts(evidence: list[DiagnosisEvidence]) -> CameraFacts:
                 facts.resolution = _as_str(payload.get("resolution"))
 
     facts.alarm_types = alarm_types
+    facts.failed_stream_kinds = sorted(set(facts.failed_stream_kinds))
     facts.device_fact_types = sorted(set(device_fact_types))
     return facts
 
@@ -309,6 +339,8 @@ def infer_camera_black_screen_label(
         chain.append(f"平台已注册={facts.platform_registered}")
     if facts.stream_pull_status is not None:
         chain.append(f"码流取流={facts.stream_pull_status}")
+    if facts.failed_stream_kinds:
+        chain.append(f"失败码流类型={','.join(facts.failed_stream_kinds)}")
     if facts.platform_pull_status is not None:
         chain.append(f"平台拉流={facts.platform_pull_status}")
     if facts.bitrate_kbps is not None:
@@ -353,7 +385,9 @@ def infer_camera_black_screen_label(
         )
 
     # 规则 4：码流发布或编码异常。
-    stream_failed = (facts.stream_pull_status or "") in _FAILED_PULL_STATUSES or (
+    stream_failed = facts.any_stream_failed or (
+        (facts.stream_pull_status or "") in _FAILED_PULL_STATUSES
+    ) or (
         facts.device_stream_status == "abnormal"
     )
     if stream_failed:

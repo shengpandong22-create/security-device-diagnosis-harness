@@ -82,6 +82,7 @@ def channel_evidence(
 def stream_evidence(
     pull_status: str = "success",
     *,
+    stream_kind: StreamKind = StreamKind.MAIN,
     bitrate_kbps: int | None = 2048,
     resolution: str = "1920x1080",
     error_code: str | None = None,
@@ -90,13 +91,30 @@ def stream_evidence(
         EvidenceType.DEVICE_STREAM,
         StreamSnapshot(
             device_id="cam-x",
-            stream_kind=StreamKind.MAIN,
+            stream_kind=stream_kind,
             pull_status=PullStatus(pull_status),
             bitrate_kbps=bitrate_kbps,
             resolution=resolution,
             error_code=error_code,
         ).model_dump(mode="json"),
     )
+
+
+def test_main_success_and_sub_missing_are_not_treated_as_conflicting_facts() -> None:
+    main = stream_evidence("success", stream_kind=StreamKind.MAIN)
+    sub = stream_evidence(
+        "failed",
+        stream_kind=StreamKind.SUB,
+        error_code="PROFILE_MISSING",
+    )
+
+    facts = extract_camera_facts([main, sub])
+    result = infer_camera_black_screen_label([main, sub])
+
+    assert facts.conflicting_evidence_types == []
+    assert facts.failed_stream_kinds == ["sub"]
+    assert result.label is CameraDiagnosisLabel.STREAM_PUBLISH_OR_ENCODER_ISSUE
+    assert "失败码流类型=sub" in result.evidence_chain
 
 
 def platform_evidence(pull_status: str = "success", error_code: str | None = None):
