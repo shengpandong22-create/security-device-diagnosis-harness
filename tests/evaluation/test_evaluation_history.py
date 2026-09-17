@@ -260,7 +260,7 @@ def test_load_rejects_duplicate_run_id(tmp_path, cases):
     data["records"].append(data["records"][0])
     history._path.write_text(json.dumps(data), encoding="utf-8")
 
-    with pytest.raises(EvaluationHistoryError, match="重复 run_id"):
+    with pytest.raises(EvaluationHistoryError, match="文档认证失败"):
         history.load()
 
 
@@ -270,7 +270,7 @@ def test_load_rejects_future_baseline(tmp_path, cases):
     data["records"] = list(reversed(data["records"]))
     path.write_text(json.dumps(data), encoding="utf-8")
 
-    with pytest.raises(EvaluationHistoryError, match="Baseline"):
+    with pytest.raises(EvaluationHistoryError, match="文档认证失败"):
         history.load()
 
 
@@ -298,7 +298,7 @@ def test_load_rejects_unsupported_schema_version(tmp_path, cases):
     history = _history(tmp_path / "history.json")
     history.append(_run(cases, "a" * 40))
     data = json.loads(history._path.read_text(encoding="utf-8"))
-    data["schema_version"] = "4.0.0"
+    data["schema_version"] = "5.0.0"
     history._path.write_text(json.dumps(data), encoding="utf-8")
 
     with pytest.raises(EvaluationHistoryError, match="schema_version"):
@@ -324,6 +324,16 @@ def test_load_recomputes_gate_from_valid_summary(tmp_path, cases):
     path.write_text(json.dumps(data), encoding="utf-8")
 
     with pytest.raises(EvaluationHistoryError, match="认证失败"):
+        history.load()
+
+
+def test_load_rejects_history_tail_truncation(tmp_path, cases):
+    history, path = _two_record_history(tmp_path, cases)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["records"].pop()
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="文档认证失败"):
         history.load()
 
 

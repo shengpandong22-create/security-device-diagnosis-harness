@@ -120,18 +120,28 @@ class EvaluationHistoryRecord(BaseModel):
 class EvaluationHistoryDocument(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: str = "3.0.0"
+    schema_version: str = "4.0.0"
     records: tuple[EvaluationHistoryRecord, ...] = ()
+    document_auth_tag: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 #: 当前受支持的评测历史 schema 版本。其它版本明确拒绝（fail-closed），
 #: 不做隐式兼容，避免"格式合法但语义不同"的历史被静默接受。
-SUPPORTED_HISTORY_SCHEMA_VERSIONS: frozenset[str] = frozenset({"3.0.0"})
+SUPPORTED_HISTORY_SCHEMA_VERSIONS: frozenset[str] = frozenset({"4.0.0"})
 
 
 def _record_auth_tag(record: EvaluationHistoryRecord, integrity_key: bytes) -> str:
     payload = canonical_json(
         record.model_dump(mode="json", exclude={"record_auth_tag"})
+    ).encode()
+    return hmac.new(integrity_key, payload, hashlib.sha256).hexdigest()
+
+
+def _document_auth_tag(
+    document: EvaluationHistoryDocument, integrity_key: bytes
+) -> str:
+    payload = canonical_json(
+        document.model_dump(mode="json", exclude={"document_auth_tag"})
     ).encode()
     return hmac.new(integrity_key, payload, hashlib.sha256).hexdigest()
 
@@ -184,6 +194,10 @@ def _validate_document(
     """复验历史文档的结构不变量；拒绝被篡改或顺序错误的历史。"""
     if document.schema_version not in SUPPORTED_HISTORY_SCHEMA_VERSIONS:
         raise EvaluationHistoryError("不支持的评测历史 schema_version")
+    if not hmac.compare_digest(
+        document.document_auth_tag, _document_auth_tag(document, integrity_key)
+    ):
+        raise EvaluationHistoryError("评测历史文档认证失败")
     seen: set[str] = set()
     summaries: dict[str, EvaluationRunSummary] = {}
     for record in document.records:
@@ -290,9 +304,19 @@ class JsonEvaluationHistory:
         self._path = path
         self._integrity_key = bytes(integrity_key)
 
+    def _empty_document(self) -> EvaluationHistoryDocument:
+        document = EvaluationHistoryDocument(document_auth_tag="0" * 64)
+        return document.model_copy(
+            update={
+                "document_auth_tag": _document_auth_tag(
+                    document, self._integrity_key
+                )
+            }
+        )
+
     def load(self) -> EvaluationHistoryDocument:
         if not self._path.exists():
-            return EvaluationHistoryDocument()
+            return self._empty_document()
         try:
             document = EvaluationHistoryDocument.model_validate_json(
                 self._path.read_text(encoding="utf-8")
@@ -360,7 +384,14 @@ class JsonEvaluationHistory:
         record = record.model_copy(
             update={"record_auth_tag": _record_auth_tag(record, self._integrity_key)}
         )
-        updated = document.model_copy(update={"records": (*document.records, record)})
+        updated = document.model_copy(
+            update={"records": (*document.records, record), "document_auth_tag": "0" * 64}
+        )
+        updated = updated.model_copy(
+            update={
+                "document_auth_tag": _document_auth_tag(updated, self._integrity_key)
+            }
+        )
         self._write(updated)
         return record
 
