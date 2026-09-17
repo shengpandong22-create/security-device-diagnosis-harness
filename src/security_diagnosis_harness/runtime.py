@@ -454,6 +454,8 @@ class _RuntimeLifecycle:
 class _ClosedAwareProxy:
     """Revoke an already-held formal runtime entry point after container close."""
 
+    __slots__ = ("_target", "_lifecycle", "_wrap_results")
+
     def __init__(
         self,
         target: Any,
@@ -466,7 +468,7 @@ class _ClosedAwareProxy:
         object.__setattr__(self, "_wrap_results", wrap_results)
 
     def __getattribute__(self, name: str) -> Any:
-        if name in {"_target", "_lifecycle", "_wrap_results"}:
+        if name in {"_target", "_lifecycle", "_wrap_results", "__dict__"}:
             raise AttributeError("runtime entry point internals are not exposed")
         return object.__getattribute__(self, name)
 
@@ -476,6 +478,8 @@ class _ClosedAwareProxy:
         return object.__getattribute__(self, "_target").__class__
 
     def __getattr__(self, name: str) -> Any:
+        if name in {"_target", "_lifecycle", "_wrap_results", "__dict__"}:
+            raise AttributeError("runtime entry point internals are not exposed")
         lifecycle = object.__getattribute__(self, "_lifecycle")
         lifecycle.ensure_open()
         value = getattr(object.__getattribute__(self, "_target"), name)
@@ -495,6 +499,16 @@ class _ClosedAwareProxy:
         lifecycle = object.__getattribute__(self, "_lifecycle")
         lifecycle.ensure_open()
         setattr(object.__getattribute__(self, "_target"), name, value)
+
+
+@dataclass(frozen=True)
+class RuntimeAdapterRegistryView:
+    """Immutable readiness view; it never exposes registered Adapter objects."""
+
+    _ready_keys: tuple[str, ...]
+
+    def ready_adapter_keys(self) -> tuple[str, ...]:
+        return self._ready_keys
 
 
 @dataclass
@@ -527,7 +541,7 @@ class RuntimeContainer:
     # StaticDeviceGateway 只作为 Router 内部 Adapter，不再直接传给 Service。
     _gateway: DeviceGateway
     _asset_catalog: InMemoryDeviceAssetCatalog
-    _adapter_registry: InMemoryDeviceAdapterRegistry
+    _adapter_registry: RuntimeAdapterRegistryView
     _capability_support: RuntimeCapabilitySupport
     _lifecycle: _RuntimeLifecycle
     _closed: bool = False
@@ -539,8 +553,8 @@ class RuntimeContainer:
         return self._asset_catalog
 
     @property
-    def adapter_registry(self) -> InMemoryDeviceAdapterRegistry:
-        """Adapter Registry（只读访问；ready 状态由装配阶段决定）。"""
+    def adapter_registry(self) -> RuntimeAdapterRegistryView:
+        """Adapter readiness snapshot; registered objects are not exposed."""
         return self._adapter_registry
 
     @property
@@ -785,7 +799,9 @@ def build_runtime_container(
         knowledge_service=exposed(knowledge_service),
         consistency_scanner=exposed(consistency_scanner),
         _asset_catalog=exposed(asset_catalog),
-        _adapter_registry=exposed(adapter_registry, wrap_results=True),
+        _adapter_registry=RuntimeAdapterRegistryView(
+            adapter_registry.ready_adapter_keys()
+        ),
         _capability_support=capability_support,
         _lifecycle=lifecycle,
     )

@@ -16,9 +16,6 @@ import pytest
 from pydantic import BaseModel
 
 from security_diagnosis_harness.adapters.device_assets import InMemoryDeviceAssetCatalog
-from security_diagnosis_harness.adapters.device_gateway.registry import (
-    InMemoryDeviceAdapterRegistry,
-)
 from security_diagnosis_harness.adapters.device_gateway.routed import RoutedDeviceGateway
 from security_diagnosis_harness.adapters.device_gateway.static import StaticDeviceGateway
 from security_diagnosis_harness.application.errors import UnsupportedFaultTypeError
@@ -124,7 +121,9 @@ def test_service_supported_types_come_from_resolver_output():
 def test_container_exposes_capability_wiring_fields():
     with build_runtime_container(_memory_settings()) as runtime:
         assert isinstance(runtime.asset_catalog, InMemoryDeviceAssetCatalog)
-        assert isinstance(runtime.adapter_registry, InMemoryDeviceAdapterRegistry)
+        assert runtime.adapter_registry.ready_adapter_keys() == (
+            DEFAULT_RUNTIME_ADAPTER_KEY,
+        )
         assert isinstance(runtime.capability_support, RuntimeCapabilitySupport)
 
         asset = runtime.asset_catalog.get("camera-3f-001")
@@ -137,10 +136,7 @@ def test_container_exposes_capability_wiring_fields():
         } <= asset.capabilities
 
         # StaticDeviceGateway 只作为 Router 内部 ready Adapter 暴露。
-        assert isinstance(
-            runtime.adapter_registry.get_ready(DEFAULT_RUNTIME_ADAPTER_KEY),
-            StaticDeviceGateway,
-        )
+        assert not hasattr(runtime.adapter_registry, "get_ready")
 
 
 # ---------------------------------------------------------------- 摄像头闭环
