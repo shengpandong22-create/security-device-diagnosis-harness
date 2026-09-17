@@ -27,6 +27,7 @@ from pathlib import Path
 from threading import RLock
 from types import MappingProxyType
 from typing import Any, NamedTuple
+from weakref import WeakKeyDictionary
 
 from alembic import command
 from alembic.config import Config
@@ -451,10 +452,21 @@ class _RuntimeLifecycle:
             raise RuntimeClosedError()
 
 
+_PROXY_STATES: WeakKeyDictionary[
+    _ClosedAwareProxy, tuple[Any, _RuntimeLifecycle, bool]
+] = WeakKeyDictionary()
+_PROXY_STATE_LOCK = RLock()
+
+
+def _proxy_state(proxy: _ClosedAwareProxy) -> tuple[Any, _RuntimeLifecycle, bool]:
+    with _PROXY_STATE_LOCK:
+        return _PROXY_STATES[proxy]
+
+
 class _ClosedAwareProxy:
     """Revoke an already-held formal runtime entry point after container close."""
 
-    __slots__ = ("_target", "_lifecycle", "_wrap_results")
+    __slots__ = ("__weakref__",)
 
     def __init__(
         self,
@@ -463,9 +475,8 @@ class _ClosedAwareProxy:
         *,
         wrap_results: bool = False,
     ) -> None:
-        object.__setattr__(self, "_target", target)
-        object.__setattr__(self, "_lifecycle", lifecycle)
-        object.__setattr__(self, "_wrap_results", wrap_results)
+        with _PROXY_STATE_LOCK:
+            _PROXY_STATES[self] = (target, lifecycle, wrap_results)
 
     def __getattribute__(self, name: str) -> Any:
         if name in {"_target", "_lifecycle", "_wrap_results", "__dict__"}:
@@ -475,30 +486,30 @@ class _ClosedAwareProxy:
     @property
     def __class__(self) -> type[Any]:
         """Preserve concrete and runtime-checkable Protocol introspection."""
-        return object.__getattribute__(self, "_target").__class__
+        return _proxy_state(self)[0].__class__
 
     def __getattr__(self, name: str) -> Any:
         if name in {"_target", "_lifecycle", "_wrap_results", "__dict__"}:
             raise AttributeError("runtime entry point internals are not exposed")
-        lifecycle = object.__getattribute__(self, "_lifecycle")
+        target, lifecycle, wrap_results = _proxy_state(self)
         lifecycle.ensure_open()
-        value = getattr(object.__getattribute__(self, "_target"), name)
+        value = getattr(target, name)
         if not callable(value):
             return value
 
         def guarded(*args: Any, **kwargs: Any) -> Any:
             lifecycle.ensure_open()
             result = value(*args, **kwargs)
-            if object.__getattribute__(self, "_wrap_results"):
+            if wrap_results:
                 return _ClosedAwareProxy(result, lifecycle)
             return result
 
         return guarded
 
     def __setattr__(self, name: str, value: Any) -> None:
-        lifecycle = object.__getattribute__(self, "_lifecycle")
+        target, lifecycle, _ = _proxy_state(self)
         lifecycle.ensure_open()
-        setattr(object.__getattribute__(self, "_target"), name, value)
+        setattr(target, name, value)
 
 
 @dataclass(frozen=True)

@@ -278,6 +278,8 @@ def test_runtime_registry_view_never_exposes_adapters():
         _ = runtime.repository._target
     with pytest.raises(AttributeError):
         _ = runtime.repository.__dict__
+    with pytest.raises(AttributeError):
+        object.__getattribute__(runtime.repository, "_target")
     runtime.close()
 
 
