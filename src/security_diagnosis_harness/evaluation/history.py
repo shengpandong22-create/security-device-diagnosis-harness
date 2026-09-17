@@ -6,7 +6,8 @@ import hashlib
 import hmac
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from threading import RLock
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -28,6 +29,30 @@ from security_diagnosis_harness.evaluation.grader import SuiteMetrics
 
 class EvaluationHistoryError(ValueError):
     """History cannot accept or read the requested evaluation run."""
+
+
+class HistoryHeadStore(Protocol):
+    """Trusted storage outside the replayable history document."""
+
+    def load_head(self, history_id: str) -> str | None: ...
+
+    def save_head(self, history_id: str, auth_tag: str) -> None: ...
+
+
+class InMemoryHistoryHeadStore:
+    """Process-local implementation for tests and isolated offline runs."""
+
+    def __init__(self) -> None:
+        self._heads: dict[str, str] = {}
+        self._lock = RLock()
+
+    def load_head(self, history_id: str) -> str | None:
+        with self._lock:
+            return self._heads.get(history_id)
+
+    def save_head(self, history_id: str, auth_tag: str) -> None:
+        with self._lock:
+            self._heads[history_id] = auth_tag
 
 
 class TrendComparabilityError(ComparisonConfigurationError):
@@ -298,11 +323,19 @@ class EvaluationTrendReport(BaseModel):
 class JsonEvaluationHistory:
     """Atomic local history repository containing summaries, never full runs."""
 
-    def __init__(self, path: Path, *, integrity_key: bytes) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        integrity_key: bytes,
+        head_store: HistoryHeadStore,
+    ) -> None:
         if len(integrity_key) < 32:
             raise ValueError("评测历史完整性密钥至少需要 32 字节")
         self._path = path
         self._integrity_key = bytes(integrity_key)
+        self._head_store = head_store
+        self._history_id = str(path.resolve())
 
     def _empty_document(self) -> EvaluationHistoryDocument:
         document = EvaluationHistoryDocument(document_auth_tag="0" * 64)
@@ -316,14 +349,24 @@ class JsonEvaluationHistory:
 
     def load(self) -> EvaluationHistoryDocument:
         if not self._path.exists():
-            return self._empty_document()
+            document = self._empty_document()
+            trusted_head = self._head_store.load_head(self._history_id)
+            if trusted_head is not None and trusted_head != document.document_auth_tag:
+                raise EvaluationHistoryError("评测历史文件缺失或已回滚")
+            return document
         try:
             document = EvaluationHistoryDocument.model_validate_json(
                 self._path.read_text(encoding="utf-8")
             )
         except (OSError, ValueError) as exc:
             raise EvaluationHistoryError("评测历史文件无法通过协议校验") from exc
-        return _validate_document(document, self._integrity_key)
+        document = _validate_document(document, self._integrity_key)
+        trusted_head = self._head_store.load_head(self._history_id)
+        if trusted_head is None:
+            raise EvaluationHistoryError("评测历史缺少外部可信 Head")
+        if not hmac.compare_digest(trusted_head, document.document_auth_tag):
+            raise EvaluationHistoryError("评测历史检测到旧快照回放")
+        return document
 
     def append(
         self,
@@ -422,6 +465,7 @@ class JsonEvaluationHistory:
         temporary = self._path.with_suffix(self._path.suffix + ".tmp")
         temporary.write_text(document.model_dump_json(indent=2), encoding="utf-8")
         temporary.replace(self._path)
+        self._head_store.save_head(self._history_id, document.document_auth_tag)
 
 
 def write_evaluation_trend_report(

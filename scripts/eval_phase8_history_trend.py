@@ -17,6 +17,7 @@ from security_diagnosis_harness.evaluation import (
     EvaluationOutput,
     EvaluationRun,
     EvidenceTrace,
+    InMemoryHistoryHeadStore,
     JsonEvaluationHistory,
     RunIdentity,
     ToolCallTrace,
@@ -76,7 +77,9 @@ def main() -> int:
         # The deterministic offline regression uses an isolated, non-production key.
         integrity_key = hashlib.sha256(b"phase8-offline-history-regression").digest()
         history = JsonEvaluationHistory(
-            Path(directory) / "history.json", integrity_key=integrity_key
+            Path(directory) / "history.json",
+            integrity_key=integrity_key,
+            head_store=InMemoryHistoryHeadStore(),
         )
         history.append(baseline)
         candidate_record = history.append(

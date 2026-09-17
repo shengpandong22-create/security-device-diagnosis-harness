@@ -16,6 +16,7 @@ from security_diagnosis_harness.evaluation import (
     EvaluationOutput,
     EvaluationRun,
     EvidenceTrace,
+    InMemoryHistoryHeadStore,
     JsonEvaluationHistory,
     RunIdentity,
     ToolCallTrace,
@@ -26,10 +27,15 @@ from security_diagnosis_harness.evaluation import (
 ROOT = Path(__file__).resolve().parents[2]
 DATASET_ROOT = ROOT / "datasets/security-diagnosis/1.0.0"
 HISTORY_INTEGRITY_KEY = b"history-test-integrity-key-32-bytes-minimum"
+HISTORY_HEAD_STORE = InMemoryHistoryHeadStore()
 
 
 def _history(path: Path) -> JsonEvaluationHistory:
-    return JsonEvaluationHistory(path, integrity_key=HISTORY_INTEGRITY_KEY)
+    return JsonEvaluationHistory(
+        path,
+        integrity_key=HISTORY_INTEGRITY_KEY,
+        head_store=HISTORY_HEAD_STORE,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -334,6 +340,20 @@ def test_load_rejects_history_tail_truncation(tmp_path, cases):
     path.write_text(json.dumps(data), encoding="utf-8")
 
     with pytest.raises(EvaluationHistoryError, match="文档认证失败"):
+        history.load()
+
+
+def test_load_rejects_valid_old_snapshot_replay(tmp_path, cases):
+    path = tmp_path / "history.json"
+    history = _history(path)
+    baseline = _run(cases, "a" * 40)
+    candidate = _run(cases, "b" * 40)
+    history.append(baseline)
+    old_authenticated_snapshot = path.read_bytes()
+    history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
+    path.write_bytes(old_authenticated_snapshot)
+
+    with pytest.raises(EvaluationHistoryError, match="旧快照回放"):
         history.load()
 
 
