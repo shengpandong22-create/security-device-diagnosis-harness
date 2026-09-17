@@ -26,6 +26,7 @@ from security_diagnosis_harness.evaluation import (
     SourceProvenance,
     adjudicate_annotations,
     build_annotation_task,
+    dataset_source_attestation_tag,
     publish_dataset_version,
     verify_dataset_release,
 )
@@ -35,6 +36,23 @@ from security_diagnosis_harness.evaluation import (
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "datasets/security-diagnosis/1.0.0"
+RELEASE_INTEGRITY_KEY = b"dataset-release-test-integrity-key-32-bytes"
+SOURCE_ATTESTATION_TAG = dataset_source_attestation_tag(
+    SOURCE, RELEASE_INTEGRITY_KEY
+)
+_publish_dataset_version = publish_dataset_version
+_verify_dataset_release = verify_dataset_release
+
+
+def publish_dataset_version(*args, **kwargs):
+    kwargs.setdefault("integrity_key", RELEASE_INTEGRITY_KEY)
+    kwargs.setdefault("source_attestation_tag", SOURCE_ATTESTATION_TAG)
+    return _publish_dataset_version(*args, **kwargs)
+
+
+def verify_dataset_release(*args, **kwargs):
+    kwargs.setdefault("integrity_key", RELEASE_INTEGRITY_KEY)
+    return _verify_dataset_release(*args, **kwargs)
 
 
 def _case(**changes) -> DatasetCase:
@@ -132,6 +150,19 @@ def test_governed_release_creates_loadable_immutable_version(tmp_path):
         publish_dataset_version(
             SOURCE, tmp_path, "1.1.0", (_addition(),),
             released_at=datetime(2026, 9, 13, tzinfo=UTC),
+        )
+
+
+def test_release_rejects_untrusted_source_attestation(tmp_path):
+    with pytest.raises(DatasetReleaseError, match="来源数据集认证失败"):
+        _publish_dataset_version(
+            SOURCE,
+            tmp_path,
+            "1.1.0",
+            (_addition(),),
+            released_at=datetime(2026, 9, 13, tzinfo=UTC),
+            integrity_key=RELEASE_INTEGRITY_KEY,
+            source_attestation_tag="0" * 64,
         )
 
 
@@ -306,7 +337,7 @@ def test_release_receipt_is_bound_to_split_manifests(tmp_path):
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     payload["split_manifest_hashes"]["dev"] = "0" * 64
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(DatasetReleaseError, match="Manifest 哈希"):
+    with pytest.raises(DatasetReleaseError, match="回执认证失败"):
         verify_dataset_release(target, source_directory=SOURCE)
 
 
@@ -319,7 +350,7 @@ def test_release_receipt_count_and_addition_presence_are_verified(tmp_path):
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     payload["total_case_count"] = 99
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(DatasetReleaseError, match="数量"):
+    with pytest.raises(DatasetReleaseError, match="回执认证失败"):
         verify_dataset_release(target, source_directory=SOURCE)
 
 
@@ -332,7 +363,7 @@ def test_release_receipt_source_counts_are_recomputed(tmp_path):
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     payload["synthetic_case_count"] = payload["synthetic_case_count"] + 1
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(DatasetReleaseError, match="来源计数"):
+    with pytest.raises(DatasetReleaseError, match="回执认证失败"):
         verify_dataset_release(target, source_directory=SOURCE)
 
 
@@ -348,7 +379,7 @@ def test_release_receipt_cannot_omit_an_actual_addition(tmp_path):
     payload["authorized_case_count"] = 0
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
 
-    with pytest.raises(DatasetReleaseError, match="新增案例清单不完整"):
+    with pytest.raises(DatasetReleaseError, match="回执认证失败"):
         verify_dataset_release(target, source_directory=SOURCE)
 
 
@@ -392,7 +423,7 @@ def test_release_cannot_rewrite_an_inherited_case(tmp_path):
     )
     receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
 
-    with pytest.raises(DatasetReleaseError, match="改写了来源继承案例"):
+    with pytest.raises(DatasetReleaseError, match="回执认证失败"):
         verify_dataset_release(target, source_directory=SOURCE)
 
 
@@ -408,7 +439,7 @@ def test_release_receipt_source_kind_must_match_case_source(tmp_path):
         "authorized_export" if addition["source_kind"] == "synthetic" else "synthetic"
     )
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(DatasetReleaseError, match="标记"):
+    with pytest.raises(DatasetReleaseError, match="回执认证失败"):
         verify_dataset_release(target, source_directory=SOURCE)
 
 
@@ -421,5 +452,5 @@ def test_release_receipt_source_record_must_match_case(tmp_path):
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     payload["additions"][0]["source_record_id"] = "forged-record"
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(DatasetReleaseError, match="来源记录"):
+    with pytest.raises(DatasetReleaseError, match="回执认证失败"):
         verify_dataset_release(target, source_directory=SOURCE)

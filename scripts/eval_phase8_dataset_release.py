@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ from security_diagnosis_harness.evaluation import (
     TestSetAccessError,
     adjudicate_annotations,
     build_annotation_task,
+    dataset_source_attestation_tag,
     publish_dataset_version,
     write_dataset_release_report,
 )
@@ -112,6 +114,7 @@ def _fixed_addition() -> DatasetReleaseAddition:
 
 
 def main() -> int:
+    integrity_key = hashlib.sha256(b"phase8-offline-release-regression").digest()
     with TemporaryDirectory(prefix="phase8d-") as directory:
         target, receipt = publish_dataset_version(
             SOURCE,
@@ -119,6 +122,10 @@ def main() -> int:
             "1.1.0",
             (_fixed_addition(),),
             released_at=datetime(2026, 9, 13, tzinfo=UTC),
+            integrity_key=integrity_key,
+            source_attestation_tag=dataset_source_attestation_tag(
+                SOURCE, integrity_key
+            ),
         )
         registry = DatasetRegistry.load(target)
         split_counts = {split.value: registry.case_count(split) for split in DatasetSplit}

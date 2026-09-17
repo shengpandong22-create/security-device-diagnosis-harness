@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from datetime import datetime
 from enum import StrEnum
@@ -29,6 +31,7 @@ from security_diagnosis_harness.evaluation.dataset import (
     ManifestFile,
     are_near_duplicate_cases,
 )
+from security_diagnosis_harness.evaluation.gate import AuthenticatedDatasetCases
 
 
 class DatasetReleaseError(DatasetProtocolError):
@@ -103,9 +106,12 @@ class DatasetReleaseReceipt(BaseModel):
     total_case_count: int = Field(ge=1)
     split_counts: dict[DatasetSplit, int]
     source_split_manifest_hashes: dict[DatasetSplit, str]
+    source_attestation_tag: str = Field(pattern=r"^[0-9a-f]{64}$")
     split_manifest_hashes: dict[DatasetSplit, str]
+    split_gate_anchor_hashes: dict[DatasetSplit, str]
     dataset_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     additions: tuple[ReleasedAddition, ...]
+    receipt_auth_tag: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     def to_markdown(self) -> str:
         lines = [
@@ -136,6 +142,8 @@ def publish_dataset_version(
     additions: tuple[DatasetReleaseAddition, ...],
     *,
     released_at: datetime,
+    integrity_key: bytes,
+    source_attestation_tag: str,
 ) -> tuple[Path, DatasetReleaseReceipt]:
     """Publish a new immutable semantic version after full governance revalidation."""
     _validate_semver(target_version)
@@ -173,6 +181,22 @@ def publish_dataset_version(
     DatasetRegistry(cases_by_split)
 
     source_manifest_hashes = _manifest_hashes(source_directory)
+    _verify_source_attestation(
+        source_version,
+        source_manifest_hashes,
+        source_attestation_tag,
+        integrity_key,
+    )
+    gate_anchors = {
+        split: AuthenticatedDatasetCases.issue(
+            "security-diagnosis", cases, integrity_key
+        )
+        for split, cases in cases_by_split.items()
+    }
+    gate_anchor_hashes = {
+        split: sha256_text(canonical_json(anchor.model_dump(mode="json")))
+        for split, anchor in gate_anchors.items()
+    }
     receipt = _receipt(
         source_version,
         target_version,
@@ -180,6 +204,9 @@ def publish_dataset_version(
         validated,
         released_at,
         source_manifest_hashes,
+        source_attestation_tag,
+        gate_anchor_hashes,
+        integrity_key,
     )
     dataset_root.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=f".{target_version}-", dir=dataset_root) as temporary:
@@ -187,9 +214,17 @@ def publish_dataset_version(
         staging.mkdir()
         for split, cases in cases_by_split.items():
             _write_split(staging / split.value, target_version, split, cases)
+            _write_json(
+                staging / f"gate-anchor-{split.value}.json",
+                gate_anchors[split].model_dump(mode="json"),
+            )
         _write_json(staging / "release.json", receipt.model_dump(mode="json"))
         # Verify staging fully before the immutable target becomes visible.
-        verify_dataset_release(staging, source_directory=source_directory)
+        verify_dataset_release(
+            staging,
+            source_directory=source_directory,
+            integrity_key=integrity_key,
+        )
         try:
             staging.rename(target)
         except FileExistsError as exc:
@@ -306,6 +341,9 @@ def _receipt(
     validated: tuple[tuple[DatasetCase, DatasetReleaseAddition], ...],
     released_at: datetime,
     source_manifest_hashes: dict[DatasetSplit, str],
+    source_attestation_tag: str,
+    gate_anchor_hashes: dict[DatasetSplit, str],
+    integrity_key: bytes,
 ) -> DatasetReleaseReceipt:
     additions = tuple(
         ReleasedAddition(
@@ -339,7 +377,7 @@ def _receipt(
         )
         for split, items in cases.items()
     }
-    return DatasetReleaseReceipt(
+    receipt = DatasetReleaseReceipt(
         schema_version="2.0.0",
         dataset_name="security-diagnosis",
         source_version=source_version,
@@ -352,11 +390,17 @@ def _receipt(
         total_case_count=sum(len(items) for items in cases.values()),
         split_counts={split: len(items) for split, items in cases.items()},
         source_split_manifest_hashes=source_manifest_hashes,
+        source_attestation_tag=source_attestation_tag,
         split_manifest_hashes=manifest_hashes,
+        split_gate_anchor_hashes=gate_anchor_hashes,
         dataset_content_hash=sha256_text(
             canonical_json({split.value: value for split, value in manifest_hashes.items()})
         ),
         additions=additions,
+        receipt_auth_tag="0" * 64,
+    )
+    return receipt.model_copy(
+        update={"receipt_auth_tag": _receipt_auth_tag(receipt, integrity_key)}
     )
 
 
@@ -408,8 +452,49 @@ def _manifest_hashes(directory: Path) -> dict[DatasetSplit, str]:
         raise DatasetReleaseError("数据集 Manifest 无法读取") from exc
 
 
+def dataset_source_attestation_tag(directory: Path, integrity_key: bytes) -> str:
+    """Sign an immutable dataset version at its trusted publication boundary."""
+    root = directory.resolve()
+    return _source_attestation_tag(root.name, _manifest_hashes(root), integrity_key)
+
+
+def _source_attestation_tag(
+    version: str,
+    manifest_hashes: dict[DatasetSplit, str],
+    integrity_key: bytes,
+) -> str:
+    payload = {
+        "dataset_name": "security-diagnosis",
+        "dataset_version": version,
+        "split_manifest_hashes": {
+            split.value: value for split, value in manifest_hashes.items()
+        },
+    }
+    return hmac.new(
+        integrity_key, canonical_json(payload).encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def _verify_source_attestation(
+    version: str,
+    manifest_hashes: dict[DatasetSplit, str],
+    auth_tag: str,
+    integrity_key: bytes,
+) -> None:
+    expected = _source_attestation_tag(version, manifest_hashes, integrity_key)
+    if not hmac.compare_digest(auth_tag, expected):
+        raise DatasetReleaseError("来源数据集认证失败")
+
+
+def _receipt_auth_tag(receipt: DatasetReleaseReceipt, integrity_key: bytes) -> str:
+    payload = canonical_json(
+        receipt.model_dump(mode="json", exclude={"receipt_auth_tag"})
+    ).encode()
+    return hmac.new(integrity_key, payload, hashlib.sha256).hexdigest()
+
+
 def verify_dataset_release(
-    directory: Path, *, source_directory: Path
+    directory: Path, *, source_directory: Path, integrity_key: bytes
 ) -> DatasetReleaseReceipt:
     """Verify release receipt, manifests, case hashes, counts, and addition presence."""
     root = directory.resolve()
@@ -419,14 +504,25 @@ def verify_dataset_release(
         )
     except (OSError, ValueError) as exc:
         raise DatasetReleaseError("发布回执不存在或协议不合法") from exc
+    if not hmac.compare_digest(
+        receipt.receipt_auth_tag, _receipt_auth_tag(receipt, integrity_key)
+    ):
+        raise DatasetReleaseError("发布回执认证失败")
     if root.name != receipt.released_version:
         raise DatasetReleaseError("发布目录名与回执版本不一致")
     source_root = source_directory.resolve()
     if source_root.name != receipt.source_version:
         raise DatasetReleaseError("来源目录名与回执版本不一致")
     source_registry = DatasetRegistry.load(source_root)
-    if _manifest_hashes(source_root) != receipt.source_split_manifest_hashes:
+    source_hashes = _manifest_hashes(source_root)
+    if source_hashes != receipt.source_split_manifest_hashes:
         raise DatasetReleaseError("发布回执与来源 split Manifest 哈希不一致")
+    _verify_source_attestation(
+        receipt.source_version,
+        source_hashes,
+        receipt.source_attestation_tag,
+        integrity_key,
+    )
     registry = DatasetRegistry.load(root)
     actual_hashes: dict[DatasetSplit, str] = {}
     for split in DatasetSplit:
@@ -444,6 +540,22 @@ def verify_dataset_release(
     )
     if actual_content_hash != receipt.dataset_content_hash:
         raise DatasetReleaseError("发布回执的整体内容哈希不一致")
+    verified_anchors: dict[DatasetSplit, AuthenticatedDatasetCases] = {}
+    for split in DatasetSplit:
+        try:
+            anchor_payload = json.loads(
+                (root / f"gate-anchor-{split.value}.json").read_text(encoding="utf-8")
+            )
+            anchor = AuthenticatedDatasetCases.model_validate(anchor_payload)
+            anchor.verify(integrity_key)
+        except (OSError, ValueError) as exc:
+            raise DatasetReleaseError("发布数据集 Gate Anchor 无法认证") from exc
+        anchor_hash = sha256_text(canonical_json(anchor_payload))
+        if anchor_hash != receipt.split_gate_anchor_hashes[split]:
+            raise DatasetReleaseError("发布回执与 Gate Anchor 哈希不一致")
+        if anchor.dataset_name != receipt.dataset_name:
+            raise DatasetReleaseError("Gate Anchor 数据集名称不一致")
+        verified_anchors[split] = anchor
     actual_counts = {split: registry.case_count(split) for split in DatasetSplit}
     if (
         actual_counts != receipt.split_counts
@@ -454,6 +566,10 @@ def verify_dataset_release(
         split: {case.case_id: case for case in registry.cases(split, allow_test=True)}
         for split in DatasetSplit
     }
+    for split, anchor in verified_anchors.items():
+        anchored = {case.case_id: case for case in anchor.cases}
+        if anchored != by_split[split]:
+            raise DatasetReleaseError("Gate Anchor 与发布数据集内容不一致")
     if any(item.case_id not in by_split[item.split] for item in receipt.additions):
         raise DatasetReleaseError("发布回执包含数据集中不存在的新增案例")
     source_ids = {
