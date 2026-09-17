@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="430" viewBox="0 0 1440 430">
+  <rect width="1440" height="430" fill="#ffffff"/>
+  <style>.t{font-family:'Microsoft YaHei',sans-serif;fill:#1e293b}.h{font-size:24px;font-weight:700}.n{font-size:16px;font-weight:700}.s{font-size:13px}.a{stroke:#d97706;stroke-width:3;fill:none;marker-end:url(#m)}.d{stroke:#475569;stroke-width:2;stroke-dasharray:7 6;fill:none;marker-end:url(#g)}</style>
+  <defs><marker id="m" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#d97706"/></marker><marker id="g" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker></defs>
+  <text x="40" y="42" class="t h">一次诊断如何从请求走到人工确认</text>
+  <g class="t" text-anchor="middle">
+    <g><rect x="35" y="150" width="140" height="82" rx="14" fill="#e8f3ff" stroke="#2f80c9" stroke-width="2"/><text x="105" y="181" class="n">1 API</text><text x="105" y="207" class="s">接收命令</text></g>
+    <g><rect x="205" y="150" width="165" height="82" rx="14" fill="#e8f3ff" stroke="#2f80c9" stroke-width="2"/><text x="287" y="181" class="n">2 Application</text><text x="287" y="207" class="s">用例与状态</text></g>
+    <g><rect x="400" y="150" width="165" height="82" rx="14" fill="#f1edff" stroke="#7c3aed" stroke-width="2"/><text x="482" y="181" class="n">3 Runner</text><text x="482" y="207" class="s">轮次与预算</text></g>
+    <g><rect x="595" y="150" width="150" height="82" rx="14" fill="#e2f6ef" stroke="#0f766e" stroke-width="2"/><text x="670" y="181" class="n">4 Registry</text><text x="670" y="207" class="s">确定性闸门</text></g>
+    <g><rect x="775" y="150" width="150" height="82" rx="14" fill="#dcfafa" stroke="#0e9f9a" stroke-width="2"/><text x="850" y="181" class="n">5 Gateway</text><text x="850" y="207" class="s">只读事实</text></g>
+    <g><rect x="955" y="150" width="140" height="82" rx="14" fill="#e2f6ef" stroke="#0f766e" stroke-width="2"/><text x="1025" y="181" class="n">6 Evidence</text><text x="1025" y="207" class="s">持久事实</text></g>
+    <g><rect x="1125" y="150" width="135" height="82" rx="14" fill="#e8f3ff" stroke="#2f80c9" stroke-width="2"/><text x="1192" y="181" class="n">7 Policy</text><text x="1192" y="207" class="s">引用校验</text></g>
+    <g><rect x="1290" y="150" width="120" height="82" rx="14" fill="#fff3df" stroke="#d97706" stroke-width="2"/><text x="1350" y="181" class="n">8 Review</text><text x="1350" y="207" class="s">人工确认</text></g>
+    <g><rect x="408" y="300" width="150" height="72" rx="14" fill="#fff0eb" stroke="#c05621" stroke-width="2"/><text x="483" y="330" class="n">LLM</text><text x="483" y="353" class="s">仅提出建议</text></g>
+  </g>
+  <path class="a" d="M175 191H205M370 191H400M565 191H595M745 191H775M925 191H955M1095 191H1125M1260 191H1290"/>
+  <path class="d" d="M460 232V300M505 300V232"/>
+  <text x="40" y="408" class="t s">橙色：主业务路径　虚线：模型建议回路　关键原则：LLM 不直接修改 DiagnosisCase</text>
+</svg>

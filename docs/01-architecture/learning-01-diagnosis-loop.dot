@@ -1,0 +1,17 @@
+digraph DiagnosisLoop {
+  rankdir=LR; graph [bgcolor="white", pad="0.3", nodesep="0.35", ranksep="0.55"];
+  node [shape=box, style="rounded,filled", fontname="Microsoft YaHei", fontsize=11, penwidth=1.4];
+  edge [fontname="Microsoft YaHei", fontsize=9, color="#d97706", penwidth=2];
+  api [label="1 API\n接收命令", fillcolor="#e8f3ff", color="#2f80c9"];
+  app [label="2 ApplicationService\n控制用例与状态", fillcolor="#e8f3ff", color="#2f80c9"];
+  runner [label="3 ToolLoopRunner\n限制轮次与预算", fillcolor="#f1edff", color="#7c3aed"];
+  llm [label="LLM\n只提议工具/候选结论", fillcolor="#fff0eb", color="#c05621"];
+  registry [label="4 ToolRegistry\n权限、参数、白名单", fillcolor="#e2f6ef", color="#0f766e"];
+  gateway [label="5 DeviceGateway\n只读设备事实", fillcolor="#dcfafa", color="#0e9f9a"];
+  evidence [label="6 Evidence\n真实落地与引用", fillcolor="#e2f6ef", color="#0f766e"];
+  policy [label="7 CitationPolicy\n确定性校验", fillcolor="#e8f3ff", color="#2f80c9"];
+  review [label="8 HumanReview\n最终确认/拒绝", fillcolor="#fff3df", color="#d97706"];
+  api -> app -> runner -> registry -> gateway -> evidence -> policy -> review;
+  runner -> llm [style=dashed, color="#475569", label="请求建议"];
+  llm -> runner [style=dashed, color="#475569", label="结构化返回"];
+}

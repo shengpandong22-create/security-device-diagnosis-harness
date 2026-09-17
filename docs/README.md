@@ -78,6 +78,28 @@
 - [Phase 9A 开发总结](./03-progress/Phase%209A%20开发总结.md)
 - [Phase 9B 开发总结](./03-progress/Phase%209B%20开发总结.md)
 
+## 06-learning
+
+- [核心源码六条链路学习路径](./06-learning/README.md)
+- [一次诊断如何完成](./06-learning/01-一次诊断如何完成.md)
+- [模型为何不能直接确认](./06-learning/02-模型为何不能直接确认.md)
+- [设备事实如何安全进入系统](./06-learning/03-设备事实如何安全进入系统.md)
+- [诊断数据如何可靠保存](./06-learning/04-诊断数据如何可靠保存.md)
+- [RAG 知识闭环如何工作](./06-learning/05-RAG知识闭环如何工作.md)
+- [评测如何决定能否发布](./06-learning/06-评测如何决定能否发布.md)
+
+## 07-interview
+
+- [面试突击材料导航](./07-interview/README.md)
+- [最终简历项目描述](./07-interview/00-最终简历项目描述.md)
+- [基于简历的面试追问树](./07-interview/01-基于简历的面试追问树.md)
+- [三分钟项目介绍](./07-interview/02-三分钟项目介绍.md)
+- [十五分钟技术讲解](./07-interview/03-十五分钟技术讲解.md)
+- [高频问题与分层答案](./07-interview/04-高频问题与分层答案.md)
+- [压力面试与质疑](./07-interview/05-压力面试与质疑.md)
+- [诚实边界与防包装过度](./07-interview/06-诚实边界与防包装过度.md)
+- [核心代码速查表](./07-interview/07-核心代码速查表.md)
+
 ## Experiments
 
 - [Codex + CodeBuddy 用量数据可得性](./experiments/codex-codebuddy-usage/phase0-data-availability.md)
