@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="700" viewBox="0 0 1440 700" role="img" aria-labelledby="title desc">
+  <title id="title">可信安防诊断 Agent 企业化目标架构</title>
+  <desc id="desc">企业入口经过诊断控制面、Agent Runtime、设备接入、可信事实和人工复核，数据、模型、知识、评测与可观测提供治理。</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#d97706"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#475569"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#b91c1c"/></marker>
+    <style>.t{font:600 17px 'Microsoft YaHei',sans-serif;fill:#0f172a}.s{font:13px 'Microsoft YaHei',sans-serif;fill:#334155}.n{rx:14;stroke-width:2}.m{fill:none;stroke:#d97706;stroke-width:3;marker-end:url(#a)}.o{fill:none;stroke:#475569;stroke-width:2;stroke-dasharray:7 6;marker-end:url(#g)}.f{fill:none;stroke:#b91c1c;stroke-width:2.5;marker-end:url(#r)}</style>
+  </defs>
+  <rect width="1440" height="700" fill="white"/><text x="45" y="45" class="t" font-size="25">可信安防诊断 Agent：企业化目标架构</text><text x="45" y="73" class="s">橙色为主业务路径；虚线为非权威建议或治理反馈；红色为受控失败。</text>
+  <g><rect class="n" x="35" y="145" width="180" height="86" fill="#e8f3ff" stroke="#2f80c9"/><text class="t" x="125" y="178" text-anchor="middle">企业入口</text><text class="s" x="125" y="205" text-anchor="middle">SSO / Tenant / Gateway</text></g>
+  <g><rect class="n" x="255" y="145" width="195" height="86" fill="#e8f3ff" stroke="#2f80c9"/><text class="t" x="352" y="178" text-anchor="middle">诊断控制面</text><text class="s" x="352" y="205" text-anchor="middle">API / Workflow / Review</text></g>
+  <g><rect class="n" x="490" y="145" width="190" height="86" fill="#f1edff" stroke="#7c3aed"/><text class="t" x="585" y="178" text-anchor="middle">Agent Runtime</text><text class="s" x="585" y="205" text-anchor="middle">ToolLoop / Budget</text></g>
+  <g><rect class="n" x="720" y="145" width="200" height="86" fill="#dcfafa" stroke="#0e9f9a"/><text class="t" x="820" y="178" text-anchor="middle">设备接入面</text><text class="s" x="820" y="205" text-anchor="middle">Asset / Auth / Connector</text></g>
+  <g><rect class="n" x="960" y="145" width="180" height="86" fill="#e2f6ef" stroke="#0f766e"/><text class="t" x="1050" y="178" text-anchor="middle">可信事实面</text><text class="s" x="1050" y="205" text-anchor="middle">Evidence / Citation</text></g>
+  <g><rect class="n" x="1180" y="145" width="165" height="86" fill="#fff3df" stroke="#d97706"/><text class="t" x="1262" y="178" text-anchor="middle">人工复核</text><text class="s" x="1262" y="205" text-anchor="middle">确认 / 驳回</text></g>
+  <path class="m" d="M215 188H255"/><path class="m" d="M450 188H490"/><path class="m" d="M680 188H720"/><path class="m" d="M920 188H960"/><path class="m" d="M1140 188H1180"/>
+  <g><rect class="n" x="255" y="340" width="195" height="86" fill="#dcfafa" stroke="#0e9f9a"/><text class="t" x="352" y="373" text-anchor="middle">数据面</text><text class="s" x="352" y="400" text-anchor="middle">PostgreSQL / Audit</text></g>
+  <g><rect class="n" x="490" y="340" width="190" height="86" fill="#fff0eb" stroke="#c05621"/><text class="t" x="585" y="373" text-anchor="middle">Model Gateway</text><text class="s" x="585" y="400" text-anchor="middle">路由 / 配额 / 审计</text></g>
+  <g><rect class="n" x="960" y="340" width="180" height="86" fill="#e2f6ef" stroke="#0f766e"/><text class="t" x="1050" y="373" text-anchor="middle">知识面</text><text class="s" x="1050" y="400" text-anchor="middle">Governance / Hybrid</text></g>
+  <g><rect class="n" x="35" y="520" width="200" height="86" fill="#fff3df" stroke="#d97706"/><text class="t" x="135" y="553" text-anchor="middle">质量控制面</text><text class="s" x="135" y="580" text-anchor="middle">Dataset / Eval / Gate</text></g>
+  <g><rect class="n" x="330" y="520" width="200" height="86" fill="#e8f3ff" stroke="#2f80c9"/><text class="t" x="430" y="553" text-anchor="middle">运营可观测</text><text class="s" x="430" y="580" text-anchor="middle">SLO / Cost / Alert</text></g>
+  <g><rect class="n" x="720" y="520" width="220" height="86" fill="#fff0f0" stroke="#b91c1c"/><text class="t" x="830" y="553" text-anchor="middle">受控失败与降级</text><text class="s" x="830" y="580" text-anchor="middle">权限 / 超时 / 冲突 / 熔断</text></g>
+  <path class="o" d="M585 231V340"/><text class="s" x="600" y="292">建议，不改 Case</text><path class="o" d="M352 231V340"/><path class="o" d="M1050 340V265C1050 250 800 270 650 340"/><path class="o" d="M235 563C300 545 370 485 520 426"/><path class="o" d="M450 383C470 455 460 485 440 520"/><path class="f" d="M820 231V520"/>
+  <text class="s" x="45" y="660">不能误解：LLM 不直接修改 Case；失败不必生成 Evidence；实验、Simulator 与授权设备证据必须分开统计。</text>
+</svg>

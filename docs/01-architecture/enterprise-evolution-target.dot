@@ -1,0 +1,25 @@
+digraph EnterpriseEvolutionTarget {
+  graph [rankdir=LR, bgcolor="white", pad="0.35", nodesep="0.45", ranksep="0.7", fontname="Microsoft YaHei"];
+  node [shape=box, style="rounded,filled", fontname="Microsoft YaHei", fontsize=11];
+  edge [color="#d97706", penwidth=2, fontname="Microsoft YaHei"];
+  entry [label="企业入口\nSSO / Tenant / Gateway", fillcolor="#e8f3ff", color="#2f80c9"];
+  app [label="诊断控制面\nAPI / Workflow / Review", fillcolor="#e8f3ff", color="#2f80c9"];
+  runtime [label="Agent Runtime\nToolLoop / Budget", fillcolor="#f1edff", color="#7c3aed"];
+  device [label="设备接入面\nAsset / Auth / Connector", fillcolor="#dcfafa", color="#0e9f9a"];
+  facts [label="可信事实面\nEvidence / Citation", fillcolor="#e2f6ef", color="#0f766e"];
+  review [label="人工复核\n确认 / 驳回", fillcolor="#fff3df", color="#d97706"];
+  data [label="数据面\nPostgreSQL / Audit", fillcolor="#dcfafa", color="#0e9f9a"];
+  model [label="Model Gateway\n路由 / 配额 / 审计", fillcolor="#fff0eb", color="#c05621"];
+  knowledge [label="知识面\nGovernance / Hybrid", fillcolor="#e2f6ef", color="#0f766e"];
+  eval [label="质量控制面\nDataset / Eval / Gate", fillcolor="#fff3df", color="#d97706"];
+  observe [label="运营可观测\nSLO / Cost / Alert", fillcolor="#e8f3ff", color="#2f80c9"];
+  deny [label="受控失败\n权限 / 超时 / 熔断", fillcolor="#fff0f0", color="#b91c1c"];
+  entry -> app -> runtime -> device -> facts -> review;
+  runtime -> model [style=dashed, color="#475569", label="建议"];
+  app -> data [style=dashed, color="#475569"];
+  review -> knowledge [style=dashed, color="#475569"];
+  knowledge -> runtime [style=dashed, color="#475569", label="confirmed-only"];
+  eval -> runtime [style=dashed, color="#475569", label="准入"];
+  app -> observe [style=dashed, color="#475569"];
+  device -> deny [color="#b91c1c"];
+}

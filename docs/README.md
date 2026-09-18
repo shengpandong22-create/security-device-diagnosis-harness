@@ -15,6 +15,7 @@
 - [SVG 成品](./01-architecture/security-device-diagnosis-harness-overview.svg)
 - [Graphviz 语义源](./01-architecture/security-device-diagnosis-harness-overview.dot)
 - [ADR-001：正式 Runtime 的四域、RAG 与真实 LLM 边界](./01-architecture/ADR-001正式Runtime能力边界.md)
+- [可信安防诊断 Agent 企业化目标架构](./01-architecture/enterprise-evolution-target.md)
 
 ## 02-specifications
 
@@ -27,6 +28,7 @@
 - [Phase 10 评测发布闭环与试接入准备实施规格](./02-specifications/Phase%2010%20评测发布闭环与试接入准备实施规格.md)
 - [Phase 10 授权设备试接入运行手册](./02-specifications/Phase%2010%20授权设备试接入运行手册.md)
 - [Phase 11 ONVIF 跨来源诊断与稳定封版实施规格](./02-specifications/Phase%2011%20ONVIF跨来源诊断与稳定封版实施规格.md)
+- [可信安防设备诊断 Agent 企业化落地演进路线设计](./02-specifications/企业化落地演进路线设计.md)
 
 ## 03-progress
 
