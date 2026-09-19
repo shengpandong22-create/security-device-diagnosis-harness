@@ -1,6 +1,7 @@
 param(
     [ValidateSet("Bootstrap", "Start", "Verify", "Stability", "Status", "Stop")]
-    [string]$Command = "Status"
+    [string]$Command = "Status",
+    [switch]$Offline
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,6 +45,16 @@ function Invoke-Bootstrap {
     docker pull $FfmpegImage | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "FFmpeg 媒体夹具镜像拉取失败" }
     Write-Output "BOOTSTRAP_OK"
+}
+
+function Assert-OfflineArtifacts {
+    if (-not (Test-Path $OnvifExe)) {
+        throw "离线启动缺少 ONVIF Simulator；请在允许联网时先执行 Bootstrap"
+    }
+    docker image inspect "ghcr.io/shopify/toxiproxy:2.12.0@sha256:9378ed52a28bc50edc1350f936f518f31fa95f0d15917d6eb40b8e376d1a214e" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "离线启动缺少固定摘要 Toxiproxy 镜像" }
+    docker image inspect $FfmpegImage | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "离线启动缺少固定摘要 FFmpeg 镜像" }
 }
 
 function Initialize-MediaAndOnvifConfig {
@@ -102,7 +113,7 @@ function Wait-Http([string]$Uri, [int]$Attempts = 30) {
 
 function Invoke-Start {
     Invoke-Stop -Quiet
-    Invoke-Bootstrap
+    if ($Offline) { Assert-OfflineArtifacts } else { Invoke-Bootstrap }
     Initialize-MediaAndOnvifConfig
     $credential = [guid]::NewGuid().ToString("N")
     Set-Content -LiteralPath $CredentialPath -Value $credential -NoNewline
