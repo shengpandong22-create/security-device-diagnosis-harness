@@ -53,7 +53,15 @@ class KnowledgeGovernanceApplicationService:
         self, seed: ManualKnowledgeSeed, actor: str
     ) -> KnowledgeCandidate:
         """把摘要校验通过的手工资料导入 candidate 池，不自动确认。"""
+        for existing in self._repository.list_all():
+            if (
+                existing.source is KnowledgeCandidateSource.MANUAL_SEED
+                and existing.source_artifact_id == seed.artifact_id
+                and existing.source_artifact_sha256 == seed.artifact_sha256
+            ):
+                return existing
         candidate = KnowledgeCandidate(
+            knowledge_id=f"knw_seed_{seed.artifact_sha256[:32]}",
             fault_type=seed.fault_type,
             candidate_label=seed.candidate_label,
             title=seed.title,

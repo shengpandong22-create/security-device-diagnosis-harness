@@ -112,3 +112,18 @@ def test_manual_seed_import_and_review_are_audited():
             "knowledge.manual_seed.imported",
             "knowledge.review.confirm",
         ]
+
+
+def test_reimporting_identical_manual_seed_is_idempotent():
+    seed = load_manual_knowledge_seeds(SEEDS_PATH)[0]
+    with build_runtime_container(RuntimeSettings(repository_mode="memory")) as runtime:
+        first = runtime.knowledge_service.import_manual_seed(seed, "seed-operator")
+        second = runtime.knowledge_service.import_manual_seed(seed, "retry-operator")
+
+        assert first.knowledge_id == f"knw_seed_{seed.artifact_sha256[:32]}"
+        assert second == first
+        assert len(runtime.knowledge_repository.list_all()) == 1
+        assert [
+            event.action
+            for event in runtime.audit_repository.list_for_entity(first.knowledge_id)
+        ] == ["knowledge.manual_seed.imported"]
