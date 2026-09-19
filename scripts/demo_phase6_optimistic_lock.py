@@ -178,27 +178,27 @@ def main() -> int:
         # ---------------------------------------------- 场景 A：run 冲突
         settings = RuntimeSettings(repository_mode="sqlite", database_url=url)
         container = build_runtime_container(settings)
+        application_repository = SqlAlchemyDiagnosisRepository(factory)
 
         wrapper = _ConflictRepository(
-            container.repository, conflict_index=1, competitor=_tag_reporter
+            application_repository, conflict_index=1, competitor=_tag_reporter
         )
+        calls = {"count": 0}
+        original_run = container.runner.run
+
+        class _CountingRunner:
+            def run(self, *args, **kwargs):
+                calls["count"] += 1
+                return original_run(*args, **kwargs)
+
         service = SecurityDiagnosisApplicationService(
             repository=wrapper,
-            runner=container.runner,
+            runner=_CountingRunner(),
             registry=container.registry,
             gateway=container.gateway,
             citation_policy=container.citation_policy,
             supported_fault_types=container.service.supported_fault_types,
         )
-
-        calls = {"count": 0}
-        original_run = container.runner.run
-
-        def _counting_run(*args, **kwargs):
-            calls["count"] += 1
-            return original_run(*args, **kwargs)
-
-        container.runner.run = _counting_run  # type: ignore[method-assign]
 
         case_a = service.create_diagnosis(
             device_id=DEVICE_ID,
@@ -217,9 +217,10 @@ def main() -> int:
         # ---------------------------------------------- 场景 B：review 冲突
         container.close()
         container = build_runtime_container(settings)
+        application_repository = SqlAlchemyDiagnosisRepository(factory)
 
         review_wrapper = _ConflictRepository(
-            container.repository, conflict_index=2, competitor=_competitor_confirms
+            application_repository, conflict_index=2, competitor=_competitor_confirms
         )
         review_service = SecurityDiagnosisApplicationService(
             repository=review_wrapper,
@@ -247,7 +248,7 @@ def main() -> int:
         except ConcurrentUpdateError:
             review_conflict_observed = True
 
-        final_b = container.repository.get(case_b.diagnosis_id)
+        final_b = application_repository.get(case_b.diagnosis_id)
         losing_review_absent = LOSING_COMMENT not in [
             review.comment for review in final_b.reviews
         ]
