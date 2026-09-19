@@ -120,6 +120,19 @@ def test_all_phase0_tools_are_read_only(tool, expected_permission):
     assert expected_permission in tool.required_permissions
 
 
+def test_knowledge_tool_has_no_implicit_static_fallback(context):
+    from security_diagnosis_harness.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    registry.register(KnowledgeSearchTool())
+
+    result = registry.execute("knowledge__search", {"query": "黑屏"}, context)
+
+    assert result.ok is True
+    assert result.metadata["matched"] == 0
+    assert result.evidence_drafts[0].payload["sops"] == []
+
+
 def test_device_tools_require_device_read_permission(static_gateway, tool_registry):
     context = make_tool_context(
         "diag_tools",

@@ -15,10 +15,16 @@ from security_diagnosis_harness.bootstrap.container import (
     build_phase4_container,
 )
 from security_diagnosis_harness.config import RepositoryMode, RuntimeSettings
+from security_diagnosis_harness.domain.enums import SecurityFaultType
+from security_diagnosis_harness.domain.knowledge import (
+    KnowledgeCandidate,
+    KnowledgeReviewAction,
+)
 from security_diagnosis_harness.runtime import (
     FORMAL_RUNTIME_TOOL_ALLOWLIST,
     build_runtime_container,
 )
+from security_diagnosis_harness.tools.contracts import ToolExecutionContext, ToolPermission
 
 
 def _sqlite_settings(tmp_path: Path) -> RuntimeSettings:
@@ -113,6 +119,46 @@ def test_formal_runtime_passes_explicit_minimal_tool_allowlist():
     with build_runtime_container(RuntimeSettings(repository_mode="memory")) as runtime:
         assert runtime.service._tool_allowlist == list(FORMAL_RUNTIME_TOOL_ALLOWLIST)
         assert set(FORMAL_RUNTIME_TOOL_ALLOWLIST) <= set(runtime.registry.names())
+
+
+def test_formal_runtime_knowledge_tool_reads_confirmed_repository_only():
+    with build_runtime_container(RuntimeSettings(repository_mode="memory")) as runtime:
+        candidate = KnowledgeCandidate(
+            fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
+            candidate_label="governed_network_break",
+            title="受治理网络中断经验",
+            summary="网络中断可能导致摄像头黑屏",
+            symptoms=["设备无法连接"],
+            root_cause="网络链路中断",
+            troubleshooting_steps=["检查受控交换机端口"],
+            source_diagnosis_id="diag-governed",
+            source_conclusion_id="con-governed",
+            source_evidence_ids=["evd-governed"],
+        )
+        runtime.knowledge_repository.save(candidate)
+        runtime.knowledge_service.review(
+            candidate.knowledge_id,
+            KnowledgeReviewAction.CONFIRM,
+            reviewer="runtime-reviewer",
+        )
+        context = ToolExecutionContext(
+            diagnosis_id="diag-current",
+            fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
+            permissions=frozenset({ToolPermission.KNOWLEDGE_READ}),
+        )
+
+        result = runtime.registry.execute(
+            "knowledge__search", {"query": "网络 中断", "limit": 3}, context
+        )
+        static_result = runtime.registry.execute(
+            "knowledge__search", {"query": "黑屏", "limit": 3}, context
+        )
+
+        assert result.ok is True
+        assert [item["sop_id"] for item in result.evidence_drafts[0].payload["sops"]] == [
+            candidate.knowledge_id
+        ]
+        assert static_result.evidence_drafts[0].payload["sops"] == []
 
 
 def test_runtime_does_not_call_external_model(tmp_path: Path):

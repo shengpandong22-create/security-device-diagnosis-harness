@@ -672,13 +672,6 @@ def build_runtime_container(
     resolved = settings or build_runtime_settings()
 
     data_path = Path(device_data_path) if device_data_path else DEFAULT_DEVICE_DATA_PATH
-    # 正式入口默认提供摄像头黑屏确定性 responder（含 Phase 1 只读工具），
-    # 与 Phase 0/1 demo 使用同一套固定脚本，不调用真实模型。
-    resolved_registry = registry if registry is not None else build_camera_registry()
-    llm = FakeLLM(responder=build_camera_black_screen_responder(include_camera_tools=True))
-    runner = ToolLoopRunner(llm, resolved_registry, ToolLoopBudget(max_rounds=3, max_tool_calls=8))
-    citation_policy = CitationPolicy()
-
     # ------------------------------------------------ 设备平面：Catalog + Registry
     resolved_assets = tuple(assets) if assets is not None else (build_default_runtime_asset(),)
     # Phase 9C-3：允许显式注入受控 Adapter（如 SimulatorDeviceGateway）；
@@ -709,22 +702,6 @@ def build_runtime_container(
             assets=resolved_assets, now=now
         )
     gateway = RoutedDeviceGateway(asset_catalog, adapter_registry, resolved_authorization)
-
-    # ------------------------------------------------ 能力推导（9C-2A resolver）
-    if self_check_passed_adapter_keys is not None:
-        resolved_self_check_keys = frozenset(self_check_passed_adapter_keys)
-    else:
-        resolved_self_check_keys = (
-            frozenset({DEFAULT_RUNTIME_ADAPTER_KEY}) if adapter_ready else frozenset()
-        )
-    capability_support = derive_runtime_capability_support(
-        assets=resolved_assets,
-        ready_adapter_keys=adapter_registry.ready_adapter_keys(),
-        self_check_passed_adapter_keys=resolved_self_check_keys,
-        registry=resolved_registry,
-    )
-    # Service 的 supported 集合只能来自 resolver 推导结果。
-    derived_supported_fault_types = frozenset(capability_support.supported_fault_types)
 
     engine: Engine | None = None
     session_factory: sessionmaker[Session] | None = None
@@ -763,6 +740,35 @@ def build_runtime_container(
         raise RuntimeConfigurationError(
             "正式 Runtime 必须装配 AuditRepository 与 AuditedWrite"
         )
+
+    # 正式 Runtime 的知识工具只读取当前 Runtime 的 confirmed Repository；不带
+    # 代码内静态 SOP，也不引入 BGE/网络依赖。显式注入 Registry 时尊重调用方装配。
+    resolved_registry = (
+        registry
+        if registry is not None
+        else build_camera_registry(knowledge_retriever=knowledge_repository)
+    )
+    llm = FakeLLM(responder=build_camera_black_screen_responder(include_camera_tools=True))
+    runner = ToolLoopRunner(
+        llm, resolved_registry, ToolLoopBudget(max_rounds=3, max_tool_calls=8)
+    )
+    citation_policy = CitationPolicy()
+
+    # ------------------------------------------------ 能力推导（9C-2A resolver）
+    if self_check_passed_adapter_keys is not None:
+        resolved_self_check_keys = frozenset(self_check_passed_adapter_keys)
+    else:
+        resolved_self_check_keys = (
+            frozenset({DEFAULT_RUNTIME_ADAPTER_KEY}) if adapter_ready else frozenset()
+        )
+    capability_support = derive_runtime_capability_support(
+        assets=resolved_assets,
+        ready_adapter_keys=adapter_registry.ready_adapter_keys(),
+        self_check_passed_adapter_keys=resolved_self_check_keys,
+        registry=resolved_registry,
+    )
+    # Service 的 supported 集合只能来自 resolver 推导结果。
+    derived_supported_fault_types = frozenset(capability_support.supported_fault_types)
 
     service = SecurityDiagnosisApplicationService(
         repository=repository,
@@ -824,11 +830,16 @@ def build_runtime_container(
 # 并通过 `close()` / context manager 释放资源。
 
 
-def build_camera_registry() -> ToolRegistry:
+def build_camera_registry(
+    knowledge_retriever: KnowledgeRepository | None = None,
+) -> ToolRegistry:
     """运行时工具注册表：Phase 0 基础工具 + Phase 1 摄像头只读工具。"""
     from security_diagnosis_harness.bootstrap.container import build_registry
 
-    registry = build_registry()
+    registry = build_registry(
+        knowledge_retriever=knowledge_retriever,
+        include_demo_sops=knowledge_retriever is None,
+    )
     for tool_cls in (DeviceChannelTool, DeviceStreamTool, PlatformPullStatusTool):
         tool = tool_cls()
         if not registry.has(tool.name):

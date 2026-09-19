@@ -1,7 +1,4 @@
-"""knowledge__search：最小静态知识/SOP 检索。
-
-Phase 0B 只做内存静态匹配，不做向量数据库，也不做 RAG。
-"""
+"""knowledge__search：受治理知识与显式静态 fixture 检索。"""
 
 from __future__ import annotations
 
@@ -92,7 +89,9 @@ class KnowledgeSearchTool(BaseTool):
         sops: list[dict[str, object]] | None = None,
         retriever: KnowledgeRetriever | None = None,
     ) -> None:
-        self._sops = sops if sops is not None else list(DEFAULT_SOPS)
+        # 安全默认值必须是空集。静态 SOP 只能由 demo/test 装配显式传入，正式
+        # Runtime 不得在缺少受治理 Retriever 时静默回退到代码内知识。
+        self._sops = list(sops) if sops is not None else []
         self._retriever = retriever
 
     def _execute(

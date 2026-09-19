@@ -25,6 +25,7 @@ from security_diagnosis_harness.application.repository import InMemoryDiagnosisR
 from security_diagnosis_harness.domain.citation_policy import CitationPolicy
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
+from security_diagnosis_harness.ports.knowledge_repository import KnowledgeRetriever
 from security_diagnosis_harness.ports.llm import (
     ChatRole,
     ConclusionDraft,
@@ -48,7 +49,7 @@ from security_diagnosis_harness.tools.device_channel import DeviceChannelTool
 from security_diagnosis_harness.tools.device_config import DeviceConfigSnapshotTool
 from security_diagnosis_harness.tools.device_status import DeviceStatusTool
 from security_diagnosis_harness.tools.device_stream import DeviceStreamTool
-from security_diagnosis_harness.tools.knowledge_search import KnowledgeSearchTool
+from security_diagnosis_harness.tools.knowledge_search import DEFAULT_SOPS, KnowledgeSearchTool
 from security_diagnosis_harness.tools.platform_pull import PlatformPullStatusTool
 from security_diagnosis_harness.tools.recording_plan import RecordingPlanTool
 from security_diagnosis_harness.tools.recording_playback import RecordingPlaybackTool
@@ -193,8 +194,12 @@ def build_camera_black_screen_responder(include_camera_tools: bool = False) -> R
     return _make_responder(include_camera_tools)
 
 
-def build_registry() -> ToolRegistry:
-    """注册全部 READ_ONLY 工具（Phase 0 四个 + Phase 1 三个）。"""
+def build_registry(
+    *,
+    knowledge_retriever: KnowledgeRetriever | None = None,
+    include_demo_sops: bool = True,
+) -> ToolRegistry:
+    """注册 READ_ONLY 工具；静态 SOP 仅供显式 demo/test 装配。"""
     registry = ToolRegistry()
     registry.register(DeviceStatusTool())
     registry.register(DeviceChannelTool())
@@ -202,7 +207,12 @@ def build_registry() -> ToolRegistry:
     registry.register(PlatformPullStatusTool())
     registry.register(DeviceAlarmEventsTool())
     registry.register(DeviceConfigSnapshotTool())
-    registry.register(KnowledgeSearchTool())
+    registry.register(
+        KnowledgeSearchTool(
+            sops=list(DEFAULT_SOPS) if include_demo_sops else [],
+            retriever=knowledge_retriever,
+        )
+    )
     return registry
 
 
