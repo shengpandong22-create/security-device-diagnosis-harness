@@ -1,6 +1,6 @@
 """SQLite 追加式审计仓储。"""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -48,7 +48,11 @@ class SqlAlchemyAuditRepository:
         statement = (
             select(AuditEventRow)
             .where(AuditEventRow.entity_id == entity_id)
-            .order_by(AuditEventRow.occurred_at, AuditEventRow.event_id)
+            .order_by(
+                AuditEventRow.occurred_at,
+                func.coalesce(AuditEventRow.current_version, -1),
+                AuditEventRow.event_id,
+            )
         )
         try:
             with self._session_factory() as session:
@@ -58,7 +62,9 @@ class SqlAlchemyAuditRepository:
 
     def list_all(self) -> list[AuditEvent]:
         statement = select(AuditEventRow).order_by(
-            AuditEventRow.occurred_at, AuditEventRow.event_id
+            AuditEventRow.occurred_at,
+            func.coalesce(AuditEventRow.current_version, -1),
+            AuditEventRow.event_id,
         )
         try:
             with self._session_factory() as session:

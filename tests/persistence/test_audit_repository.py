@@ -1,5 +1,6 @@
 """Phase 6C-1 追加式审计仓储与应用接入验收。"""
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,20 @@ def test_append_get_and_list_round_trip(audit_repository):
     assert audit_repository.get(saved.event_id) == saved
     assert audit_repository.list_for_entity("diag-1") == [saved]
     assert audit_repository.get(saved.event_id).occurred_at.tzinfo is not None
+
+
+def test_same_timestamp_events_follow_aggregate_version(audit_repository):
+    occurred_at = datetime(2026, 9, 19, tzinfo=UTC)
+    created = _event().model_copy(
+        update={"event_id": "aud-z", "current_version": 1, "occurred_at": occurred_at}
+    )
+    reviewed = _event().model_copy(
+        update={"event_id": "aud-a", "current_version": 2, "occurred_at": occurred_at}
+    )
+    audit_repository.append(created)
+    audit_repository.append(reviewed)
+
+    assert audit_repository.list_for_entity("diag-1") == [created, reviewed]
 
 
 def test_unknown_event_is_controlled(audit_repository):
