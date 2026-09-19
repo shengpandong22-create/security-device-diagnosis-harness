@@ -34,4 +34,3 @@ def downgrade() -> None:
         batch_op.drop_column("source_artifact_id")
         batch_op.alter_column("source_conclusion_id", nullable=False)
         batch_op.alter_column("source_diagnosis_id", nullable=False)
-
