@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.evidence import EvidenceSource, EvidenceType, Reliability
 from security_diagnosis_harness.ports.knowledge_repository import KnowledgeRetriever
 from security_diagnosis_harness.tools.contracts import (
@@ -15,55 +14,6 @@ from security_diagnosis_harness.tools.contracts import (
     ToolPermission,
     ToolRiskLevel,
 )
-
-DEFAULT_SOPS: list[dict[str, object]] = [
-    {
-        "sop_id": "sop-camera-black-screen-001",
-        "fault_type": SecurityFaultType.CAMERA_BLACK_SCREEN,
-        "title": "摄像头黑屏排查 SOP",
-        "summary": "依次确认设备在线、通道在线、码流状态、编码器与平台拉流状态。",
-        "checks": [
-            "确认设备与通道在线",
-            "确认主码流发布状态",
-            "检查编码器是否超时",
-            "检查码率与分辨率是否超出设备能力",
-            "确认平台侧拉流是否正常",
-        ],
-    },
-    {
-        "sop_id": "sop-recording-missing-001",
-        "fault_type": SecurityFaultType.RECORDING_MISSING,
-        "title": "录像缺失排查 SOP",
-        "summary": "确认录像计划、存储状态、磁盘容量与 NVR 通道绑定关系。",
-        "checks": [
-            "确认录像计划时间段",
-            "确认存储盘状态与容量",
-            "确认 NVR 通道绑定",
-        ],
-    },
-    {
-        "sop_id": "sop-access-card-failed-001",
-        "fault_type": SecurityFaultType.ACCESS_CARD_FAILED,
-        "title": "门禁刷卡异常排查 SOP",
-        "summary": "确认卡片权限、控制器在线状态与读卡器接线。",
-        "checks": [
-            "确认卡片权限与有效期",
-            "确认控制器在线",
-            "确认读卡器状态",
-        ],
-    },
-    {
-        "sop_id": "sop-alarm-false-positive-001",
-        "fault_type": SecurityFaultType.ALARM_FALSE_POSITIVE,
-        "title": "报警误报排查 SOP",
-        "summary": "确认探测器灵敏度、防区类型与布撤防时间。",
-        "checks": [
-            "确认探测器灵敏度",
-            "确认防区类型配置",
-            "确认布撤防时间段",
-        ],
-    },
-]
 
 
 class KnowledgeSearchInput(BaseModel):

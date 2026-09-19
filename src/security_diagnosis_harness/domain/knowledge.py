@@ -10,8 +10,10 @@ Phase 5A 只定义知识沉淀的领域边界，不接数据库、不改工具�
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from enum import StrEnum
+from hashlib import sha256
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -58,6 +60,36 @@ class KnowledgeReviewAction(StrEnum):
     CONFIRM = "confirm"
     REJECT = "reject"
     RETIRE = "retire"
+
+
+class ManualKnowledgeSeed(BaseModel):
+    """可审计的手工知识种子；摘要绑定其规范化业务内容。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    artifact_id: str = Field(min_length=1, max_length=128)
+    artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fault_type: SecurityFaultType
+    candidate_label: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=TITLE_MAX_LENGTH)
+    summary: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
+    symptoms: list[str] = Field(min_length=1)
+    root_cause: str = Field(min_length=1, max_length=TEXT_MAX_LENGTH)
+    troubleshooting_steps: list[str] = Field(min_length=1)
+    excluded_causes: list[str] = Field(default_factory=list)
+
+    def content_sha256(self) -> str:
+        payload = self.model_dump(mode="json", exclude={"artifact_sha256"})
+        encoded = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return sha256(encoded).hexdigest()
+
+    @model_validator(mode="after")
+    def _verify_content_digest(self) -> ManualKnowledgeSeed:
+        if self.artifact_sha256 != self.content_sha256():
+            raise ValueError("manual knowledge seed content sha256 mismatch")
+        return self
 
 
 def is_knowledge_sensitive_key(key: str) -> bool:
@@ -159,9 +191,13 @@ class KnowledgeCandidate(BaseModel):
     troubleshooting_steps: list[str] = Field(min_length=1, default_factory=list)
     excluded_causes: list[str] = Field(default_factory=list)
     source: KnowledgeCandidateSource = KnowledgeCandidateSource.DIAGNOSIS_CONFIRMATION
-    source_diagnosis_id: str = Field(min_length=1)
-    source_conclusion_id: str = Field(min_length=1)
-    source_evidence_ids: list[str] = Field(min_length=1)
+    source_diagnosis_id: str | None = Field(default=None, min_length=1)
+    source_conclusion_id: str | None = Field(default=None, min_length=1)
+    source_evidence_ids: list[str] = Field(default_factory=list)
+    source_artifact_id: str | None = Field(default=None, min_length=1, max_length=128)
+    source_artifact_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     status: KnowledgeCandidateStatus = KnowledgeCandidateStatus.CANDIDATE
     reviews: list[KnowledgeReview] = Field(default_factory=list)
     redacted: bool = False
@@ -179,6 +215,7 @@ class KnowledgeCandidate(BaseModel):
     @model_validator(mode="after")
     def _validate_and_redact(self) -> KnowledgeCandidate:
         self._validate_review_history()
+        self._validate_source_reference()
 
         changed = False
         title, item_changed = _redact_text(self.title)
@@ -212,6 +249,28 @@ class KnowledgeCandidate(BaseModel):
         if changed:
             object.__setattr__(self, "redacted", True)
         return self
+
+    def _validate_source_reference(self) -> None:
+        diagnosis_fields_present = bool(
+            self.source_diagnosis_id
+            and self.source_conclusion_id
+            and self.source_evidence_ids
+        )
+        artifact_fields_present = bool(
+            self.source_artifact_id and self.source_artifact_sha256
+        )
+        if self.source is KnowledgeCandidateSource.DIAGNOSIS_CONFIRMATION:
+            if not diagnosis_fields_present or artifact_fields_present:
+                raise ValueError(
+                    "diagnosis_confirmation knowledge requires diagnosis/conclusion/evidence "
+                    "provenance and forbids artifact provenance"
+                )
+            return
+        if diagnosis_fields_present or not artifact_fields_present:
+            raise ValueError(
+                f"{self.source.value} knowledge requires artifact provenance and forbids "
+                "diagnosis provenance"
+            )
 
     def _validate_review_history(self) -> None:
         if any(not review.belongs_to(self.knowledge_id) for review in self.reviews):

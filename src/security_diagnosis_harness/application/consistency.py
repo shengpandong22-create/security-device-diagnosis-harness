@@ -7,7 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from security_diagnosis_harness.application.errors import RepositoryPersistenceError
 from security_diagnosis_harness.domain.audit import AuditEntityType, AuditEvent
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus
-from security_diagnosis_harness.domain.knowledge import KnowledgeCandidateStatus
+from security_diagnosis_harness.domain.knowledge import (
+    KnowledgeCandidateSource,
+    KnowledgeCandidateStatus,
+)
 from security_diagnosis_harness.domain.review import HumanReviewAction
 from security_diagnosis_harness.ports.audit_repository import AuditRepository
 from security_diagnosis_harness.ports.diagnosis_repository import DiagnosisRepository
@@ -181,32 +184,35 @@ class ConsistencyScanner:
                 findings.append(
                     _finding("cross_knowledge_review", "knowledge", item.knowledge_id)
                 )
-            source = case_by_id.get(item.source_diagnosis_id)
-            if source is None:
-                findings.append(
-                    _finding("missing_source_diagnosis", "knowledge", item.knowledge_id)
-                )
-                continue
-            if source.status is not SecurityDiagnosisStatus.CONFIRMED:
-                findings.append(
-                    _finding(
-                        "source_diagnosis_not_confirmed", "knowledge", item.knowledge_id
+            if item.source is KnowledgeCandidateSource.DIAGNOSIS_CONFIRMATION:
+                source = case_by_id.get(item.source_diagnosis_id)
+                if source is None:
+                    findings.append(
+                        _finding("missing_source_diagnosis", "knowledge", item.knowledge_id)
                     )
-                )
-            if source.fault_type is not item.fault_type:
-                findings.append(
-                    _finding("source_fault_mismatch", "knowledge", item.knowledge_id)
-                )
-            if (
-                source.conclusion is None
-                or source.conclusion.conclusion_id != item.source_conclusion_id
-            ):
-                findings.append(
-                    _finding("missing_source_conclusion", "knowledge", item.knowledge_id)
-                )
-            source_evidence = {evidence.evidence_id for evidence in source.evidence}
-            if not set(item.source_evidence_ids).issubset(source_evidence):
-                findings.append(_finding("missing_source_evidence", "knowledge", item.knowledge_id))
+                    continue
+                if source.status is not SecurityDiagnosisStatus.CONFIRMED:
+                    findings.append(
+                        _finding(
+                            "source_diagnosis_not_confirmed", "knowledge", item.knowledge_id
+                        )
+                    )
+                if source.fault_type is not item.fault_type:
+                    findings.append(
+                        _finding("source_fault_mismatch", "knowledge", item.knowledge_id)
+                    )
+                if (
+                    source.conclusion is None
+                    or source.conclusion.conclusion_id != item.source_conclusion_id
+                ):
+                    findings.append(
+                        _finding("missing_source_conclusion", "knowledge", item.knowledge_id)
+                    )
+                source_evidence = {evidence.evidence_id for evidence in source.evidence}
+                if not set(item.source_evidence_ids).issubset(source_evidence):
+                    findings.append(
+                        _finding("missing_source_evidence", "knowledge", item.knowledge_id)
+                    )
             if item.status is KnowledgeCandidateStatus.CONFIRMED and not any(
                 review.action.value == "confirm" for review in item.reviews
             ):

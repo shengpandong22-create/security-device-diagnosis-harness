@@ -164,7 +164,7 @@ def test_alembic_version_recorded(tmp_path: Path):
     finally:
         engine.dispose()
 
-    assert version == "0003"
+    assert version == "0004"
 
 
 def test_version_columns_exist_after_migration(tmp_path: Path):

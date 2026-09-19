@@ -100,6 +100,7 @@ from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidateStatus,
     KnowledgeReview,
     KnowledgeReviewAction,
+    ManualKnowledgeSeed,
     is_knowledge_sensitive_key,
     redact_knowledge_sensitive_values,
 )
@@ -173,6 +174,7 @@ __all__ = [
     "KnowledgeCandidateStatus",
     "KnowledgeReview",
     "KnowledgeReviewAction",
+    "ManualKnowledgeSeed",
     "PlaybackCheckResult",
     "PlaybackStatus",
     "PlatformPullStatus",

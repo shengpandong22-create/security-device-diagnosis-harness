@@ -39,6 +39,9 @@ from security_diagnosis_harness.application.knowledge_candidates import (
 from security_diagnosis_harness.application.knowledge_governance import (
     KnowledgeGovernanceApplicationService,
 )
+from security_diagnosis_harness.application.knowledge_seeds import (
+    load_manual_knowledge_seeds,
+)
 from security_diagnosis_harness.application.reports import render_markdown_report
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 
@@ -55,6 +58,7 @@ __all__ = [
     "InMemoryDiagnosisRepository",
     "KnowledgeCandidateApplicationService",
     "KnowledgeCandidateGenerationError",
+    "load_manual_knowledge_seeds",
     "KnowledgeGovernanceApplicationService",
     "ConsistencyFinding",
     "ConsistencyReport",

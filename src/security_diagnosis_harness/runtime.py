@@ -838,7 +838,6 @@ def build_camera_registry(
 
     registry = build_registry(
         knowledge_retriever=knowledge_retriever,
-        include_demo_sops=knowledge_retriever is None,
     )
     for tool_cls in (DeviceChannelTool, DeviceStreamTool, PlatformPullStatusTool):
         tool = tool_cls()

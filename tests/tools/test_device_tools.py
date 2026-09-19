@@ -11,6 +11,7 @@ from security_diagnosis_harness.tools.device_alarm_events import DeviceAlarmEven
 from security_diagnosis_harness.tools.device_config import DeviceConfigSnapshotTool
 from security_diagnosis_harness.tools.device_status import DeviceStatusTool
 from security_diagnosis_harness.tools.knowledge_search import KnowledgeSearchTool
+from security_diagnosis_harness.tools.registry import ToolRegistry
 
 from ..conftest import DEVICE_ID, make_tool_context
 
@@ -18,6 +19,32 @@ from ..conftest import DEVICE_ID, make_tool_context
 @pytest.fixture
 def context(static_gateway):
     return make_tool_context("diag_tools", gateway=static_gateway)
+
+
+@pytest.fixture
+def explicit_static_knowledge_registry():
+    registry = ToolRegistry()
+    registry.register(
+        KnowledgeSearchTool(
+            sops=[
+                {
+                    "sop_id": "sop-camera-black-screen-001",
+                    "fault_type": SecurityFaultType.CAMERA_BLACK_SCREEN,
+                    "title": "摄像头黑屏排查 SOP",
+                    "summary": "确认设备与通道状态",
+                    "checks": ["确认设备在线"],
+                },
+                {
+                    "sop_id": "sop-access-card-failed-001",
+                    "fault_type": SecurityFaultType.ACCESS_CARD_FAILED,
+                    "title": "门禁刷卡异常排查 SOP",
+                    "summary": "确认卡片权限",
+                    "checks": ["确认有效期"],
+                },
+            ]
+        )
+    )
+    return registry
 
 
 def test_device_status_tool_produces_device_status_draft(context, tool_registry):
@@ -64,8 +91,10 @@ def test_device_config_tool_produces_device_config_draft(context, tool_registry)
     assert draft.payload["config"]["admin_password"] == "***REDACTED***"
 
 
-def test_knowledge_search_tool_produces_knowledge_sop_draft(context, tool_registry):
-    result = tool_registry.execute(
+def test_knowledge_search_tool_produces_knowledge_sop_draft(
+    context, explicit_static_knowledge_registry
+):
+    result = explicit_static_knowledge_registry.execute(
         "knowledge__search", {"query": "黑屏"}, context
     )
 
@@ -76,14 +105,18 @@ def test_knowledge_search_tool_produces_knowledge_sop_draft(context, tool_regist
     assert draft.payload["sops"][0]["sop_id"] == "sop-camera-black-screen-001"
 
 
-def test_knowledge_search_only_matches_current_fault_type(context, tool_registry):
+def test_knowledge_search_only_matches_current_fault_type(
+    context, explicit_static_knowledge_registry
+):
     access_context = make_tool_context(
         "diag_tools",
         gateway=context.device_gateway,
         fault_type=SecurityFaultType.ACCESS_CARD_FAILED,
     )
 
-    result = tool_registry.execute("knowledge__search", {"query": "刷卡"}, access_context)
+    result = explicit_static_knowledge_registry.execute(
+        "knowledge__search", {"query": "刷卡"}, access_context
+    )
 
     assert result.ok is True
     assert result.evidence_drafts[0].payload["sops"][0]["sop_id"] == "sop-access-card-failed-001"
@@ -121,8 +154,6 @@ def test_all_phase0_tools_are_read_only(tool, expected_permission):
 
 
 def test_knowledge_tool_has_no_implicit_static_fallback(context):
-    from security_diagnosis_harness.tools.registry import ToolRegistry
-
     registry = ToolRegistry()
     registry.register(KnowledgeSearchTool())
 

@@ -49,7 +49,7 @@ from security_diagnosis_harness.tools.device_channel import DeviceChannelTool
 from security_diagnosis_harness.tools.device_config import DeviceConfigSnapshotTool
 from security_diagnosis_harness.tools.device_status import DeviceStatusTool
 from security_diagnosis_harness.tools.device_stream import DeviceStreamTool
-from security_diagnosis_harness.tools.knowledge_search import DEFAULT_SOPS, KnowledgeSearchTool
+from security_diagnosis_harness.tools.knowledge_search import KnowledgeSearchTool
 from security_diagnosis_harness.tools.platform_pull import PlatformPullStatusTool
 from security_diagnosis_harness.tools.recording_plan import RecordingPlanTool
 from security_diagnosis_harness.tools.recording_playback import RecordingPlaybackTool
@@ -197,9 +197,8 @@ def build_camera_black_screen_responder(include_camera_tools: bool = False) -> R
 def build_registry(
     *,
     knowledge_retriever: KnowledgeRetriever | None = None,
-    include_demo_sops: bool = True,
 ) -> ToolRegistry:
-    """注册 READ_ONLY 工具；静态 SOP 仅供显式 demo/test 装配。"""
+    """注册 READ_ONLY 工具；知识来源必须通过 Retriever 显式注入。"""
     registry = ToolRegistry()
     registry.register(DeviceStatusTool())
     registry.register(DeviceChannelTool())
@@ -207,12 +206,7 @@ def build_registry(
     registry.register(PlatformPullStatusTool())
     registry.register(DeviceAlarmEventsTool())
     registry.register(DeviceConfigSnapshotTool())
-    registry.register(
-        KnowledgeSearchTool(
-            sops=list(DEFAULT_SOPS) if include_demo_sops else [],
-            retriever=knowledge_retriever,
-        )
-    )
+    registry.register(KnowledgeSearchTool(retriever=knowledge_retriever))
     return registry
 
 

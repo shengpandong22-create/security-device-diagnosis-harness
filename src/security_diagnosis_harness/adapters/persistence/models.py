@@ -61,8 +61,12 @@ class KnowledgeCandidateRow(Base):
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     root_cause: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    source_diagnosis_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    source_conclusion_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_diagnosis_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    source_conclusion_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_artifact_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     version: Mapped[int] = mapped_column(

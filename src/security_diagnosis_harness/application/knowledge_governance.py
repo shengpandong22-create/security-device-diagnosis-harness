@@ -4,10 +4,14 @@ from security_diagnosis_harness.application.knowledge_candidates import (
     KnowledgeCandidateApplicationService,
 )
 from security_diagnosis_harness.domain.audit import AuditEntityType, AuditEvent
+from security_diagnosis_harness.domain.errors import KnowledgeReviewNotAllowed
 from security_diagnosis_harness.domain.knowledge import (
     KnowledgeCandidate,
+    KnowledgeCandidateSource,
+    KnowledgeCandidateStatus,
     KnowledgeReview,
     KnowledgeReviewAction,
+    ManualKnowledgeSeed,
 )
 from security_diagnosis_harness.ports.audit_repository import AuditRepository
 from security_diagnosis_harness.ports.audited_write import AuditedWrite
@@ -45,6 +49,40 @@ class KnowledgeGovernanceApplicationService:
         )
         return self._audited_write.save_knowledge(candidate, event)
 
+    def import_manual_seed(
+        self, seed: ManualKnowledgeSeed, actor: str
+    ) -> KnowledgeCandidate:
+        """把摘要校验通过的手工资料导入 candidate 池，不自动确认。"""
+        candidate = KnowledgeCandidate(
+            fault_type=seed.fault_type,
+            candidate_label=seed.candidate_label,
+            title=seed.title,
+            summary=seed.summary,
+            symptoms=list(seed.symptoms),
+            root_cause=seed.root_cause,
+            troubleshooting_steps=list(seed.troubleshooting_steps),
+            excluded_causes=list(seed.excluded_causes),
+            source=KnowledgeCandidateSource.MANUAL_SEED,
+            source_artifact_id=seed.artifact_id,
+            source_artifact_sha256=seed.artifact_sha256,
+            status=KnowledgeCandidateStatus.CANDIDATE,
+            metadata={"source_import_actor": actor},
+        )
+        event = AuditEvent(
+            entity_type=AuditEntityType.KNOWLEDGE,
+            entity_id=candidate.knowledge_id,
+            action="knowledge.manual_seed.imported",
+            actor=actor,
+            current_state=candidate.status.value,
+            current_version=1,
+            summary="导入手工知识种子为待审核候选",
+            metadata={
+                "source_artifact_id": seed.artifact_id,
+                "source_artifact_sha256": seed.artifact_sha256,
+            },
+        )
+        return self._audited_write.save_knowledge(candidate, event)
+
     def review(
         self,
         knowledge_id: str,
@@ -53,6 +91,13 @@ class KnowledgeGovernanceApplicationService:
         comment: str = "",
     ) -> KnowledgeCandidate:
         candidate = self._repository.get(knowledge_id)
+        importer = candidate.metadata.get("source_import_actor")
+        if (
+            candidate.source
+            in {KnowledgeCandidateSource.MANUAL_SEED, KnowledgeCandidateSource.IMPORTED}
+            and importer == reviewer
+        ):
+            raise KnowledgeReviewNotAllowed("知识导入者不能审核自己导入的候选")
         previous_state = candidate.status.value
         previous_version = candidate.version
         candidate.apply_review(
