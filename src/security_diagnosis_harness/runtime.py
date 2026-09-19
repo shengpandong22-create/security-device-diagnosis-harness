@@ -479,7 +479,7 @@ class _ClosedAwareProxy:
             _PROXY_STATES[self] = (target, lifecycle, wrap_results)
 
     def __getattribute__(self, name: str) -> Any:
-        if name in {"_target", "_lifecycle", "_wrap_results", "__dict__"}:
+        if name.startswith("_") and name != "__class__":
             raise AttributeError("runtime entry point internals are not exposed")
         return object.__getattribute__(self, name)
 
@@ -489,7 +489,7 @@ class _ClosedAwareProxy:
         return _proxy_state(self)[0].__class__
 
     def __getattr__(self, name: str) -> Any:
-        if name in {"_target", "_lifecycle", "_wrap_results", "__dict__"}:
+        if name.startswith("_"):
             raise AttributeError("runtime entry point internals are not exposed")
         target, lifecycle, wrap_results = _proxy_state(self)
         lifecycle.ensure_open()
@@ -507,9 +507,48 @@ class _ClosedAwareProxy:
         return guarded
 
     def __setattr__(self, name: str, value: Any) -> None:
-        target, lifecycle, _ = _proxy_state(self)
+        raise AttributeError("runtime entry points are read-only")
+
+
+_RESTRICTED_VIEW_STATES: WeakKeyDictionary[
+    Any, tuple[Any, _RuntimeLifecycle, frozenset[str]]
+] = WeakKeyDictionary()
+
+
+class _RestrictedRuntimeView:
+    """Expose only explicitly allowlisted operations from an internal component."""
+
+    __slots__ = ("__weakref__",)
+
+    def __init__(
+        self, target: Any, lifecycle: _RuntimeLifecycle, allowed: frozenset[str]
+    ) -> None:
+        with _PROXY_STATE_LOCK:
+            _RESTRICTED_VIEW_STATES[self] = (target, lifecycle, allowed)
+
+    def __getattribute__(self, name: str) -> Any:
+        if name.startswith("_") and name != "__class__":
+            raise AttributeError("runtime view internals are not exposed")
+        return object.__getattribute__(self, name)
+
+    def __getattr__(self, name: str) -> Any:
+        with _PROXY_STATE_LOCK:
+            target, lifecycle, allowed = _RESTRICTED_VIEW_STATES[self]
         lifecycle.ensure_open()
-        setattr(target, name, value)
+        if name not in allowed:
+            raise AttributeError(f"runtime view does not expose {name}")
+        value = getattr(target, name)
+        if not callable(value):
+            return value
+
+        def guarded(*args: Any, **kwargs: Any) -> Any:
+            lifecycle.ensure_open()
+            return value(*args, **kwargs)
+
+        return guarded
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("runtime views are read-only")
 
 
 @dataclass(frozen=True)
@@ -533,15 +572,12 @@ class RuntimeContainer:
     """
 
     settings: RuntimeSettings
-    engine: Engine | None
-    session_factory: sessionmaker[Session] | _ClosedAwareSessionFactory | None
     runner: ToolLoopRunner
     registry: ToolRegistry
     llm: FakeLLM
     citation_policy: CitationPolicy
     audit_repository: AuditRepository
     knowledge_repository: KnowledgeRepository
-    audited_write: AuditedWrite
     knowledge_service: KnowledgeGovernanceApplicationService
     consistency_scanner: ConsistencyScanner
     # 设备授权会话：网关持有它做调用前预检；容器负责在 close() 时关闭它。
@@ -555,6 +591,8 @@ class RuntimeContainer:
     _adapter_registry: RuntimeAdapterRegistryView
     _capability_support: RuntimeCapabilitySupport
     _lifecycle: _RuntimeLifecycle
+    _engine: Engine | None
+    _session_factory: sessionmaker[Session] | _ClosedAwareSessionFactory | None
     _closed: bool = False
 
     # ------------------------------------------------------ 只读能力装配视图
@@ -601,12 +639,12 @@ class RuntimeContainer:
         self._closed = True
         self.authorization.close()
         self._lifecycle.closed = True
-        if isinstance(self.session_factory, _ClosedAwareSessionFactory):
-            self.session_factory.mark_closed()
-        if self.engine is not None:
-            self.engine.dispose()
-            self.engine = None
-            self.session_factory = None
+        if isinstance(self._session_factory, _ClosedAwareSessionFactory):
+            self._session_factory.mark_closed()
+        if self._engine is not None:
+            self._engine.dispose()
+            self._engine = None
+            self._session_factory = None
 
     @property
     def closed(self) -> bool:
@@ -626,7 +664,7 @@ class RuntimeContainer:
             return False
         if self.settings.repository_mode is RepositoryMode.MEMORY:
             return True
-        return self.engine is not None and self.session_factory is not None
+        return self._engine is not None and self._session_factory is not None
 
 
 def build_runtime_container(
@@ -796,23 +834,29 @@ def build_runtime_container(
     def exposed(value: Any, *, wrap_results: bool = False) -> Any:
         return _ClosedAwareProxy(value, lifecycle, wrap_results=wrap_results)
 
+    def restricted(value: Any, *allowed: str) -> Any:
+        return _RestrictedRuntimeView(value, lifecycle, frozenset(allowed))
+
     return RuntimeContainer(
         settings=resolved,
         _service=exposed(service),
-        _repository=exposed(repository),
-        engine=engine,
-        session_factory=session_factory,
-        runner=exposed(runner),
-        registry=exposed(resolved_registry),
+        _repository=restricted(repository, "get", "list", "exists"),
+        _engine=engine,
+        _session_factory=session_factory,
+        runner=restricted(runner, "run"),
+        registry=restricted(resolved_registry, "names", "execute", "has"),
         _gateway=exposed(gateway),
         # DeviceAuthorizationSession owns its own terminal close state and must
         # remain inspectable so callers can observe that terminal state.
         authorization=resolved_authorization,
         llm=llm,
         citation_policy=citation_policy,
-        audit_repository=exposed(audit_repository),
-        knowledge_repository=exposed(knowledge_repository),
-        audited_write=exposed(audited_write),
+        audit_repository=restricted(
+            audit_repository, "get", "list_all", "list_for_entity"
+        ),
+        knowledge_repository=restricted(
+            knowledge_repository, "get", "list_all", "search_confirmed"
+        ),
         knowledge_service=exposed(knowledge_service),
         consistency_scanner=exposed(consistency_scanner),
         _asset_catalog=exposed(asset_catalog),

@@ -79,7 +79,7 @@ def test_manifest_contains_required_integrity_metadata(tmp_path: Path):
     with build_runtime_container(settings):
         manifest_path = create_backup(settings.database_url, tmp_path / "backups")
     manifest = BackupManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
-    assert manifest.schema_revision == "0003"
+    assert manifest.schema_revision == "0004"
     assert manifest.size_bytes > 0
     assert len(manifest.sha256) == 64
     assert manifest.created_at.tzinfo is not None

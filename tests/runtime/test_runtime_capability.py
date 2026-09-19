@@ -11,9 +11,17 @@ from pathlib import Path
 
 import pytest
 
+from security_diagnosis_harness.adapters.persistence.database import (
+    build_engine,
+    build_session_factory,
+)
+from security_diagnosis_harness.adapters.persistence.diagnosis_repository import (
+    SqlAlchemyDiagnosisRepository,
+)
 from security_diagnosis_harness.application.errors import UnsupportedFaultTypeError
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 from security_diagnosis_harness.config import RuntimeSettings
+from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
 from security_diagnosis_harness.domain.enums import (
     SecurityDiagnosisStatus,
     SecurityFaultType,
@@ -21,6 +29,7 @@ from security_diagnosis_harness.domain.enums import (
 from security_diagnosis_harness.runtime import (
     build_runtime_container,
     supported_runtime_fault_types,
+    upgrade_database,
 )
 
 UNSUPPORTED_FAULT_TYPES = (
@@ -36,6 +45,16 @@ def _settings(tmp_path: Path) -> RuntimeSettings:
         database_url=f"sqlite:///{(tmp_path / 'capability.db').as_posix()}",
         auto_migrate=True,
     )
+
+
+def _seed_legacy_case(settings: RuntimeSettings, case: SecurityDiagnosisCase) -> None:
+    """测试专用底层夹具，不经正式 Runtime 暴露持久化写入口。"""
+    upgrade_database(settings.database_url)
+    engine = build_engine(settings.database_url)
+    try:
+        SqlAlchemyDiagnosisRepository(build_session_factory(engine)).save(case)
+    finally:
+        engine.dispose()
 
 
 # ---------------------------------------------------------------- 4
@@ -58,18 +77,18 @@ def test_runtime_rejects_persisted_unsupported_case_on_run(tmp_path: Path):
     settings = _settings(tmp_path)
 
     # 绕过 create 的能力闸门，直接向仓储写入一条录像诊断（模拟历史数据）。
-    from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
     from tests.persistence._builders import build_confirmed_case
 
-    with build_runtime_container(settings) as seed_runtime:
-        case = SecurityDiagnosisCase(
+    _seed_legacy_case(
+        settings,
+        SecurityDiagnosisCase(
             diagnosis_id="diag-legacy-rec",
             fault_type=SecurityFaultType.RECORDING_MISSING,
             device_id="cam-1",
             reporter="legacy",
-        )
-        seed_runtime.repository.save(case)
-        assert build_confirmed_case is not None  # 保持导入被使用
+        ),
+    )
+    assert build_confirmed_case is not None  # 保持导入被使用
 
     with build_runtime_container(settings) as runtime:
         with pytest.raises(UnsupportedFaultTypeError):
@@ -80,17 +99,15 @@ def test_runtime_rejects_persisted_unsupported_case_on_run(tmp_path: Path):
 def test_unsupported_case_remains_created(tmp_path: Path):
     settings = _settings(tmp_path)
 
-    from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
-
-    with build_runtime_container(settings) as seed_runtime:
-        seed_runtime.repository.save(
-            SecurityDiagnosisCase(
-                diagnosis_id="diag-legacy-rec",
-                fault_type=SecurityFaultType.RECORDING_MISSING,
-                device_id="cam-1",
-                reporter="legacy",
-            )
-        )
+    _seed_legacy_case(
+        settings,
+        SecurityDiagnosisCase(
+            diagnosis_id="diag-legacy-rec",
+            fault_type=SecurityFaultType.RECORDING_MISSING,
+            device_id="cam-1",
+            reporter="legacy",
+        ),
+    )
 
     with build_runtime_container(settings) as runtime:
         with pytest.raises(UnsupportedFaultTypeError):
@@ -104,17 +121,15 @@ def test_unsupported_case_remains_created(tmp_path: Path):
 def test_unsupported_case_has_no_evidence_or_conclusion(tmp_path: Path):
     settings = _settings(tmp_path)
 
-    from security_diagnosis_harness.domain.case import SecurityDiagnosisCase
-
-    with build_runtime_container(settings) as seed_runtime:
-        seed_runtime.repository.save(
-            SecurityDiagnosisCase(
-                diagnosis_id="diag-legacy-rec",
-                fault_type=SecurityFaultType.RECORDING_MISSING,
-                device_id="cam-1",
-                reporter="legacy",
-            )
-        )
+    _seed_legacy_case(
+        settings,
+        SecurityDiagnosisCase(
+            diagnosis_id="diag-legacy-rec",
+            fault_type=SecurityFaultType.RECORDING_MISSING,
+            device_id="cam-1",
+            reporter="legacy",
+        ),
+    )
 
     with build_runtime_container(settings) as runtime:
         with pytest.raises(UnsupportedFaultTypeError):

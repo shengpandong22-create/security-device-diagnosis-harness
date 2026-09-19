@@ -16,6 +16,10 @@ from pathlib import Path
 
 import pytest
 
+from security_diagnosis_harness.adapters.persistence import (
+    SqlAlchemyDiagnosisRepository,
+    build_database,
+)
 from security_diagnosis_harness.application.diagnoses import (
     SecurityDiagnosisApplicationService,
 )
@@ -41,30 +45,32 @@ def _build_service_with_conflict(tmp_path: Path, *, conflict_index: int, competi
     url = f"sqlite:///{(tmp_path / 'conflict.db').as_posix()}"
     settings = RuntimeSettings(repository_mode="sqlite", database_url=url)
     container = build_runtime_container(settings)
+    engine, factory = build_database(url)
+    repository = SqlAlchemyDiagnosisRepository(factory)
 
     wrapper = ConflictInjectingDiagnosisRepository(
-        container.repository,
+        repository,
         conflict_on_update_index=conflict_index,
         competitor_mutator=competitor,
     )
 
+    run_calls = {"count": 0}
+
+    class CountingRunner:
+        def run(self, *args, **kwargs):
+            run_calls["count"] += 1
+            return container.runner.run(*args, **kwargs)
+
     service = SecurityDiagnosisApplicationService(
         repository=wrapper,
-        runner=container.runner,
+        runner=CountingRunner(),
         registry=container.registry,
         gateway=container.gateway,
         citation_policy=container.citation_policy,
         supported_fault_types=container.service.supported_fault_types,
     )
 
-    run_calls = {"count": 0}
-    original_run = container.runner.run
-
-    def _counting_run(*args, **kwargs):
-        run_calls["count"] += 1
-        return original_run(*args, **kwargs)
-
-    container.runner.run = _counting_run  # type: ignore[method-assign]
+    engine.dispose()
 
     return service, wrapper, container, run_calls
 

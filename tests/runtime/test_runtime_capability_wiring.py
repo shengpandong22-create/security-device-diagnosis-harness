@@ -326,13 +326,12 @@ def test_close_is_idempotent_and_engine_owner_not_regressed(tmp_path: Path):
     from security_diagnosis_harness import runtime as runtime_module
 
     runtime = build_runtime_container(_sqlite_settings(tmp_path))
-    engine = runtime.engine
-    assert engine is not None
+    assert runtime.database_ready() is True
 
     runtime.close()
     runtime.close()
 
-    assert engine.pool.checkedout() == 0
+    assert runtime.database_ready() is False
     assert runtime.closed is True
     # 不允许出现丢失 Engine owner 的 builder 入口。
     assert not hasattr(runtime_module, "build_runtime_service")

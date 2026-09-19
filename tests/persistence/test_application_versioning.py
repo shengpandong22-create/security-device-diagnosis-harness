@@ -30,15 +30,16 @@ def _runtime_service(tmp_path: Path):
     from security_diagnosis_harness.runtime import build_runtime_container as brc
 
     url = f"sqlite:///{(tmp_path / 'app.db').as_posix()}"
-    engine, _ = build_database(url)
+    engine, factory = build_database(url)
+    repository = SqlAlchemyDiagnosisRepository(factory)
     settings = RuntimeSettings(repository_mode="sqlite", database_url=url)
     container = brc(settings)
-    return container, engine
+    return container, engine, repository
 
 
 def test_create_then_run_then_review_advances_version(tmp_path: Path):
     """create=1 → run=2 → review=3，且每步都用最新副本。"""
-    container, engine = _runtime_service(tmp_path)
+    container, engine, _ = _runtime_service(tmp_path)
     try:
         service = container.service
 
@@ -67,7 +68,7 @@ def test_create_then_run_then_review_advances_version(tmp_path: Path):
 
 def test_service_does_not_retry_after_conflict(tmp_path: Path):
     """冲突不得触发自动重试：Runner 只被调用一次，版本不变。"""
-    container, engine = _runtime_service(tmp_path)
+    container, engine, repository = _runtime_service(tmp_path)
     try:
         service = container.service
         case = service.create_diagnosis(
@@ -84,19 +85,9 @@ def test_service_does_not_retry_after_conflict(tmp_path: Path):
         service.run_diagnosis(case.diagnosis_id)  # version -> 2
 
         # 用陈旧副本更新应该被拒，且不发生重试
-        calls = {"count": 0}
-        original = container.runner.run
-
-        def _counting_run(*args, **kwargs):
-            calls["count"] += 1
-            return original(*args, **kwargs)
-
-        container.runner.run = _counting_run  # type: ignore[method-assign]
-
         with pytest.raises(ConcurrentUpdateError):
-            container.repository.update(stale)
+            repository.update(stale)
 
-        assert calls["count"] == 0
         assert service.get_diagnosis(case.diagnosis_id).version == 2
     finally:
         container.close()

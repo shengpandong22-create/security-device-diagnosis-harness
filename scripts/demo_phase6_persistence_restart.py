@@ -83,15 +83,14 @@ def main() -> int:
             "updated_at": before.updated_at.isoformat(),
         }
         identity_a = {
-            "engine": id(container_a.engine),
-            "session_factory": id(container_a.session_factory),
+            "runtime": id(container_a),
             "repository": id(container_a.repository),
             "service": id(container_a.service),
         }
 
         # ---------------------------------------------------------- 销毁 A
         container_a.close()
-        assert container_a.engine is None
+        assert container_a.database_ready() is False
         container_a = None
 
         # ---------------------------------------------------------- 运行环境 B
@@ -99,8 +98,7 @@ def main() -> int:
         service_b = container_b.service
 
         identity_b = {
-            "engine": id(container_b.engine),
-            "session_factory": id(container_b.session_factory),
+            "runtime": id(container_b),
             "repository": id(container_b.repository),
             "service": id(container_b.service),
         }
@@ -112,10 +110,7 @@ def main() -> int:
         report = {
             "repository_mode": settings.repository_mode.value,
             "restart_recovered": True,
-            "new_engine_created": identity_a["engine"] != identity_b["engine"],
-            "new_session_factory_created": (
-                identity_a["session_factory"] != identity_b["session_factory"]
-            ),
+            "new_runtime_created": identity_a["runtime"] != identity_b["runtime"],
             "new_repository_created": identity_a["repository"] != identity_b["repository"],
             "new_service_created": identity_a["service"] != identity_b["service"],
             "status": after.status.value,

@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from security_diagnosis_harness.application.knowledge_seeds import (
+    load_manual_knowledge_seeds,
+)
 from security_diagnosis_harness.application.repository import InMemoryDiagnosisRepository
 from security_diagnosis_harness.bootstrap.container import (
     build_container,
@@ -17,7 +20,6 @@ from security_diagnosis_harness.bootstrap.container import (
 from security_diagnosis_harness.config import RepositoryMode, RuntimeSettings
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.knowledge import (
-    KnowledgeCandidate,
     KnowledgeReviewAction,
 )
 from security_diagnosis_harness.runtime import (
@@ -37,22 +39,20 @@ def _sqlite_settings(tmp_path: Path) -> RuntimeSettings:
 
 # ---------------------------------------------------------------- 装配
 def test_sqlite_mode_uses_sqlalchemy_repository(tmp_path: Path):
-    from security_diagnosis_harness.adapters.persistence.diagnosis_repository import (
-        SqlAlchemyDiagnosisRepository,
-    )
-
     with build_runtime_container(_sqlite_settings(tmp_path)) as runtime:
-        assert isinstance(runtime.repository, SqlAlchemyDiagnosisRepository)
         assert runtime.settings.repository_mode is RepositoryMode.SQLITE
+        assert runtime.database_ready() is True
+        assert not hasattr(runtime.repository, "save")
+        assert not hasattr(runtime.repository, "update")
 
 
 def test_memory_mode_uses_in_memory_repository():
     settings = RuntimeSettings(repository_mode="memory")
 
     with build_runtime_container(settings) as runtime:
-        assert isinstance(runtime.repository, InMemoryDiagnosisRepository)
-        assert runtime.engine is None
-        assert runtime.session_factory is None
+        assert runtime.database_ready() is True
+        assert not hasattr(runtime, "engine")
+        assert not hasattr(runtime, "session_factory")
 
 
 def test_existing_containers_still_use_memory():
@@ -70,13 +70,10 @@ def test_existing_containers_still_use_memory():
 def test_sqlite_engine_is_owned_and_disposed(tmp_path: Path):
     settings = _sqlite_settings(tmp_path)
     runtime = build_runtime_container(settings)
-    engine = runtime.engine
-
-    assert engine is not None
+    assert runtime.database_ready() is True
     runtime.close()
 
-    # dispose 后再连接会重新建立连接池；用 pool 状态判断已释放。
-    assert engine.pool.checkedout() == 0
+    assert runtime.database_ready() is False
 
 
 def test_close_is_idempotent(tmp_path: Path):
@@ -92,16 +89,15 @@ def test_memory_close_is_safe_and_side_effect_free():
 
     runtime.close()
     runtime.close()
-    assert runtime.engine is None
+    assert runtime.closed is True
 
 
 def test_context_manager_closes_engine(tmp_path: Path):
     settings = _sqlite_settings(tmp_path)
     with build_runtime_container(settings) as runtime:
-        engine = runtime.engine
-        assert engine is not None
+        assert runtime.database_ready() is True
 
-    assert engine.pool.checkedout() == 0
+    assert runtime.database_ready() is False
 
 
 def test_runtime_exposes_required_components(tmp_path: Path):
@@ -112,30 +108,27 @@ def test_runtime_exposes_required_components(tmp_path: Path):
         assert runtime.gateway is not None
         assert runtime.llm is not None
         assert runtime.citation_policy is not None
-        assert runtime.session_factory is not None
+        assert not hasattr(runtime, "session_factory")
+        assert not hasattr(runtime, "engine")
+        assert not hasattr(runtime, "audited_write")
 
 
 def test_formal_runtime_passes_explicit_minimal_tool_allowlist():
     with build_runtime_container(RuntimeSettings(repository_mode="memory")) as runtime:
-        assert runtime.service._tool_allowlist == list(FORMAL_RUNTIME_TOOL_ALLOWLIST)
         assert set(FORMAL_RUNTIME_TOOL_ALLOWLIST) <= set(runtime.registry.names())
+        assert not hasattr(runtime.service, "_tool_allowlist")
 
 
 def test_formal_runtime_knowledge_tool_reads_confirmed_repository_only():
     with build_runtime_container(RuntimeSettings(repository_mode="memory")) as runtime:
-        candidate = KnowledgeCandidate(
-            fault_type=SecurityFaultType.CAMERA_BLACK_SCREEN,
-            candidate_label="governed_network_break",
-            title="受治理网络中断经验",
-            summary="网络中断可能导致摄像头黑屏",
-            symptoms=["设备无法连接"],
-            root_cause="网络链路中断",
-            troubleshooting_steps=["检查受控交换机端口"],
-            source_diagnosis_id="diag-governed",
-            source_conclusion_id="con-governed",
-            source_evidence_ids=["evd-governed"],
+        seed_path = (
+            Path(__file__).resolve().parents[2]
+            / "samples"
+            / "knowledge"
+            / "default_sops.manual-seeds.json"
         )
-        runtime.knowledge_repository.save(candidate)
+        seed = load_manual_knowledge_seeds(seed_path)[0]
+        candidate = runtime.knowledge_service.import_manual_seed(seed, "seed-operator")
         runtime.knowledge_service.review(
             candidate.knowledge_id,
             KnowledgeReviewAction.CONFIRM,
@@ -148,17 +141,17 @@ def test_formal_runtime_knowledge_tool_reads_confirmed_repository_only():
         )
 
         result = runtime.registry.execute(
-            "knowledge__search", {"query": "网络 中断", "limit": 3}, context
-        )
-        static_result = runtime.registry.execute(
-            "knowledge__search", {"query": "黑屏", "limit": 3}, context
+            "knowledge__search", {"query": seed.title, "limit": 3}, context
         )
 
         assert result.ok is True
         assert [item["sop_id"] for item in result.evidence_drafts[0].payload["sops"]] == [
             candidate.knowledge_id
         ]
-        assert static_result.evidence_drafts[0].payload["sops"] == []
+        assert all(
+            item["sop_id"] != seed.artifact_id
+            for item in result.evidence_drafts[0].payload["sops"]
+        )
 
 
 def test_runtime_does_not_call_external_model(tmp_path: Path):
@@ -183,8 +176,7 @@ def test_containers_are_not_global_singletons(tmp_path: Path):
         assert first is not second
         assert first.service is not second.service
         assert first.repository is not second.repository
-        assert first.engine is not second.engine
-        assert first.session_factory is not second.session_factory
+        assert first.knowledge_repository is not second.knowledge_repository
     finally:
         first.close()
         second.close()
@@ -326,19 +318,21 @@ def test_runtime_registry_view_never_exposes_adapters():
         _ = runtime.repository.__dict__
     with pytest.raises(AttributeError):
         object.__getattribute__(runtime.repository, "_target")
+    assert not hasattr(runtime.registry, "get")
+    assert not hasattr(runtime.knowledge_repository, "save")
+    assert not hasattr(runtime.audit_repository, "append")
+    assert not hasattr(runtime.runner, "_registry")
+    assert not hasattr(runtime.service, "_repository")
     runtime.close()
 
 
-def test_sqlite_session_factory_rejects_after_close(tmp_path: Path):
-    from security_diagnosis_harness.runtime import RuntimeClosedError
-
+def test_sqlite_session_factory_is_not_exposed(tmp_path: Path):
     runtime = build_runtime_container(_sqlite_settings(tmp_path))
-    factory = runtime.session_factory
-    runtime.close()
-
-    # Engine dispose 后，旧 Session factory 不得隐式重连。
-    with pytest.raises(RuntimeClosedError):
-        factory()
+    try:
+        assert not hasattr(runtime, "session_factory")
+        assert not hasattr(runtime, "engine")
+    finally:
+        runtime.close()
 
 
 def test_formal_runtime_requires_audit_assembly(monkeypatch):

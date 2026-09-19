@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from security_diagnosis_harness.config import RuntimeSettings
 
-SUPPORTED_SCHEMA_REVISION = "0003"
+SUPPORTED_SCHEMA_REVISION = "0004"
 
 
 class BackupError(RuntimeError):
