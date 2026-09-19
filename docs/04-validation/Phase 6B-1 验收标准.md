@@ -123,8 +123,9 @@ uv run python scripts/eval_phase4_alarm_false_positive.py
 {
   "repository_mode": "sqlite",
   "restart_recovered": true,
-  "new_engine_created": true,
-  "new_session_factory_created": true,
+  "new_runtime_created": true,
+  "new_repository_created": true,
+  "new_service_created": true,
   "new_repository_created": true,
   "new_service_created": true,
   "status": "confirmed",

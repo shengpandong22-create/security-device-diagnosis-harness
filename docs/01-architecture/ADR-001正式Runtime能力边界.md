@@ -32,7 +32,7 @@ Static/Routed DeviceGateway 与 FakeLLM，KnowledgeSearchTool 也未注入 Hybri
 设备到货后的第一目标仍是摄像头真机封版，不为了“看起来支持四域”引入三个没有真实设备
 授权与 Adapter 证据的正式入口。
 
-### 2.2 RAG：方向批准，接入暂缓
+### 2.2 RAG：本地治理检索已接入，外部语义检索继续暂缓
 
 批准的目标链路是：
 
@@ -44,10 +44,14 @@ confirmed KnowledgeRepository
   -> KnowledgeSearchTool
 ```
 
-但在正式 Runtime 接入前，必须先补齐 HttpBgeEmbeddingAdapter 的 endpoint allowlist、输入/响应
-大小限制、NaN/Infinity 拒绝、稳定错误映射和 close 生命周期。BGE 不可用时必须显式记录
-`keyword_fallback`，不能静默把 keyword 结果冒充 hybrid。满足这些门禁后，RAG 可作为首个正式
-扩展项，因为它不扩大设备写权限。
+2026-09-19 的封版后修订先接入不含外部依赖的最小链路：正式 Runtime 把同一持久化
+`KnowledgeRepository` 注入 `KnowledgeSearchTool`，工具只召回 `confirmed` 知识。手工 SOP 以带
+SHA-256 的 manifest 导入为 `manual_seed` candidate，经独立 reviewer 确认后才进入召回；代码中不再
+存在隐式静态回退。Runtime 对外只暴露只读仓储视图，不能借容器对象直接写库。
+
+Vector/Hybrid 与真实 BGE 仍暂缓。接入前必须补齐 HttpBgeEmbeddingAdapter 的 endpoint allowlist、
+输入/响应大小限制、NaN/Infinity 拒绝、稳定错误映射和 close 生命周期。BGE 不可用时必须显式记录
+`keyword_fallback`，不能静默把 keyword 结果冒充 hybrid。
 
 ### 2.3 真实 LLM：不进入默认 Runtime
 
@@ -68,12 +72,13 @@ confirmed KnowledgeRepository
 |---|---|---|
 | 摄像头黑屏 | 正式本地 Runtime 可达 | 支持本地 Simulator/静态事实闭环，等待真机封版 |
 | 录像/门禁/报警 | 独立闭环与固定评测 | 已完成规则、工具和评测，不是默认 Runtime 能力 |
-| Keyword/Vector/Hybrid | 独立检索子系统 | 已完成可重复对照评测，尚未接入正式 Agent Tool |
+| Repository Keyword | 正式本地 Runtime 可达 | 只召回受治理的 confirmed 知识，不含静态回退 |
+| Vector/Hybrid | 独立检索子系统 | 已完成可重复对照评测，尚未接入正式 Agent Tool |
 | DeepSeek 真实模型 | 低频结构化评测 | 已完成受限 Validation 调用，不是正式 Agent Runner |
 
 ## 4. 后果
 
 - 优点：正式能力声明与实际装配一致；真机风险面保持最小；不会为面试展示牺牲安全默认值。
-- 代价：启动 API 仍不能直接演示四域和真实 RAG/LLM；需要按门禁逐项接入。
-- 下一决策点：摄像头真机十轮稳定门禁通过后，优先评审 RAG Adapter 加固与正式注入；其它
+- 代价：启动 API 仍不能直接演示四域和真实语义 RAG/LLM；需要按门禁逐项接入。
+- 下一决策点：摄像头真机十轮稳定门禁通过后，优先评审 BGE Adapter 加固与正式注入；其它
   三域按真实资产/Adapter 可得性决定，不按 Phase 编号机械推进。

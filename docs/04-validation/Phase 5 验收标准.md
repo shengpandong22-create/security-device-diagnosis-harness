@@ -131,3 +131,17 @@
 - [x] 知识可追溯到原始 Diagnosis、Conclusion 和 Evidence；
 - [x] 引入知识后 Phase 1～4 评测不退化；
 - [ ] Git 工作区干净并推送。
+
+## 6. 2026-09-19 封版后治理接入补充验收
+
+- [x] 原四条静态 SOP 已迁移到摘要绑定的 manual-seed manifest；
+- [x] manual seed 只能先进入 candidate，导入者不能审核自己的候选；
+- [x] 完全相同的来源制品重复导入幂等，不产生重复候选或重复审计事件；
+- [x] candidate、rejected、retired 均不能被正式 `knowledge__search` 召回；
+- [x] 正式 Runtime 从同一 KnowledgeRepository 召回 confirmed 知识；
+- [x] 正式 Runtime 未配置真实 BGE、模型或其他隐藏网络依赖；
+- [x] Tool 内不存在隐式静态 SOP 回退；
+- [x] Runtime 对外不暴露可写 Repository、Engine、SessionFactory 或底层 Tool 实例。
+
+本节是对原 Phase 5 组件验收的封版后增量记录。第 3.1 节的 BGE 数据仍是历史独立评测，不能
+解释为正式 Runtime 已启用 BGE。

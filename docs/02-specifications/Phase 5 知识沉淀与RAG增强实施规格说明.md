@@ -308,3 +308,19 @@ Phase 5 完成后，应能演示：
 - 敏感信息泄露为 0；
 - confirmed knowledge 只能人工产生；
 - 知识可追溯到原始诊断和 Evidence。
+
+## 9. 2026-09-19 封版后修订：手工种子与正式 Runtime
+
+除诊断确认来源外，受控手工资料可通过 `ManualKnowledgeSeed` 进入同一治理链路。manifest 对规范化
+业务内容计算 SHA-256；导入只创建 `source=manual_seed` 的 candidate，并保存 artifact ID、摘要和
+导入 actor。导入者不得审核自己的候选。完全相同的 artifact ID 与摘要重复导入时返回已有对象，
+不新增候选或审计事件；内容变化则作为新版本候选重新审核。
+
+正式 Runtime 的最小装配为：
+
+```text
+confirmed KnowledgeRepository -> KnowledgeSearchTool
+```
+
+该路径使用本地 Repository 的确定性关键词检索，不访问 BGE 或网络，不包含静态 SOP 回退。
+Vector/Hybrid 仍是独立能力，只有满足 ADR-001 的外部适配器门禁后才能显式启用。
