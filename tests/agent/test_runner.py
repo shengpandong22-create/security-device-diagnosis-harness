@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping
 from time import monotonic, sleep
 from typing import Any
@@ -9,7 +10,13 @@ from typing import Any
 import pytest
 
 from security_diagnosis_harness.adapters.llm.fake import FakeLLM
-from security_diagnosis_harness.agent.runner import ToolLoopBudget, ToolLoopRunner
+from security_diagnosis_harness.agent.runner import (
+    TOOL_LOOP_WORKER_NAME,
+    OperationCancelledError,
+    ToolLoopBudget,
+    ToolLoopRunner,
+    current_cancellation,
+)
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus, SecurityFaultType
 from security_diagnosis_harness.domain.evidence import EvidenceType
 from security_diagnosis_harness.ports.llm import (
@@ -369,3 +376,97 @@ def test_initial_context_budget_is_enforced_before_model_call(tool_registry, con
     assert result.ok is False
     assert "max_context_chars=100" in (result.error or "")
     assert llm.call_count == 0
+
+
+def _live_workers() -> set[int]:
+    return {
+        thread.ident
+        for thread in threading.enumerate()
+        if thread.name == TOOL_LOOP_WORKER_NAME and thread.is_alive()
+    }
+
+
+def test_timeout_cooperatively_cancels_the_model_operation(tool_registry, context):
+    """超时后底层模型操作必须停止，而不是在 daemon worker 中继续运行。"""
+    side_effects: list[int] = []
+    observed_cancel: list[bool] = []
+    started_calls: list[int] = []
+
+    class CooperativeSlowLLM:
+        def complete(self, request):
+            started_calls.append(1)
+            token = current_cancellation()
+            assert token is not None, "底层模型必须能看到协作取消令牌"
+            while not token.cancelled:
+                side_effects.append(1)
+                sleep(0.005)
+            observed_cancel.append(True)
+            return _final_response()
+
+    before = _live_workers()
+    runner = ToolLoopRunner(
+        CooperativeSlowLLM(),
+        tool_registry,
+        ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.05),
+    )
+
+    result = runner.run(make_case(), context)
+
+    assert result.ok is False
+    assert "timeout_seconds=0.05" in (result.error or "")
+    assert result.final_conclusion is None
+    assert result.tool_results == []
+    assert result.evidence_drafts == []
+    # 操作确实观察到取消并主动退出，且只被调用一次（无重试）。
+    assert observed_cancel == [True]
+    assert started_calls == [1]
+    # 返回后副作用计数不再变化。
+    settled = len(side_effects)
+    assert settled > 0
+    sleep(0.15)
+    assert len(side_effects) == settled
+    # 返回后没有遗留 worker。
+    assert _live_workers() <= before
+
+
+def test_timeout_cooperatively_cancels_the_tool_operation(
+    tool_registry, context, monkeypatch
+):
+    """超时后底层工具 / Adapter 操作必须停止，不产生 Evidence。"""
+    ticks: list[int] = []
+    calls: list[int] = []
+
+    def cooperative_execute(tool_name, arguments, tool_context):
+        calls.append(1)
+        token = current_cancellation()
+        assert token is not None, "工具必须能看到协作取消令牌"
+        while not token.cancelled:
+            ticks.append(1)
+            sleep(0.005)
+        raise OperationCancelledError()
+
+    monkeypatch.setattr(tool_registry, "execute", cooperative_execute)
+    before = _live_workers()
+    runner = ToolLoopRunner(
+        FakeLLM([_tool_call_response()]),
+        tool_registry,
+        ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.05),
+    )
+
+    result = runner.run(make_case(), context)
+
+    assert result.ok is False
+    assert "timeout_seconds=0.05" in (result.error or "")
+    assert result.tool_calls == 1
+    assert result.tool_results == []
+    assert result.evidence_drafts == []
+    assert calls == [1]
+    settled = len(ticks)
+    assert settled > 0
+    sleep(0.15)
+    assert len(ticks) == settled
+    assert _live_workers() <= before
+
+
+def test_cancellation_token_is_absent_outside_a_runner_worker():
+    assert current_cancellation() is None

@@ -3,14 +3,22 @@
 Runner 只负责"让模型在预算内通过 Registry 调工具并产出候选结论"，
 它不修改 `SecurityDiagnosisCase` 的状态，也不把 EvidenceDraft 落成
 `DiagnosisEvidence`（这是应用服务的职责）。
+
+超时语义（Phase 11+ 修正）：Runner 不再只是"放弃等待"——超时后它会置位一次
+运行级的**协作取消令牌**并等待底层操作退出。底层模型 / 工具 / Adapter 必须通过
+:func:`current_cancellation` 读取该令牌，在长阻塞步骤或循环之间检查 ``cancelled``
+并主动停止。Python 无法抢占式杀死线程，因此取消是**协作式契约**：Runner 已经
+提供了真实的取消信号与有限等待，而不是用加大 timeout、无界 join、吞迟到结果或
+``Future.cancel()`` 冒充取消。
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
-from queue import Queue
-from threading import Thread
+from queue import Empty, Queue
+from threading import Event, Thread
 from time import monotonic
 from typing import Any, TypeVar
 
@@ -40,9 +48,66 @@ SYSTEM_PROMPT = (
 
 _T = TypeVar("_T")
 
+#: daemon worker 线程名的稳定常量：测试用它验证"超时返回后没有遗留 worker"。
+TOOL_LOOP_WORKER_NAME = "tool-loop-budget-worker"
+
+#: 置位取消令牌后，等待底层操作协作退出的**有限**宽限时间。
+#: 这是有界等待，不是无界 join；仍未退出说明操作不遵守取消契约。
+_CANCELLATION_GRACE_SECONDS = 0.05
+
 
 class _RunnerDeadlineExceeded(TimeoutError):
     pass
+
+
+class OperationCancelledError(RuntimeError):
+    """底层操作观察到协作取消后主动放弃时抛出的受控信号。
+
+    异常文本不含任何外部内容，可安全向上传递。
+    """
+
+    def __init__(self) -> None:
+        super().__init__("操作已因运行超时被协作取消")
+
+
+class RunCancellation:
+    """一次 Runner 运行的**协作取消令牌**。
+
+    Runner 越过 deadline 后会立即 ``cancel()``，随后有限等待底层操作退出。底层
+    模型 / 工具 / Adapter 通过 :func:`current_cancellation` 拿到令牌，在循环或长
+    阻塞步骤之间检查 ``cancelled``（或调用 ``raise_if_cancelled``），从而在
+    Runner 返回 timeout 后不再继续产生副作用。
+    """
+
+    __slots__ = ("_event",)
+
+    def __init__(self) -> None:
+        self._event = Event()
+
+    def cancel(self) -> None:
+        """置位取消：幂等，可重复调用。"""
+        self._event.set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._event.is_set()
+
+    def raise_if_cancelled(self) -> None:
+        """已取消时抛出 :class:`OperationCancelledError`，供底层操作快速退出。"""
+        if self._event.is_set():
+            raise OperationCancelledError()
+
+
+#: 当前 worker 线程可见的协作取消令牌。ContextVar 不会被新线程继承，因此
+#: Runner 在 worker 内显式 set/reset，保证底层操作一定读到本次运行的令牌。
+_CURRENT_CANCELLATION: ContextVar[RunCancellation | None] = ContextVar(
+    "tool_loop_cancellation", default=None
+)
+
+
+def current_cancellation() -> RunCancellation | None:
+    """返回当前线程可见的协作取消令牌；不在 Runner worker 内时为 ``None``。"""
+    return _CURRENT_CANCELLATION.get()
 
 
 @dataclass(frozen=True)
@@ -137,6 +202,8 @@ class ToolLoopRunner:
         evidence_drafts: list[ToolEvidenceDraft] = []
         tool_calls_used = 0
         deadline = monotonic() + self._budget.timeout_seconds
+        # 运行级协作取消令牌：超时后置位，底层模型 / 工具 / Adapter 据此停止。
+        cancellation = RunCancellation()
 
         for round_index in range(1, self._budget.max_rounds + 1):
             if self._message_chars(messages) > self._budget.max_context_chars:
@@ -164,6 +231,7 @@ class ToolLoopRunner:
                 response = self._within_deadline(
                     lambda request=request: self._llm.complete(request),
                     deadline,
+                    cancellation,
                 )
             except _RunnerDeadlineExceeded:
                 return self._deadline_failure(
@@ -229,6 +297,7 @@ class ToolLoopRunner:
                                 context,
                             ),
                             deadline,
+                            cancellation,
                         )
                     except _RunnerDeadlineExceeded:
                         return self._deadline_failure(
@@ -337,25 +406,54 @@ class ToolLoopRunner:
         return sum(len(item.content) + len(item.name or "") for item in messages)
 
     @staticmethod
-    def _within_deadline(operation: Callable[[], _T], deadline: float) -> _T:
-        """在 daemon worker 中等待只读操作，不让阻塞调用越过 Runner deadline。"""
+    def _within_deadline(
+        operation: Callable[[], _T],
+        deadline: float,
+        cancellation: RunCancellation,
+    ) -> _T:
+        """在 daemon worker 中执行操作；超时则协作取消并等待其退出。
+
+        语义：
+
+        - worker 在协作取消令牌下运行操作，因此底层模型 / 工具 / Adapter 可以
+          通过 :func:`current_cancellation` 观察取消；
+        - 若在 deadline 内完成，本方法按既有语义返回结果或原样抛出异常；
+        - 若越过 deadline，则**先置位取消令牌**再有限等待 worker 协作退出，最后
+          抛出超时异常；迟到结果一律丢弃，绝不冒充取消。
+
+        这里的等待是有界 join（``_CANCELLATION_GRACE_SECONDS``），不是无界 join。
+        """
         remaining = deadline - monotonic()
         if remaining <= 0:
+            cancellation.cancel()
             raise _RunnerDeadlineExceeded
-        outcome: Queue[tuple[bool, _T | BaseException]] = Queue(maxsize=1)
+        # worker 每个生命周期只 put 一次，因此队列不会满；一次 put 也保证读取
+        # 到的就是本次运行的唯一结果。
+        outcome: Queue[tuple[bool, _T | BaseException]] = Queue()
 
         def execute() -> None:
+            token = _CURRENT_CANCELLATION.set(cancellation)
             try:
-                outcome.put((True, operation()))
+                result = operation()
             except BaseException as exc:  # 原异常交由调用线程按既有语义处理。
                 outcome.put((False, exc))
+                return
+            finally:
+                _CURRENT_CANCELLATION.reset(token)
+            outcome.put((True, result))
 
-        worker = Thread(target=execute, daemon=True, name="tool-loop-budget-worker")
+        worker = Thread(target=execute, daemon=True, name=TOOL_LOOP_WORKER_NAME)
         worker.start()
         worker.join(remaining)
         if worker.is_alive():
+            # 真取消：置位协作取消令牌，让操作停止产生副作用，再有限等待其退出。
+            cancellation.cancel()
+            worker.join(_CANCELLATION_GRACE_SECONDS)
             raise _RunnerDeadlineExceeded
-        succeeded, value = outcome.get_nowait()
+        try:
+            succeeded, value = outcome.get_nowait()
+        except Empty:  # pragma: no cover - worker 已退出但未 put，仅防御性处理。
+            raise _RunnerDeadlineExceeded from None
         if not succeeded:
             raise value
         return value
