@@ -4,7 +4,8 @@
 
 - 只对接显式允许的 BGE endpoint：**host / scheme / port 三重 allowlist**，并禁止
   userinfo、query 与 fragment；默认只允许本机 ``http://127.0.0.1:18080``；
-- 严格的输入与响应边界：批量条数、单条字符数、总字符数、响应字节数；
+- 严格的输入与响应边界：批量条数、单条字符数、总字符数，以及**传输期**响应字节
+  上限（``client.stream`` + ``iter_bytes``，逐块累计，超限立刻停止读取并关闭响应）；
 - 向量必须是**有限数值**、长度等于声明维度；``index`` 必须恰好覆盖 ``0..n-1``
   （拒绝越界、重复、缺失与数量不符）；
 - 稳定错误类型（:class:`BgeEmbeddingError`），不携带 endpoint、响应正文或向量内容；
@@ -14,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping
 from types import TracebackType
@@ -21,6 +23,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+
+from security_diagnosis_harness.http_stream import (
+    ResponseTooLargeError,
+    read_bounded_bytes,
+)
 
 DEFAULT_BGE_BASE_URL = "http://127.0.0.1:18080"
 DEFAULT_BGE_MODEL = "BAAI/bge-small-zh-v1.5"
@@ -141,20 +148,25 @@ class HttpBgeEmbeddingAdapter:
             return []
         self._validate_texts(texts)
         try:
-            response = self._client.post(
-                "/v1/embeddings", json={"model": self._model, "input": texts}
-            )
+            with self._client.stream(
+                "POST", "/v1/embeddings", json={"model": self._model, "input": texts}
+            ) as response:
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise BgeEmbeddingError(
+                        f"http_{exc.response.status_code}"
+                    ) from None
+                # 传输期资源边界：逐块读取，超限立刻停止并关闭响应。
+                try:
+                    body = read_bounded_bytes(response, self._max_response_bytes)
+                except ResponseTooLargeError:
+                    raise BgeEmbeddingError("response_too_large") from None
         except httpx.HTTPError:
             # 不链式保留原始异常：httpx 异常文本包含请求 endpoint。
             raise BgeEmbeddingError("transport_error") from None
         try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise BgeEmbeddingError(f"http_{exc.response.status_code}") from None
-        if len(response.content) > self._max_response_bytes:
-            raise BgeEmbeddingError("response_too_large")
-        try:
-            payload = response.json()
+            payload = json.loads(body)
         except ValueError:
             raise BgeEmbeddingError("invalid_response") from None
         return self._parse_embeddings(payload, len(texts))

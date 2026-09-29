@@ -305,3 +305,127 @@ def test_bge_adapter_is_not_wired_into_the_formal_runtime():
     text = Path(runtime_module.__file__).read_text(encoding="utf-8")
     assert "http_bge" not in text
     assert "BgeEmbedding" not in text
+
+
+# ------------------------------------------------- 传输期响应边界（流式限长读取）
+class CountingChunkStream(httpx.SyncByteStream):
+    """分块响应体，记录被真正读取的块数与是否被关闭。"""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = list(chunks)
+        self.consumed = 0
+        self.closed = False
+
+    def __iter__(self):
+        for chunk in self.chunks:
+            self.consumed += 1
+            yield chunk
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _stream_client(stream: CountingChunkStream) -> httpx.Client:
+    return httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200, stream=stream, headers={"content-type": "application/json"}
+            )
+        ),
+        base_url=BGE_BASE_URL,
+    )
+
+
+def _valid_body() -> bytes:
+    return json.dumps(
+        _vector_payload([{"index": 0, "embedding": [1.0, 0.0, 0.0]}])
+    ).encode()
+
+
+def test_bge_small_response_is_read_completely_and_parsed():
+    body = _valid_body()
+    stream = CountingChunkStream([body])
+    adapter = _adapter(_stream_client(stream), max_response_bytes=len(body) + 10)
+
+    assert adapter.embed_query("query") == [1.0, 0.0, 0.0]
+    assert stream.consumed == 1
+    assert stream.closed is True
+
+
+def test_bge_response_exactly_at_the_limit_is_accepted():
+    body = _valid_body()
+    stream = CountingChunkStream([body])
+    adapter = _adapter(_stream_client(stream), max_response_bytes=len(body))
+
+    assert adapter.embed_query("query") == [1.0, 0.0, 0.0]
+
+
+def test_bge_response_one_byte_over_the_limit_is_rejected():
+    body = _valid_body()
+    stream = CountingChunkStream([body])
+    adapter = _adapter(_stream_client(stream), max_response_bytes=len(body) - 1)
+
+    with pytest.raises(BgeEmbeddingError) as excinfo:
+        adapter.embed_query("query")
+
+    assert excinfo.value.error_type == "response_too_large"
+    assert stream.closed is True
+
+
+def test_bge_stream_reading_stops_at_the_first_over_limit_chunk():
+    stream = CountingChunkStream([b"x" * 100, b"y" * 100, b"z" * 100])
+    adapter = _adapter(_stream_client(stream), max_response_bytes=10)
+
+    with pytest.raises(BgeEmbeddingError) as excinfo:
+        adapter.embed_query("query")
+
+    assert excinfo.value.error_type == "response_too_large"
+    assert stream.consumed == 1
+    assert stream.closed is True
+
+
+def test_bge_stream_reading_stops_after_accumulated_chunks_exceed_the_limit():
+    stream = CountingChunkStream([b"x" * 1_000 for _ in range(20)])
+    adapter = _adapter(_stream_client(stream), max_response_bytes=5_000)
+
+    with pytest.raises(BgeEmbeddingError) as excinfo:
+        adapter.embed_query("query")
+
+    assert excinfo.value.error_type == "response_too_large"
+    assert stream.consumed == 6
+    assert stream.consumed < len(stream.chunks)
+    assert stream.closed is True
+
+
+def test_bge_over_limit_response_never_reaches_json_parsing():
+    stream = CountingChunkStream([b"not-json" * 500])
+    adapter = _adapter(_stream_client(stream), max_response_bytes=16)
+
+    with pytest.raises(BgeEmbeddingError) as excinfo:
+        adapter.embed_query("query")
+
+    assert excinfo.value.error_type == "response_too_large"
+
+
+def test_bge_over_limit_error_leaks_no_endpoint_or_body():
+    stream = CountingChunkStream([b"PROVIDER-SECRET-BODY" * 100])
+    client = _stream_client(stream)
+    adapter = HttpBgeEmbeddingAdapter(
+        base_url=BGE_BASE_URL,
+        model="test-bge",
+        dimension=3,
+        max_response_bytes=32,
+        client=client,
+    )
+
+    with pytest.raises(BgeEmbeddingError) as excinfo:
+        adapter.embed_query("query")
+
+    text = str(excinfo.value)
+    assert "PROVIDER-SECRET-BODY" not in text
+    assert "127.0.0.1" not in text
+    assert excinfo.value.__cause__ is None
+    assert excinfo.value.__suppress_context__ is True
+    # 注入的 client 由调用方负责，适配器不得擅自关闭。
+    assert client.is_closed is False
+    client.close()

@@ -616,6 +616,180 @@ def test_valid_usage_is_required_and_forwarded(validation_cases):
     assert response.completion_tokens == 3
 
 
+# ------------------------------------------------- 传输期响应边界（流式限长读取）
+class CountingStream(httpx.SyncByteStream):
+    """分块响应体，记录被真正读取的块数与是否被关闭。"""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = list(chunks)
+        self.consumed = 0
+        self.closed = False
+
+    def __iter__(self):
+        for chunk in self.chunks:
+            self.consumed += 1
+            yield chunk
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _streaming_client(stream: CountingStream) -> httpx.Client:
+    return httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200, stream=stream, headers={"content-type": "application/json"}
+            )
+        ),
+        base_url="https://model.test",
+    )
+
+
+def _model_client(stream: CountingStream, **changes) -> OpenAICompatibleEvaluationClient:
+    return OpenAICompatibleEvaluationClient(
+        _settings(**changes), _streaming_client(stream)
+    )
+
+
+def _valid_body() -> bytes:
+    return json.dumps(
+        {
+            "model": "server-model",
+            "choices": [{"message": {"content": _VALID_CONTENT}}],
+            "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+        }
+    ).encode()
+
+
+def test_small_response_is_read_completely_and_parsed():
+    body = _valid_body()
+    stream = CountingStream([body])
+    client = _model_client(stream, max_response_bytes=len(body) + 10)
+
+    response = client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    assert response.prompt_tokens == 7
+    assert stream.consumed == 1
+    assert stream.closed is True
+
+
+def test_response_exactly_at_the_limit_is_accepted():
+    body = _valid_body()
+    stream = CountingStream([body])
+    client = _model_client(stream, max_response_bytes=len(body))
+
+    response = client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    assert response.completion_tokens == 3
+    assert stream.consumed == 1
+
+
+def test_response_one_byte_over_the_limit_is_rejected():
+    body = _valid_body()
+    stream = CountingStream([body])
+    client = _model_client(stream, max_response_bytes=len(body) - 1)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    assert excinfo.value.error_type == "response_too_large"
+    assert stream.closed is True
+
+
+def test_stream_reading_stops_at_the_first_over_limit_chunk():
+    """第一块就超限时必须立刻停止，不读取后续块。"""
+    stream = CountingStream([b"x" * 100, b"y" * 100, b"z" * 100])
+    client = _model_client(stream, max_response_bytes=10)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    assert excinfo.value.error_type == "response_too_large"
+    assert stream.consumed == 1  # 后续块从未被读取
+    assert stream.closed is True
+
+
+def test_stream_reading_stops_after_accumulated_chunks_exceed_the_limit():
+    """多块累计后才超限时，剩余块不得被读取（不是完整缓冲后才报错）。"""
+    stream = CountingStream([b"x" * 1_000 for _ in range(20)])
+    client = _model_client(stream, max_response_bytes=5_000)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    assert excinfo.value.error_type == "response_too_large"
+    assert stream.consumed == 6  # 5 块正好到达上限，第 6 块触发停止
+    assert stream.consumed < len(stream.chunks)
+    assert stream.closed is True
+
+
+def test_over_limit_response_never_reaches_json_parsing():
+    """超限的响应体不是合法 JSON：若先解析就会得到 invalid_response。"""
+    stream = CountingStream([b"not-json" * 500])
+    client = _model_client(stream, max_response_bytes=16)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    assert excinfo.value.error_type == "response_too_large"
+
+
+def test_over_limit_error_leaks_no_endpoint_body_or_credentials():
+    secret = b"PROVIDER-SECRET-BODY"
+    stream = CountingStream([secret * 200])
+    client = _model_client(stream, max_response_bytes=32)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    text = str(excinfo.value)
+    assert "PROVIDER-SECRET-BODY" not in text
+    assert "model.test" not in text
+    assert "unit-test-key" not in text
+    assert excinfo.value.__cause__ is None
+    assert excinfo.value.__suppress_context__ is True
+
+
+def test_stream_limit_keeps_one_request_and_no_retry():
+    calls: list[int] = []
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, stream=CountingStream([b"x" * 1_000]))
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://model.test"
+    )
+    client = OpenAICompatibleEvaluationClient(_settings(max_response_bytes=16), http)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    assert excinfo.value.error_type == "response_too_large"
+    assert calls == [1]
+
+
+def test_http_status_and_invalid_json_classification_are_preserved():
+    def status_handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="slow down")
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(status_handler), base_url="https://model.test"
+    )
+    with pytest.raises(ModelEvaluationError) as status_error:
+        OpenAICompatibleEvaluationClient(_settings(), http).evaluate(
+            {"facts": {}}, max_completion_tokens=50
+        )
+    assert status_error.value.error_type == "http_429"
+
+    bad_stream = CountingStream([b"{not json"])
+    with pytest.raises(ModelEvaluationError) as json_error:
+        _model_client(bad_stream, max_response_bytes=1_000).evaluate(
+            {"facts": {}}, max_completion_tokens=50
+        )
+    assert json_error.value.error_type == "invalid_response"
+
+
 def test_report_files_are_separate_and_contain_no_input_facts(validation_cases, tmp_path):
     report = RealModelEvaluationRunner(RecordingClient(), _settings()).run(validation_cases)
     json_path, markdown_path = write_real_model_report(report, tmp_path)

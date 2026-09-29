@@ -17,6 +17,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from security_diagnosis_harness.domain.redaction import redact_mapping, redact_text
 from security_diagnosis_harness.evaluation.dataset import DatasetCase
 from security_diagnosis_harness.evaluation.taxonomy import evaluation_taxonomy
+from security_diagnosis_harness.http_stream import (
+    ResponseTooLargeError,
+    read_bounded_bytes,
+)
 
 
 class RealModelConfigurationError(ValueError):
@@ -65,7 +69,8 @@ class RealModelSettings:
     max_cases: int = 4
     input_cost_per_million: float = 0.0
     output_cost_per_million: float = 0.0
-    #: 单次 HTTP 响应体的字节上限；超过即 fail closed，不解析也不截断。
+    #: 单次 HTTP 响应体的字节上限；这是**传输期**边界：逐块读取并在超限时立刻停止
+    #: 读取并关闭响应，既不完整缓冲也不解析、不截断。
     max_response_bytes: int = 1_048_576
     #: 模型回复正文（JSON 字符串）的字符上限；超过即 fail closed。
     max_content_chars: int = 100_000
@@ -164,7 +169,8 @@ class OpenAICompatibleEvaluationClient:
         self, payload: Mapping[str, Any], *, max_completion_tokens: int
     ) -> EvaluationModelResponse:
         try:
-            response = self._client.post(
+            with self._client.stream(
+                "POST",
                 "/chat/completions",
                 headers={"Authorization": f"Bearer {self._settings.api_key}"},
                 json={
@@ -187,13 +193,16 @@ class OpenAICompatibleEvaluationClient:
                         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
                     ],
                 },
-            )
-            response.raise_for_status()
-            # 边界先于解析：超大响应体直接 fail closed，不进 JSON 解析，
-            # 也不做任何截断。
-            if len(response.content) > self._settings.max_response_bytes:
-                raise ModelEvaluationError("response_too_large")
-            body = response.json()
+            ) as response:
+                response.raise_for_status()
+                # 传输过程中的资源边界：逐块读取并在超限时立刻停止，不完整缓冲。
+                try:
+                    body_bytes = read_bounded_bytes(
+                        response, self._settings.max_response_bytes
+                    )
+                except ResponseTooLargeError:
+                    raise ModelEvaluationError("response_too_large") from None
+            body = json.loads(body_bytes)
             choice = body["choices"][0]
             if choice.get("finish_reason") == "length":
                 raise ModelEvaluationError("output_truncated")
