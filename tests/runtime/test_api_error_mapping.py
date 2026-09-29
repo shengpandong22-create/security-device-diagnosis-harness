@@ -35,7 +35,9 @@ INFRASTRUCTURE_LEAK_MARKERS = (
 
 
 def _client(service) -> TestClient:
-    return TestClient(create_app(service), raise_server_exceptions=False)
+    return TestClient(
+        create_app(service, demo_mode=True), raise_server_exceptions=False
+    )
 
 
 def _expect(service, error: Exception, status_code: int, code: str) -> None:
@@ -110,7 +112,7 @@ def test_unsupported_fault_type_maps_to_422():
         database_url=f"sqlite:///{(tmpdir / 'cap.db').as_posix()}",
     )
     with build_runtime_container(settings) as runtime:
-        client = TestClient(create_app(runtime.service))
+        client = TestClient(create_app(runtime.service, demo_mode=True))
         response = client.post(
             "/api/v1/diagnoses",
             json={
@@ -165,7 +167,7 @@ def _raiser(error: Exception):
 
 # ---------------------------------------------------------------- health
 def test_health_default_assembly_reports_memory_and_ready():
-    client = TestClient(create_app(build_container().service))
+    client = TestClient(create_app(build_container().service, demo_mode=True))
 
     body = client.get("/health").json()
 
@@ -184,6 +186,7 @@ def _runtime_client(runtime) -> TestClient:
             runtime.service,
             repository_mode=runtime.settings.repository_mode.value,
             database_ready=runtime.database_ready,
+            demo_mode=True,
         )
     )
 
@@ -231,7 +234,7 @@ def test_health_does_not_leak_database_location(tmp_path: Path):
 
 
 def test_health_backward_compatible_fields_present():
-    client = TestClient(create_app(build_container().service))
+    client = TestClient(create_app(build_container().service, demo_mode=True))
 
     data = client.get("/health").json()["data"]
 

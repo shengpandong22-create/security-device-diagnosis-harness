@@ -12,7 +12,8 @@ from security_diagnosis_harness.domain.review import HumanReviewAction
 
 @pytest.fixture
 def client():
-    app = create_app(build_service())
+    # 无认证 Demo 必须显式开启；正式入口见 scripts/run_api.py。
+    app = create_app(build_service(), demo_mode=True)
     with TestClient(app) as test_client:
         yield test_client
 

@@ -168,6 +168,8 @@ def test_build_app_closes_runtime_when_create_app_fails(monkeypatch, tmp_path: P
         )(),
     )
     monkeypatch.setattr(module, "build_runtime_container", lambda settings: _FakeRuntime())
+    # 显式 Demo：正式入口要求双凭证，这里只验证资源释放路径。
+    monkeypatch.setattr(module, "resolve_api_security", lambda: ("127.0.0.1", None))
 
     def _explode(*args, **kwargs):
         raise RuntimeError("create_app failed")
@@ -210,6 +212,7 @@ def test_build_app_does_not_close_on_success(monkeypatch):
         )(),
     )
     monkeypatch.setattr(module, "build_runtime_container", lambda settings: _FakeRuntime())
+    monkeypatch.setattr(module, "resolve_api_security", lambda: ("127.0.0.1", None))
     monkeypatch.setattr(module, "create_app", lambda *a, **k: object())
 
     app, runtime = module.build_app()

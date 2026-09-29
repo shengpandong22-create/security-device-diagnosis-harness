@@ -1,8 +1,16 @@
 """FastAPI 应用工厂。
 
-注意：模块级 `app = create_app()` 保持**内存装配**，导入本模块不产生任何
-副作用（不建目录、不建数据库、不跑迁移）。正式本地 SQLite 运行入口是
-`scripts/run_api.py`。
+入口区分（Phase 11+ 修正）：
+
+- **正式入口**（`scripts/run_api.py`）：即使只监听 localhost，也必须启用
+  operator/reviewer 双凭证；actor 只能来自认证 principal，请求正文自报的
+  reporter/reviewer 一律被忽略；
+- **显式 Demo 入口**：必须显式传 `demo_mode=True`（或运行脚本里的显式开关）才能
+  启用无认证模式；未开启 Demo 又没有认证器时，工厂直接拒绝构建，不再静默放行
+  正文自报身份。
+
+注意：模块级 `app = create_app(demo_mode=True)` 保持**内存装配**，导入本模块
+不产生任何副作用（不建目录、不建数据库、不跑迁移）。
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ from security_diagnosis_harness.application.errors import (
     RepositoryPersistenceError,
     UnsupportedFaultTypeError,
 )
+from security_diagnosis_harness.config import RuntimeConfigurationError
 from security_diagnosis_harness.domain.errors import (
     CitationPolicyViolation,
     DomainError,
@@ -110,6 +119,7 @@ def create_app(
     database_ready: bool = True,
     phase: str = "6B",
     authenticator: BearerAuthenticator | None = None,
+    demo_mode: bool = False,
 ) -> FastAPI:
     """创建 FastAPI 应用（纯工厂，无副作用）。
 
@@ -118,10 +128,18 @@ def create_app(
         repository_mode: 仅用于 health 展示，不参与装配。
         database_ready: 仅用于 health 展示；正式入口会传入运行时真实状态。
         phase: health 中展示的阶段标识。
+        authenticator: 正式入口的 operator/reviewer 双凭证认证器。
+        demo_mode: **显式**开启无认证 Demo；只有为 True 时才允许无认证运行。
 
-    说明：默认装配是**安全的内存/测试装配**；正式本地 SQLite 运行入口是
-    `scripts/run_api.py`。
+    Raises:
+        RuntimeConfigurationError: 既未提供认证器又未显式开启 Demo——正式入口
+            即使监听 localhost 也必须启用双凭证，绝不静默放行正文自报身份。
     """
+    if authenticator is None and not demo_mode:
+        raise RuntimeConfigurationError(
+            "正式 API 入口必须启用 operator/reviewer 双凭证；"
+            "无认证 Demo 必须显式开启 demo_mode=True"
+        )
     if service is None:
         from security_diagnosis_harness.bootstrap.container import build_service
 
@@ -136,6 +154,7 @@ def create_app(
     app.state.repository_mode = repository_mode
     app.state.database_ready = database_ready
     app.state.phase = phase
+    app.state.demo_mode = demo_mode
 
     @app.get("/health", response_model=ApiResponse[HealthData], tags=["ops"])
     def health() -> ApiResponse[HealthData]:
@@ -168,9 +187,12 @@ def create_app(
             content=_error_payload(_code_for(exc), str(exc)),
         )
 
-    app.include_router(create_diagnoses_router(service, authenticator))
+    app.include_router(
+        create_diagnoses_router(service, authenticator, demo_mode=demo_mode)
+    )
     return app
 
 
-# 模块级 app 保持内存装配：导入本模块不产生任何副作用。
-app = create_app()
+# 模块级 app 保持内存装配：显式 Demo（无认证），导入本模块不产生任何副作用。
+# 正式入口是 scripts/run_api.py，它始终传入双凭证认证器。
+app = create_app(demo_mode=True)

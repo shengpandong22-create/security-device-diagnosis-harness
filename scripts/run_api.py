@@ -18,11 +18,18 @@
     SECURITY_DIAGNOSIS_DB_ECHO=false
     SECURITY_DIAGNOSIS_AUTO_MIGRATE=true
 
-非回环监听（例如 0.0.0.0）必须额外配置：
+正式入口（`scripts/run_api.py`）**始终**要求分离的 operator/reviewer 双凭证，
+即使只监听回环地址：
 
-    SECURITY_DIAGNOSIS_API_HOST=0.0.0.0
     SECURITY_DIAGNOSIS_API_TOKEN=<由部署环境注入，不写入仓库>
     SECURITY_DIAGNOSIS_API_ACTOR=ops-api
+    SECURITY_DIAGNOSIS_API_REVIEWER_TOKEN=<由部署环境注入，不写入仓库>
+    SECURITY_DIAGNOSIS_API_REVIEWER_ACTOR=review-api
+
+确需**无认证 Demo**（仅限回环监听）时必须显式开启：
+
+    SECURITY_DIAGNOSIS_API_HOST=127.0.0.1
+    SECURITY_DIAGNOSIS_API_DEMO=true
 """
 
 from __future__ import annotations
@@ -50,35 +57,50 @@ API_TOKEN_ENV_VAR = "SECURITY_DIAGNOSIS_API_TOKEN"
 API_ACTOR_ENV_VAR = "SECURITY_DIAGNOSIS_API_ACTOR"
 API_REVIEWER_TOKEN_ENV_VAR = "SECURITY_DIAGNOSIS_API_REVIEWER_TOKEN"
 API_REVIEWER_ACTOR_ENV_VAR = "SECURITY_DIAGNOSIS_API_REVIEWER_ACTOR"
+#: 显式开启无认证 Demo；只有显式设置该开关时才允许无认证运行。
+API_DEMO_ENV_VAR = "SECURITY_DIAGNOSIS_API_DEMO"
+
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _is_loopback(host: str) -> bool:
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return host.lower() == "localhost"
 
 
 def resolve_api_security() -> tuple[str, BearerAuthenticator | None]:
-    """解析监听地址；非回环监听必须启用 Bearer 身份授权。"""
+    """解析监听地址与认证器。
+
+    - 正式入口（默认）：**始终**要求分离的 operator/reviewer 双凭证，即使只监听
+      回环地址；缺失即拒绝启动；
+    - 显式 Demo（``SECURITY_DIAGNOSIS_API_DEMO`` 为真值）：仅允许回环监听，且不得
+      同时配置凭证，返回 ``None`` 认证器。
+    """
     host = os.environ.get(API_HOST_ENV_VAR, DEFAULT_HOST).strip() or DEFAULT_HOST
     token = os.environ.get(API_TOKEN_ENV_VAR, "")
     actor = os.environ.get(API_ACTOR_ENV_VAR, "api-operator").strip()
     reviewer_token = os.environ.get(API_REVIEWER_TOKEN_ENV_VAR, "")
     reviewer_actor = os.environ.get(API_REVIEWER_ACTOR_ENV_VAR, "api-reviewer").strip()
-    try:
-        is_loopback = ip_address(host).is_loopback
-    except ValueError:
-        is_loopback = host.lower() == "localhost"
-    if not is_loopback and (not token or not reviewer_token):
+    demo = os.environ.get(API_DEMO_ENV_VAR, "").strip().lower() in _TRUE_VALUES
+    if demo:
+        if not _is_loopback(host):
+            raise RuntimeConfigurationError("无认证 Demo 只允许监听回环地址")
+        if token or reviewer_token:
+            raise RuntimeConfigurationError("Demo 模式不得同时配置 operator/reviewer 凭证")
+        return host, None
+    if not token or not reviewer_token:
         raise RuntimeConfigurationError(
-            "非回环 API 监听必须配置分离的 operator/reviewer 身份认证凭证"
+            "正式 API 入口必须同时配置分离的 operator/reviewer 身份认证凭证"
+            f"（即使只监听回环地址）；确需无认证 Demo 请显式设置 {API_DEMO_ENV_VAR}"
         )
-    if bool(token) != bool(reviewer_token):
-        raise RuntimeConfigurationError("operator/reviewer 凭证必须同时配置")
     try:
-        authenticator = (
-            BearerAuthenticator.for_separated_duties(
-                operator_token=token,
-                operator_actor=actor,
-                reviewer_token=reviewer_token,
-                reviewer_actor=reviewer_actor,
-            )
-            if token
-            else None
+        authenticator = BearerAuthenticator.for_separated_duties(
+            operator_token=token,
+            operator_actor=actor,
+            reviewer_token=reviewer_token,
+            reviewer_actor=reviewer_actor,
         )
     except ValueError as error:
         raise RuntimeConfigurationError(str(error)) from error
@@ -99,7 +121,9 @@ def build_app():
             runtime.service,
             repository_mode=settings.repository_mode.value,
             database_ready=runtime.database_ready,
+            # 只有 agent 显式选择 Demo（authenticator is None）时才进入无认证模式。
             authenticator=authenticator,
+            demo_mode=authenticator is None,
         )
     except Exception:
         runtime.close()

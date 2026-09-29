@@ -5,7 +5,7 @@ API 层不直接写领域状态，全部委托给 `SecurityDiagnosisApplicationS
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
 from security_diagnosis_harness.api.auth import ApiPrincipal, BearerAuthenticator
 from security_diagnosis_harness.api.schemas import (
@@ -26,27 +26,52 @@ ROUTER_PREFIX = "/api/v1/diagnoses"
 def create_diagnoses_router(
     service: SecurityDiagnosisApplicationService,
     authenticator: BearerAuthenticator | None = None,
+    *,
+    demo_mode: bool = False,
 ) -> APIRouter:
-    """创建诊断相关路由。"""
+    """创建诊断相关路由。
+
+    职责分离（正式模式）：
+
+    - 操作（创建 / 运行 / 读取）只接受 ``operator`` 角色，且拒绝同时带
+      ``reviewer`` 角色的 principal；
+    - 审核只接受 ``reviewer`` 角色，且拒绝同时带 ``operator`` 角色的 principal；
+    - actor 只能来自认证 principal，正文自报的 reporter/reviewer 一律忽略；
+    - 同一 actor 不能审核自己创建（上报）的诊断。
+
+    ``demo_mode=True`` 时才回到"无认证 + 正文自报身份"的显式演示语义。
+    """
     router = APIRouter(prefix=ROUTER_PREFIX, tags=["diagnoses"])
 
     def authorize(
-        role: str,
+        required_role: str,
+        forbidden_role: str,
         authorization: str | None,
     ) -> ApiPrincipal | None:
         if authenticator is None:
             return None
-        return authenticator.authorize(authorization, role)
+        principal = authenticator.authorize(authorization, required_role)
+        if forbidden_role in principal.roles:
+            raise HTTPException(status_code=403, detail="permission_denied")
+        return principal
 
     def require_operator(
         authorization: str | None = Header(default=None),
     ) -> ApiPrincipal | None:
-        return authorize("operator", authorization)
+        return authorize("operator", "reviewer", authorization)
 
     def require_reviewer(
         authorization: str | None = Header(default=None),
     ) -> ApiPrincipal | None:
-        return authorize("reviewer", authorization)
+        return authorize("reviewer", "operator", authorization)
+
+    def actor_for(principal: ApiPrincipal | None, declared: str) -> str:
+        """确定 actor：正式 API 只认认证 principal；正文自报值仅 Demo 生效。"""
+        if demo_mode:
+            return declared
+        if principal is None:  # 防御性：非 Demo 模式下依赖注入必已认证。
+            raise HTTPException(status_code=401, detail="authentication_required")
+        return principal.actor
 
     operator_dependency = Depends(require_operator)
     reviewer_dependency = Depends(require_reviewer)
@@ -59,7 +84,7 @@ def create_diagnoses_router(
         case = service.create_diagnosis(
             device_id=payload.device_id,
             fault_type=payload.fault_type,
-            reporter=principal.actor if principal is not None else payload.reporter,
+            reporter=actor_for(principal, payload.reporter),
             description=payload.description,
         )
         return ApiResponse(data=to_diagnosis_data(case))
@@ -127,10 +152,15 @@ def create_diagnoses_router(
         payload: ReviewRequest,
         principal: ApiPrincipal | None = reviewer_dependency,
     ) -> ApiResponse[object]:
+        reviewer = actor_for(principal, payload.reviewer)
+        # 同一 actor 不能自审：先取诊断（不存在时按 404 处理），再比对上报人。
+        case = service.get_diagnosis(diagnosis_id)
+        if case.reporter == reviewer:
+            raise HTTPException(status_code=403, detail="self_review_not_allowed")
         result = service.review_diagnosis(
             diagnosis_id=diagnosis_id,
             action=payload.action,
-            reviewer=principal.actor if principal is not None else payload.reviewer,
+            reviewer=reviewer,
             comment=payload.comment,
         )
         data = ReviewData(

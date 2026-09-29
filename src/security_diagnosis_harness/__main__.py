@@ -8,7 +8,8 @@ from security_diagnosis_harness.api.app import create_app
 
 
 def main() -> None:
-    uvicorn.run(create_app(), host="127.0.0.1", port=8000)
+    # __main__ 是显式的本地无认证 Demo 入口；正式入口请用 scripts/run_api.py。
+    uvicorn.run(create_app(demo_mode=True), host="127.0.0.1", port=8000)
 
 
 if __name__ == "__main__":
