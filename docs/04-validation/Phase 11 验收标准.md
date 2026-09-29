@@ -49,3 +49,33 @@ ONVIF 配置与状态文件残留数为 0，Device Lab 容器残留数为 0。
 知识治理与 Runtime 封装修复不要求重复 Phase 11D 真机验收。最终回归只运行离线测试、Simulator
 与不访问 BGE/LLM/外部网络的固定脚本；已接入的真实摄像头不得因软件回归被隐式访问。原 1810
 passed 保留为封版时点证据，新提交以新的全量回归记录为准。
+
+## 6. 2026-09-29 安全与自洽性修复验收
+
+本节新增验收项，不修改第 1～5 节的历史结论。修复范围与决策见
+[ADR-002](../01-architecture/ADR-002安全边界强化.md)，逐项反例与证据见
+[2026-09-19 审计报告第 6 节](../05-audits/2026-09-19知识治理与Runtime封装逆向审计.md)
+与[交接报告](../05-audits/2026-09-29安全与自洽性修复交接报告.md)。
+
+- [x] 公开调用方无法通过 Runtime 公开入口 `rotate()` 替换授权清单或重置预算
+- [x] 容器关闭后，关闭前取得的授权快照视图仍不能旁路（无 rotate/authorize/close）
+- [x] Runner 返回 timeout 后底层模型/工具操作停止：副作用计数不再变化、无 Evidence、无重试、无遗留 worker
+- [x] 评测历史存在可持久化可信 Head（跨进程重启可加载）
+- [x] 历史回滚 / 截尾 / Head 缺失 / Head 篡改均被拒绝；完整性密钥不落盘
+- [x] 两个实例并发 append 不丢失更新，两条记录都存在且 baseline 血缘合法
+- [x] 发布中断（head 已推进 / 未推进）均可收敛到一致状态
+- [x] 真实模型响应 usage 缺失或非法时 fail closed，不退化为 0 token / 0 cost
+- [x] 真实模型响应有字节与正文上限，且仍保持每案例一次请求、无重试
+- [x] 受控错误不含响应正文、API key 或 endpoint
+- [x] BGE Adapter 有 host/scheme/port allowlist，禁止 userinfo/query/fragment
+- [x] BGE Adapter 有输入与响应边界，并拒绝 NaN/Infinity/字符串/布尔/非法 index
+- [x] BGE Adapter 有稳定错误与 close/上下文管理器，且未接入正式 Runtime
+- [x] 正式 API 入口即使监听 localhost 也要求 operator/reviewer 双凭证
+- [x] 正式 API 的 actor 只能来自认证 principal
+- [x] operator 不能 review、reviewer 不能创建/运行、同一 actor 不能自审
+- [x] 无认证 Demo 必须显式开启
+
+验证口径：全量 `uv run pytest` 1897 passed；`uv run ruff check .` 通过；
+`git diff --check 5d6c1ae..HEAD` 通过；离线 Phase 回归（Phase 0 demo、授权 dry-run、
+Phase 8C 历史趋势、Phase 6 一致性、import 副作用探针）退出码均为 0。
+本轮未运行真实模型、真实 BGE、真机探针与联网 Bootstrap。
