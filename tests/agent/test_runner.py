@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import threading
 from collections.abc import Mapping
 from time import monotonic, sleep
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 from security_diagnosis_harness.adapters.llm.fake import FakeLLM
 from security_diagnosis_harness.agent.runner import (
@@ -16,6 +18,7 @@ from security_diagnosis_harness.agent.runner import (
     ToolLoopBudget,
     ToolLoopRunner,
     current_cancellation,
+    supports_cooperative_cancellation,
 )
 from security_diagnosis_harness.domain.enums import SecurityDiagnosisStatus, SecurityFaultType
 from security_diagnosis_harness.domain.evidence import EvidenceType
@@ -25,7 +28,11 @@ from security_diagnosis_harness.ports.llm import (
     LLMResponse,
     ToolCall,
 )
-from security_diagnosis_harness.tools.contracts import ToolExecutionContext, ToolExecutionResult
+from security_diagnosis_harness.tools.contracts import (
+    BaseTool,
+    ToolExecutionContext,
+    ToolExecutionResult,
+)
 from security_diagnosis_harness.tools.registry import ToolRegistry
 
 from ..conftest import DEVICE_ID, make_case, make_tool_context
@@ -230,7 +237,9 @@ def test_runner_does_not_mutate_case(tool_registry, context):
     assert case.updated_at == before_updated_at
 
 
-def test_wall_clock_budget_stops_a_slow_model(tool_registry, context):
+def test_deadline_is_still_enforced_for_a_non_cooperative_model(tool_registry, context):
+    """非严格模式：deadline 仍然有界生效，但必须如实上报"取消未确认"。"""
+
     class SlowLLM:
         def complete(self, request):
             sleep(0.3)
@@ -240,6 +249,7 @@ def test_wall_clock_budget_stops_a_slow_model(tool_registry, context):
         SlowLLM(),
         tool_registry,
         ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.03),
+        require_cancellation_aware=False,
     )
 
     started = monotonic()
@@ -250,9 +260,12 @@ def test_wall_clock_budget_stops_a_slow_model(tool_registry, context):
     assert "timeout_seconds=0.03" in (result.error or "")
     assert elapsed < 0.2
     assert result.rounds == 1
+    # 未声明参与者只能被"放弃等待"，因此绝不能声称取消已确认。
+    assert result.cancellation_confirmed is False
+    assert "取消未确认" in (result.error or "")
 
 
-def test_wall_clock_budget_stops_a_slow_read_only_tool(
+def test_deadline_is_still_enforced_for_a_non_cooperative_tool(
     tool_registry, context, monkeypatch
 ):
     def slow_execute(*args, **kwargs):
@@ -264,6 +277,7 @@ def test_wall_clock_budget_stops_a_slow_read_only_tool(
         FakeLLM([_tool_call_response()]),
         tool_registry,
         ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.03),
+        require_cancellation_aware=False,
     )
 
     started = monotonic()
@@ -274,6 +288,7 @@ def test_wall_clock_budget_stops_a_slow_read_only_tool(
     assert monotonic() - started < 0.2
     assert result.tool_calls == 1
     assert result.tool_results == []
+    assert result.cancellation_confirmed is False
 
 
 @pytest.mark.parametrize(
@@ -291,6 +306,8 @@ def test_invalid_budget_is_rejected(changes):
 
 def test_raw_model_exception_is_converted_without_leaking_detail(tool_registry, context):
     class BrokenLLM:
+        cancellation_aware = True
+
         def complete(self, request):
             raise RuntimeError("provider password=plain-secret-detail")
 
@@ -393,6 +410,8 @@ def test_timeout_cooperatively_cancels_the_model_operation(tool_registry, contex
     started_calls: list[int] = []
 
     class CooperativeSlowLLM:
+        cancellation_aware = True
+
         def complete(self, request):
             started_calls.append(1)
             token = current_cancellation()
@@ -417,7 +436,9 @@ def test_timeout_cooperatively_cancels_the_model_operation(tool_registry, contex
     assert result.final_conclusion is None
     assert result.tool_results == []
     assert result.evidence_drafts == []
-    # 操作确实观察到取消并主动退出，且只被调用一次（无重试）。
+    # 操作确实观察到取消并主动退出：取消已被确认。
+    assert result.cancellation_confirmed is True
+    # 且只被调用一次（无重试）。
     assert observed_cancel == [True]
     assert started_calls == [1]
     # 返回后副作用计数不再变化。
@@ -457,6 +478,7 @@ def test_timeout_cooperatively_cancels_the_tool_operation(
 
     assert result.ok is False
     assert "timeout_seconds=0.05" in (result.error or "")
+    assert result.cancellation_confirmed is True
     assert result.tool_calls == 1
     assert result.tool_results == []
     assert result.evidence_drafts == []
@@ -470,3 +492,204 @@ def test_timeout_cooperatively_cancels_the_tool_operation(
 
 def test_cancellation_token_is_absent_outside_a_runner_worker():
     assert current_cancellation() is None
+
+
+# ------------------------------------------------- 执行边界：未声明参与者被拒绝执行
+class _NoArgs(BaseModel):
+    pass
+
+
+class NonCooperativeLLM:
+    """未声明协作取消、且会阻塞并产生迟到副作用的模型客户端。"""
+
+    def __init__(self, side_effects: list[int]) -> None:
+        self._side_effects = side_effects
+        self.started = 0
+
+    def complete(self, request):
+        self.started += 1
+        sleep(0.15)
+        self._side_effects.append(1)
+        return _final_response()
+
+
+class UnannouncedTool(BaseTool):
+    """显式放弃协作取消声明的工具：在严格模式下必须被拒绝执行。"""
+
+    name = "probe__unannounced"
+    description = "测试用：不声明协作取消的工具"
+    cancellation_aware = False
+    input_model = _NoArgs
+
+    def __init__(self, side_effects: list[int]) -> None:
+        self._side_effects = side_effects
+        self.started = 0
+
+    def _execute(self, arguments, context):
+        self.started += 1
+        self._side_effects.append(1)
+        return ToolExecutionResult(tool_name=self.name, observation="side effect done")
+
+
+def _no_new_threads_or_processes(before_threads: set[int], before_children: list) -> None:
+    assert _live_workers() <= before_threads
+    assert set(multiprocessing.active_children()) <= set(before_children)
+
+
+def test_strict_mode_refuses_non_cooperative_model_before_it_runs(tool_registry, context):
+    """未声明的模型客户端在严格模式下根本不会被调用。"""
+    side_effects: list[int] = []
+    llm = NonCooperativeLLM(side_effects)
+    before_threads = _live_workers()
+    before_children = multiprocessing.active_children()
+    runner = ToolLoopRunner(
+        llm,
+        tool_registry,
+        ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.05),
+    )
+
+    started = monotonic()
+    result = runner.run(make_case(), context)
+    elapsed = monotonic() - started
+
+    assert result.ok is False
+    assert "未声明支持协作取消" in (result.error or "")
+    assert result.cancellation_confirmed is False
+    assert result.final_conclusion is None
+    assert result.tool_results == []
+    assert result.evidence_drafts == []
+    assert llm.started == 0
+    # 拒绝发生在调用之前，因此不依赖 deadline，也没有等待宽限期。
+    assert elapsed < 0.05
+    _no_new_threads_or_processes(before_threads, before_children)
+    # Runner 返回后等待足够长时间：也不会出现迟到的副作用。
+    sleep(0.2)
+    assert side_effects == []
+    assert llm.started == 0  # 无重试
+
+
+def test_strict_mode_refuses_non_cooperative_tool_before_it_runs(context):
+    """未声明的工具在严格模式下根本不会被调用。"""
+    side_effects: list[int] = []
+    tool = UnannouncedTool(side_effects)
+    registry = ToolRegistry()
+    registry.register(tool)
+    llm = FakeLLM(
+        [
+            LLMResponse(
+                tool_calls=[ToolCall(call_id="c1", tool_name=UnannouncedTool.name)],
+                finish_reason=FinishReason.TOOL_CALLS,
+            ),
+            _final_response(),
+        ]
+    )
+    before_threads = _live_workers()
+    before_children = multiprocessing.active_children()
+    runner = ToolLoopRunner(
+        llm,
+        registry,
+        ToolLoopBudget(max_rounds=2, max_tool_calls=2, timeout_seconds=0.05),
+    )
+
+    result = runner.run(make_case(), context, tool_allowlist=[UnannouncedTool.name])
+
+    assert result.ok is False
+    assert "未声明支持协作取消" in (result.error or "")
+    assert result.tool_results == []
+    assert result.evidence_drafts == []
+    assert tool.started == 0
+    assert llm.call_count == 0  # 连模型都没被调用
+    _no_new_threads_or_processes(before_threads, before_children)
+    sleep(0.2)
+    assert side_effects == []
+    assert tool.started == 0
+
+
+def test_declared_but_violating_model_reports_unconfirmed_cancellation(
+    tool_registry, context
+):
+    """已声明却违反契约的参与者：残余风险必须被显式上报，不能伪装成干净超时。"""
+
+    class LyingLLM:
+        cancellation_aware = True
+
+        def complete(self, request):
+            sleep(0.3)
+            return _final_response()
+
+    runner = ToolLoopRunner(
+        LyingLLM(),
+        tool_registry,
+        ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.05),
+    )
+
+    result = runner.run(make_case(), context)
+
+    assert result.ok is False
+    assert "timeout_seconds=0.05" in (result.error or "")
+    assert "取消未确认" in (result.error or "")
+    assert result.cancellation_confirmed is False
+    assert result.evidence_drafts == []
+    assert result.final_conclusion is None
+
+
+def test_cancellation_confirmed_is_true_on_normal_and_error_paths(tool_registry, context):
+    """正常返回与原始异常路径都必须是"取消已确认"。"""
+    ok_result = ToolLoopRunner(FakeLLM([_final_response()]), tool_registry).run(
+        make_case(), context
+    )
+    assert ok_result.cancellation_confirmed is True
+
+    class BrokenLLM:
+        cancellation_aware = True
+
+        def complete(self, request):
+            raise RuntimeError("boom")
+
+    broken = ToolLoopRunner(BrokenLLM(), tool_registry).run(make_case(), context)
+    assert broken.ok is False
+    assert broken.error == "模型调用失败"
+    assert broken.cancellation_confirmed is True
+
+
+def test_cooperative_cancellation_is_declared_by_base_tool():
+    assert supports_cooperative_cancellation(UnannouncedTool([])) is False
+
+    class DeclaredTool(BaseTool):
+        name = "probe__declared"
+        description = "测试用：继承基类声明"
+        input_model = _NoArgs
+
+        def _execute(self, arguments, context):  # pragma: no cover - 不执行
+            return ToolExecutionResult(tool_name=self.name, ok=False)
+
+    assert supports_cooperative_cancellation(DeclaredTool()) is True
+
+
+def test_formal_participants_all_declare_cooperative_cancellation():
+    """证明正式装配的 LLM 与全部工具都遵守协作取消契约。"""
+    from security_diagnosis_harness.bootstrap.container import (
+        build_access_registry,
+        build_alarm_registry,
+        build_recording_registry,
+        build_registry,
+    )
+
+    assert supports_cooperative_cancellation(FakeLLM()) is True
+    for builder in (
+        build_registry,
+        build_recording_registry,
+        build_access_registry,
+        build_alarm_registry,
+    ):
+        registry = builder()
+        assert registry.names(), builder.__name__
+        for name in registry.names():
+            assert supports_cooperative_cancellation(registry.get(name)), (
+                f"{builder.__name__}::{name}"
+            )
+
+
+def test_strict_mode_is_the_default():
+    runner = ToolLoopRunner(FakeLLM([_final_response()]), ToolRegistry())
+    assert runner.require_cancellation_aware is True

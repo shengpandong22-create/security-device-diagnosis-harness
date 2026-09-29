@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from security_diagnosis_harness.ports.cancellation import raise_if_cancelled
 from security_diagnosis_harness.ports.llm import (
     FinishReason,
     LLMRequest,
@@ -25,7 +26,13 @@ class FakeLLM:
     - 脚本模式：传入 `responder`，根据请求内容生成响应，可重复运行，用于 demo/API 闭环。
 
     两种模式都不访问网络，也不需要任何 API Key。
+
+    协作取消契约：回放是即时的、无阻塞的，并在进入时检查取消令牌，因此显式声明
+    ``cancellation_aware = True``。
     """
+
+    #: 显式声明遵守协作取消契约（见 ports.cancellation）。
+    cancellation_aware = True
 
     def __init__(
         self,
@@ -43,6 +50,7 @@ class FakeLLM:
 
     def complete(self, request: LLMRequest) -> LLMResponse:
         """回放下一条预设响应，并记录本次请求。"""
+        raise_if_cancelled()
         self.requests.append(request)
         if self._responder is not None:
             return self._responder(request)

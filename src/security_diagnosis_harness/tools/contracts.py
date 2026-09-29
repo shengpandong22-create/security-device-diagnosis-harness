@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from security_diagnosis_harness.domain.enums import SecurityFaultType
 from security_diagnosis_harness.domain.evidence import EvidenceSource, EvidenceType, Reliability
 from security_diagnosis_harness.domain.redaction import redact_mapping, redact_text
+from security_diagnosis_harness.ports.cancellation import raise_if_cancelled
 from security_diagnosis_harness.ports.device_gateway import DeviceGateway
 
 
@@ -116,6 +117,11 @@ class BaseTool(ABC):
     """只读工具基类。
 
     子类只需要声明元信息、参数模型，并实现 `_execute`。
+
+    协作取消契约：正式工具都是受控的短时只读调用，并在进入执行前检查取消令牌
+    （见 :func:`security_diagnosis_harness.ports.cancellation.raise_if_cancelled`）。
+    因此基类显式声明 ``cancellation_aware = True``；子类只有在确实无法遵守时才应
+    覆写为 ``False``，那样严格模式的 Runner 会拒绝执行它。
     """
 
     name: ClassVar[str]
@@ -125,6 +131,8 @@ class BaseTool(ABC):
     # None 表示支持所有故障类型。
     supported_fault_types: ClassVar[frozenset[SecurityFaultType] | None] = None
     input_model: ClassVar[type[BaseModel]]
+    #: 显式声明遵守协作取消契约（见 ports.cancellation）。
+    cancellation_aware: ClassVar[bool] = True
 
     def parse_arguments(self, arguments: Mapping[str, Any]) -> BaseModel:
         """校验并解析参数。
@@ -147,6 +155,8 @@ class BaseTool(ABC):
         """执行工具，只能由 Registry 调用。"""
         if not context.invoked_by_registry:
             raise ToolBypassError(f"工具 {self.name} 必须通过 ToolRegistry 调用")
+        # 协作取消检查点：不在 Runner worker 内时是空操作，不改变既有语义。
+        raise_if_cancelled()
         payload = self.parse_arguments(arguments)
         return self._execute(payload, context)
 
