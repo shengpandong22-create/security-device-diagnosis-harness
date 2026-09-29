@@ -24,11 +24,36 @@ class RealModelConfigurationError(ValueError):
 
 
 class ModelEvaluationError(RuntimeError):
-    """一次真实模型调用受控失败，不携带响应正文或密钥。"""
+    """一次真实模型调用受控失败，不携带响应正文、密钥或 endpoint。"""
 
     def __init__(self, error_type: str):
         self.error_type = error_type
         super().__init__(f"真实模型评测失败: {error_type}")
+
+
+#: usage 中必须存在的 token 统计字段。
+_USAGE_TOKEN_FIELDS = ("prompt_tokens", "completion_tokens")
+
+
+def _require_usage_tokens(usage: Any) -> tuple[int, int]:
+    """强校验 usage：缺失或非法一律 fail closed，绝不退化为 0 token / 0 cost。
+
+    只有 ``usage`` 是映射、两个 token 字段都存在且都是**非负整数**（不接受 bool、
+    浮点、字符串）时才返回 ``(prompt_tokens, completion_tokens)``。
+    """
+    if not isinstance(usage, Mapping):
+        raise ModelEvaluationError("missing_usage")
+    if any(field not in usage for field in _USAGE_TOKEN_FIELDS):
+        raise ModelEvaluationError("missing_usage")
+    prompt_tokens = _require_token_count(usage["prompt_tokens"])
+    completion_tokens = _require_token_count(usage["completion_tokens"])
+    return prompt_tokens, completion_tokens
+
+
+def _require_token_count(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ModelEvaluationError("invalid_usage")
+    return value
 
 
 @dataclass(frozen=True)
@@ -40,6 +65,10 @@ class RealModelSettings:
     max_cases: int = 4
     input_cost_per_million: float = 0.0
     output_cost_per_million: float = 0.0
+    #: 单次 HTTP 响应体的字节上限；超过即 fail closed，不解析也不截断。
+    max_response_bytes: int = 1_048_576
+    #: 模型回复正文（JSON 字符串）的字符上限；超过即 fail closed。
+    max_content_chars: int = 100_000
 
     def __post_init__(self) -> None:
         parsed = urlparse(self.base_url)
@@ -59,6 +88,14 @@ class RealModelSettings:
             raise RealModelConfigurationError("timeout_seconds 必须在 1 到 300 秒之间")
         if self.input_cost_per_million < 0 or self.output_cost_per_million < 0:
             raise RealModelConfigurationError("token 单价不能为负数")
+        if not 1 <= self.max_response_bytes <= 64 * 1_048_576:
+            raise RealModelConfigurationError(
+                "max_response_bytes 必须在 1 字节到 64 MiB 之间"
+            )
+        if not 1 <= self.max_content_chars <= 4_000_000:
+            raise RealModelConfigurationError(
+                "max_content_chars 必须在 1 到 4000000 之间"
+            )
 
     @classmethod
     def from_env(cls) -> RealModelSettings:
@@ -75,6 +112,12 @@ class RealModelSettings:
                 ),
                 output_cost_per_million=float(
                     os.getenv("SECURITY_DIAGNOSIS_EVAL_OUTPUT_COST_PER_MILLION", "0")
+                ),
+                max_response_bytes=int(
+                    os.getenv("SECURITY_DIAGNOSIS_EVAL_MAX_RESPONSE_BYTES", "1048576")
+                ),
+                max_content_chars=int(
+                    os.getenv("SECURITY_DIAGNOSIS_EVAL_MAX_CONTENT_CHARS", "100000")
                 ),
             )
         except (KeyError, ValueError) as exc:
@@ -146,6 +189,10 @@ class OpenAICompatibleEvaluationClient:
                 },
             )
             response.raise_for_status()
+            # 边界先于解析：超大响应体直接 fail closed，不进 JSON 解析，
+            # 也不做任何截断。
+            if len(response.content) > self._settings.max_response_bytes:
+                raise ModelEvaluationError("response_too_large")
             body = response.json()
             choice = body["choices"][0]
             if choice.get("finish_reason") == "length":
@@ -153,28 +200,33 @@ class OpenAICompatibleEvaluationClient:
             raw_content = choice["message"]["content"]
             if not isinstance(raw_content, str) or not raw_content.strip():
                 raise ModelEvaluationError("empty_content")
+            if len(raw_content) > self._settings.max_content_chars:
+                raise ModelEvaluationError("content_too_large")
             try:
                 content = json.loads(raw_content)
-            except (TypeError, ValueError) as exc:
-                raise ModelEvaluationError("invalid_json") from exc
-            usage = body.get("usage", {})
+            except (TypeError, ValueError):
+                # 不链式保留原始异常：JSONDecodeError 会携带完整 doc。
+                raise ModelEvaluationError("invalid_json") from None
+            prompt_tokens, completion_tokens = _require_usage_tokens(body.get("usage"))
             return EvaluationModelResponse(
                 model_version=str(body.get("model") or self._settings.model_name),
                 candidate_label=content["candidate_label"],
                 explanation=content["explanation"],
                 selected_tools=tuple(content.get("selected_tools", ())),
                 cited_evidence_types=tuple(content.get("cited_evidence_types", ())),
-                prompt_tokens=int(usage.get("prompt_tokens", 0)),
-                completion_tokens=int(usage.get("completion_tokens", 0)),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
             )
-        except httpx.TimeoutException as exc:
-            raise ModelEvaluationError("timeout") from exc
+        except httpx.TimeoutException:
+            # 不链式保留原始异常：httpx 异常文本包含请求 endpoint。
+            raise ModelEvaluationError("timeout") from None
         except httpx.HTTPStatusError as exc:
-            raise ModelEvaluationError(f"http_{exc.response.status_code}") from exc
+            raise ModelEvaluationError(f"http_{exc.response.status_code}") from None
         except ModelEvaluationError:
             raise
-        except (httpx.HTTPError, IndexError, KeyError, TypeError, ValueError) as exc:
-            raise ModelEvaluationError("invalid_response") from exc
+        except (httpx.HTTPError, IndexError, KeyError, TypeError, ValueError):
+            # 同样不链式保留：原始异常可能携带响应正文或请求 URL。
+            raise ModelEvaluationError("invalid_response") from None
 
     def close(self) -> None:
         if self._owns_client:

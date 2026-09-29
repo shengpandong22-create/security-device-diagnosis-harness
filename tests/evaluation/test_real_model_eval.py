@@ -465,6 +465,157 @@ def test_provider_output_failures_have_precise_safe_error_types(choice, error_ty
     assert excinfo.value.error_type == error_type
 
 
+_VALID_CONTENT = json.dumps({"candidate_label": "label", "explanation": "reason"})
+
+
+def _usage_client(body: dict, **settings_changes) -> OpenAICompatibleEvaluationClient:
+    http = httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=body)),
+        base_url="https://model.test",
+    )
+    return OpenAICompatibleEvaluationClient(_settings(**settings_changes), http)
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        None,
+        {},
+        {"prompt_tokens": 12},
+        {"completion_tokens": 4},
+        {"prompt_tokens": "12", "completion_tokens": 4},
+        {"prompt_tokens": 12.0, "completion_tokens": 4},
+        {"prompt_tokens": -1, "completion_tokens": 4},
+        {"prompt_tokens": True, "completion_tokens": 4},
+    ],
+)
+def test_missing_or_invalid_usage_fails_closed(usage):
+    """usage 缺失或非法必须 fail closed，不得退化成 0 token / 0 cost。"""
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        body: dict = {"choices": [{"message": {"content": _VALID_CONTENT}}]}
+        if usage is not None:
+            body["usage"] = usage
+        return httpx.Response(200, json=body)
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://model.test"
+    )
+    client = OpenAICompatibleEvaluationClient(_settings(), http)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=100)
+
+    assert excinfo.value.error_type in {"missing_usage", "invalid_usage"}
+    # 每案例仍然只发一次请求，无重试。
+    assert calls == 1
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"max_response_bytes": 0},
+        {"max_response_bytes": 64 * 1_048_576 + 1},
+        {"max_content_chars": 0},
+        {"max_content_chars": 4_000_001},
+    ],
+)
+def test_invalid_response_size_limits_are_rejected(changes):
+    with pytest.raises(RealModelConfigurationError, match="max_"):
+        _settings(**changes)
+
+
+def test_oversized_response_body_fails_closed_without_parsing():
+    secret = "provider-secret-body-content"
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, text=("x" * 5_000) + secret)
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://model.test"
+    )
+    client = OpenAICompatibleEvaluationClient(_settings(max_response_bytes=1_000), http)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=100)
+
+    assert excinfo.value.error_type == "response_too_large"
+    assert calls == 1
+    # 错误不得包含响应正文或 endpoint。
+    assert secret not in str(excinfo.value)
+    assert "model.test" not in str(excinfo.value)
+
+
+def test_oversized_content_fails_closed():
+    body = {
+        "choices": [{"message": {"content": "a" * 5_000}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    client = _usage_client(body, max_content_chars=1_000)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=100)
+
+    assert excinfo.value.error_type == "content_too_large"
+
+
+def test_error_chain_never_carries_httpx_exception_or_endpoint():
+    """受控错误不得把 httpx 异常（含 URL / 正文）挂在因果链上。"""
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, text="secret provider response")
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://model.test"
+    )
+    client = OpenAICompatibleEvaluationClient(_settings(), http)
+
+    with pytest.raises(ModelEvaluationError) as excinfo:
+        client.evaluate({"facts": {}}, max_completion_tokens=100)
+
+    assert calls == 1
+    assert excinfo.value.error_type == "http_429"
+    assert excinfo.value.__cause__ is None
+    assert excinfo.value.__suppress_context__ is True
+    assert "secret provider response" not in str(excinfo.value)
+    assert "model.test" not in str(excinfo.value)
+
+
+def test_valid_usage_is_required_and_forwarded(validation_cases):
+    """合法 usage 仍被正常解析；同时确认每案例只有一次请求。"""
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "model": "server-model",
+                "choices": [{"message": {"content": _VALID_CONTENT}}],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+            },
+        )
+
+    http = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://model.test"
+    )
+    client = OpenAICompatibleEvaluationClient(_settings(), http)
+    response = client.evaluate({"facts": {}}, max_completion_tokens=50)
+
+    assert len(requests) == 1
+    assert response.prompt_tokens == 7
+    assert response.completion_tokens == 3
+
+
 def test_report_files_are_separate_and_contain_no_input_facts(validation_cases, tmp_path):
     report = RealModelEvaluationRunner(RecordingClient(), _settings()).run(validation_cases)
     json_path, markdown_path = write_real_model_report(report, tmp_path)
