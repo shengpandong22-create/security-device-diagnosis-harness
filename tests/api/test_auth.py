@@ -249,3 +249,106 @@ def test_unauthenticated_app_requires_explicit_demo_mode():
             },
         )
         assert created.json()["data"]["reporter"] == "demo-reporter"
+
+
+# ------------------------------------------------- 3 认证模式与 Demo 模式互斥
+def _separated_duties_authenticator() -> BearerAuthenticator:
+    return BearerAuthenticator.for_separated_duties(
+        operator_token="operator-token",
+        operator_actor="operator-a",
+        reviewer_token="reviewer-token",
+        reviewer_actor="reviewer-b",
+    )
+
+
+def test_create_app_rejects_authentication_combined_with_demo_mode():
+    """公共工厂不变量：认证模式与 Demo 模式不得同时开启。"""
+    from security_diagnosis_harness.config import RuntimeConfigurationError
+
+    authenticator = _separated_duties_authenticator()
+
+    with pytest.raises(RuntimeConfigurationError, match="互斥") as excinfo:
+        create_app(build_service(), authenticator=authenticator, demo_mode=True)
+
+    # 异常文本不得包含任何 token。
+    text = str(excinfo.value)
+    assert "operator-token" not in text
+    assert "reviewer-token" not in text
+
+
+def test_create_app_rejects_neither_authentication_nor_demo_mode():
+    from security_diagnosis_harness.config import RuntimeConfigurationError
+
+    with pytest.raises(RuntimeConfigurationError, match="双凭证"):
+        create_app(build_service(), authenticator=None, demo_mode=False)
+
+
+def test_create_app_accepts_each_mode_exactly_once():
+    authenticator = _separated_duties_authenticator()
+
+    formal = create_app(build_service(), authenticator=authenticator, demo_mode=False)
+    assert formal.state.demo_mode is False
+
+    demo = create_app(build_service(), authenticator=None, demo_mode=True)
+    assert demo.state.demo_mode is True
+
+
+@pytest.mark.parametrize(
+    ("authenticator", "demo_mode"),
+    [(True, True), (False, False)],
+)
+def test_diagnoses_router_itself_rejects_contradictory_modes(authenticator, demo_mode):
+    """绕过 create_app 直接构造路由也必须被拒绝。"""
+    from security_diagnosis_harness.api.routes.diagnoses import create_diagnoses_router
+    from security_diagnosis_harness.config import RuntimeConfigurationError
+
+    selected = _separated_duties_authenticator() if authenticator else None
+
+    with pytest.raises(RuntimeConfigurationError):
+        create_diagnoses_router(
+            build_service(), selected, demo_mode=demo_mode
+        )
+
+
+def test_authenticated_requests_can_never_forge_actor_from_body():
+    """回归：即使同时传入认证器与 demo_mode，正文自报 actor 也不得生效。"""
+    authenticator = _separated_duties_authenticator()
+    from security_diagnosis_harness.config import RuntimeConfigurationError
+
+    # 组合本身被拒绝，因此不存在"认证 + 正文自报"的运行态。
+    with pytest.raises(RuntimeConfigurationError):
+        create_app(build_service(), authenticator=authenticator, demo_mode=True)
+
+    # 正式模式（唯一被允许的认证形态）下，正文自报值一律被忽略。
+    with TestClient(
+        create_app(build_service(), authenticator=authenticator, demo_mode=False)
+    ) as client:
+        created = client.post(
+            "/api/v1/diagnoses",
+            headers=_OPERATOR_HEADERS,
+            json={
+                "device_id": "camera-3f-001",
+                "fault_type": "camera_black_screen",
+                "reporter": "FORGED-FROM-BODY",
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["data"]["reporter"] == "operator-a"
+
+
+def test_module_level_app_is_an_explicit_unauthenticated_demo():
+    from security_diagnosis_harness.api import app as app_module
+
+    assert app_module.app.state.demo_mode is True
+    with TestClient(app_module.app) as client:
+        # 无认证即可创建，且正文自报身份生效——这正是 Demo 入口的定义。
+        created = client.post(
+            "/api/v1/diagnoses",
+            json={
+                "device_id": "camera-3f-001",
+                "fault_type": "camera_black_screen",
+                "reporter": "demo-reporter",
+            },
+        )
+        assert created.status_code == 201
+        assert created.json()["data"]["reporter"] == "demo-reporter"

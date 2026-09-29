@@ -132,9 +132,16 @@ def create_app(
         demo_mode: **显式**开启无认证 Demo；只有为 True 时才允许无认证运行。
 
     Raises:
-        RuntimeConfigurationError: 既未提供认证器又未显式开启 Demo——正式入口
-            即使监听 localhost 也必须启用双凭证，绝不静默放行正文自报身份。
+        RuntimeConfigurationError: 两种模式必须**恰好二选一**——
+            既未提供认证器又未显式开启 Demo（正式入口即使监听 localhost 也必须启用
+            双凭证），或同时提供认证器与 ``demo_mode=True``（会让已经认证的请求重新
+            采用请求正文里的 reporter/reviewer）。
     """
+    if authenticator is not None and demo_mode:
+        raise RuntimeConfigurationError(
+            "认证模式与 Demo 模式互斥：同时提供 authenticator 与 demo_mode=True "
+            "会让请求正文重新成为 actor 来源"
+        )
     if authenticator is None and not demo_mode:
         raise RuntimeConfigurationError(
             "正式 API 入口必须启用 operator/reviewer 双凭证；"

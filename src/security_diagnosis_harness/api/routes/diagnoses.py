@@ -18,6 +18,7 @@ from security_diagnosis_harness.api.schemas import (
     to_diagnosis_data,
 )
 from security_diagnosis_harness.application.diagnoses import SecurityDiagnosisApplicationService
+from security_diagnosis_harness.config import RuntimeConfigurationError
 from security_diagnosis_harness.domain.evidence import DiagnosisEvidence
 
 ROUTER_PREFIX = "/api/v1/diagnoses"
@@ -40,7 +41,23 @@ def create_diagnoses_router(
     - 同一 actor 不能审核自己创建（上报）的诊断。
 
     ``demo_mode=True`` 时才回到"无认证 + 正文自报身份"的显式演示语义。
+
+    模式互斥在路由层**再次**校验，防止调用方绕过 :func:`create_app` 直接构造出
+    "既有认证又看正文"的矛盾路由。
+
+    Raises:
+        RuntimeConfigurationError: 认证模式与 Demo 模式同时开启，或两者都没有开启。
     """
+    if authenticator is not None and demo_mode:
+        raise RuntimeConfigurationError(
+            "认证模式与 Demo 模式互斥：同时提供 authenticator 与 demo_mode=True "
+            "会让请求正文重新成为 actor 来源"
+        )
+    if authenticator is None and not demo_mode:
+        raise RuntimeConfigurationError(
+            "诊断路由必须启用 operator/reviewer 双凭证，"
+            "或显式开启无认证 Demo（demo_mode=True）"
+        )
     router = APIRouter(prefix=ROUTER_PREFIX, tags=["diagnoses"])
 
     def authorize(
@@ -66,12 +83,17 @@ def create_diagnoses_router(
         return authorize("reviewer", "operator", authorization)
 
     def actor_for(principal: ApiPrincipal | None, declared: str) -> str:
-        """确定 actor：正式 API 只认认证 principal；正文自报值仅 Demo 生效。"""
-        if demo_mode:
+        """确定 actor。
+
+        结构上优先使用认证 principal：**只要存在已认证主体，正文自报值就不可能生效**，
+        与 ``demo_mode`` 的取值无关。这样即使未来出现新的装配路径，也无法让请求正文
+        重新成为 actor 来源。
+        """
+        if principal is not None:
+            return principal.actor
+        if demo_mode:  # 无认证 Demo：此时才允许正文自报身份。
             return declared
-        if principal is None:  # 防御性：非 Demo 模式下依赖注入必已认证。
-            raise HTTPException(status_code=401, detail="authentication_required")
-        return principal.actor
+        raise HTTPException(status_code=401, detail="authentication_required")
 
     operator_dependency = Depends(require_operator)
     reviewer_dependency = Depends(require_reviewer)
