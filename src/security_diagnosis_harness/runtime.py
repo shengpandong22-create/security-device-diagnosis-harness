@@ -561,12 +561,79 @@ class RuntimeAdapterRegistryView:
         return self._ready_keys
 
 
+# 授权快照视图的底层会话状态放在模块级弱引用表里，**不是**实例属性：
+# 这样 ``object.__getattribute__(view, "_session")`` 这类绕过 __getattr__ 的
+# 访问也拿不到原始 DeviceAuthorizationSession，与 _RestrictedRuntimeView 一致。
+_AUTHORIZATION_VIEW_STATES: WeakKeyDictionary[Any, DeviceAuthorizationSession] = (
+    WeakKeyDictionary()
+)
+
+#: 授权快照视图允许读取的只读字段。刻意不含 rotate / authorize / close：
+#: 公开调用方只能观察，不能替换 manifest、重置预算或撤销会话。
+AUTHORIZATION_VIEW_ALLOWED: frozenset[str] = frozenset(
+    {"session_id", "manifest", "budget_state", "batch_index", "closed"}
+)
+
+
+class RuntimeAuthorizationView:
+    """设备授权会话的**只读快照**视图。
+
+    正式 Runtime 的网关内部仍共享同一个 ``DeviceAuthorizationSession``（强制预算
+    载体），但容器对外只暴露本视图：
+
+    - 可读取 ``session_id`` / ``manifest`` / ``budget_state`` / ``batch_index`` /
+      ``closed`` 以观察当前授权批次与预算消费；
+    - **不暴露** ``rotate`` / ``authorize`` / ``close``：公开调用方无法替换清单、
+      重置预算或提前撤销会话；
+    - 视图是只读的，``_`` 前缀内部状态不可达，且不因容器关闭而被用来旁路。
+    """
+
+    __slots__ = ("__weakref__",)
+
+    def __init__(self, session: DeviceAuthorizationSession) -> None:
+        with _PROXY_STATE_LOCK:
+            _AUTHORIZATION_VIEW_STATES[self] = session
+
+    def __getattribute__(self, name: str) -> Any:
+        if name.startswith("_") and name != "__class__":
+            raise AttributeError("authorization view internals are not exposed")
+        return object.__getattribute__(self, name)
+
+    def __getattr__(self, name: str) -> Any:
+        with _PROXY_STATE_LOCK:
+            session = _AUTHORIZATION_VIEW_STATES[self]
+        if name not in AUTHORIZATION_VIEW_ALLOWED:
+            raise AttributeError(f"authorization view does not expose {name}")
+        value = getattr(session, name)
+        if callable(value):
+            raise AttributeError(f"authorization view does not expose {name}")
+        return value
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("authorization view is read-only")
+
+
+def _close_authorization_session(view: RuntimeAuthorizationView) -> None:
+    """Close the session behind a read-only view; only the container may call this.
+
+    The raw ``DeviceAuthorizationSession`` lives solely in
+    ``_AUTHORIZATION_VIEW_STATES`` keyed by the view, so the container never
+    keeps a directly reachable reference to it. This keeps the public surface
+    read-only while still letting the container own the terminal close.
+    """
+    with _PROXY_STATE_LOCK:
+        session = _AUTHORIZATION_VIEW_STATES.get(view)
+    if session is not None:
+        session.close()
+
+
 @dataclass
 class RuntimeContainer:
     """正式本地运行装配结果。
 
     与评测用 `bootstrap.Container` 分离：这里持有 Engine 生命周期的所有权。
     `capability_support` / `asset_catalog` / `adapter_registry` 以只读属性暴露；
+    `authorization` 只暴露**只读快照视图**（不含 rotate / authorize / close）；
     `service` / `repository` / `gateway` 在 close() 之后访问会稳定抛出
     `RuntimeClosedError`，而不是静默继续读写。
     """
@@ -580,8 +647,9 @@ class RuntimeContainer:
     knowledge_repository: KnowledgeRepository
     knowledge_service: KnowledgeGovernanceApplicationService
     consistency_scanner: ConsistencyScanner
-    # 设备授权会话：网关持有它做调用前预检；容器负责在 close() 时关闭它。
-    authorization: DeviceAuthorizationSession
+    # 设备授权：网关内部共享同一个强制预算载体；容器只持只读快照视图，
+    # 并在 close() 时通过模块级辅助函数关闭视图背后的会话。
+    _authorization: RuntimeAuthorizationView
     _service: SecurityDiagnosisApplicationService
     _repository: DiagnosisRepository
     # Phase 9C-2B：契约是 DeviceGateway；默认实例是 RoutedDeviceGateway，
@@ -611,6 +679,15 @@ class RuntimeContainer:
         """`resolve_fault_support()` 的推导结果（只读、不可变）。"""
         return self._capability_support
 
+    @property
+    def authorization(self) -> RuntimeAuthorizationView:
+        """设备授权**只读快照**：不含 rotate / authorize / close。
+
+        网关内部仍共享同一个强制预算载体；本视图仅供观察当前授权批次与预算消费，
+        公开调用方无法借它替换 manifest、重置预算或撤销会话。
+        """
+        return self._authorization
+
     # ------------------------------------------------------ 关闭后受控拒绝入口
     def ensure_open(self) -> None:
         """容器关闭后，正式入口继续操作时稳定拒绝。"""
@@ -637,7 +714,7 @@ class RuntimeContainer:
         if self._closed:
             return
         self._closed = True
-        self.authorization.close()
+        _close_authorization_session(self._authorization)
         self._lifecycle.closed = True
         if isinstance(self._session_factory, _ClosedAwareSessionFactory):
             self._session_factory.mark_closed()
@@ -846,9 +923,10 @@ def build_runtime_container(
         runner=restricted(runner, "run"),
         registry=restricted(resolved_registry, "names", "execute", "has"),
         _gateway=exposed(gateway),
-        # DeviceAuthorizationSession owns its own terminal close state and must
-        # remain inspectable so callers can observe that terminal state.
-        authorization=resolved_authorization,
+        # 只暴露只读快照视图：网关内部仍共享同一个强制预算载体；公开调用方
+        # 拿不到 rotate / authorize / close，因而无法替换 manifest 或重置预算。
+        # 视图仍可读取 close 后的终态（closed=True），供审计观察。
+        _authorization=RuntimeAuthorizationView(resolved_authorization),
         llm=llm,
         citation_policy=citation_policy,
         audit_repository=restricted(
@@ -896,6 +974,7 @@ __all__ = [
     "FORMAL_RUNTIME_TOOL_ALLOWLIST",
     "MIGRATIONS_DIR",
     "SUPPORTED_RUNTIME_FAULT_TYPES",
+    "RuntimeAuthorizationView",
     "RuntimeContainer",
     "build_camera_registry",
     "build_default_runtime_asset",

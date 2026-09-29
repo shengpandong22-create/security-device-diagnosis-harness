@@ -250,6 +250,77 @@ def test_close_closes_authorization_session():
     assert runtime.authorization.closed is True
 
 
+def _replacement_manifest():
+    from datetime import UTC, datetime, timedelta
+
+    from security_diagnosis_harness.device_authorization import (
+        AuthorizationManifest,
+        DeviceReadOperation,
+    )
+
+    start = datetime.now(UTC)
+    return AuthorizationManifest(
+        manifest_id="rotation-attempt-manifest",
+        environment_alias="local-static-sample",
+        asset_scope_aliases=frozenset({"camera-3f-001"}),
+        credential_ref="runtime:configured",
+        valid_from=start,
+        valid_until=start + timedelta(hours=1),
+        allowed_operations=frozenset({DeviceReadOperation.QUERY_STATUS}),
+        max_total_calls=10,
+        max_calls_per_operation={DeviceReadOperation.QUERY_STATUS: 10},
+    )
+
+
+def test_runtime_authorization_view_cannot_rotate_or_reset_budget():
+    """公开只读快照无法替换 manifest、重置预算或撤销会话。"""
+    from security_diagnosis_harness.device_authorization import DeviceAuthorizationSession
+
+    runtime = build_runtime_container(RuntimeSettings(repository_mode="memory"))
+    try:
+        view = runtime.authorization
+        # 不是原始会话，也没有任何可变更入口。
+        assert not isinstance(view, DeviceAuthorizationSession)
+        for forbidden in ("rotate", "authorize", "close"):
+            assert not hasattr(view, forbidden), forbidden
+        # 内部状态即使绕过 __getattr__ 也不可达。
+        with pytest.raises(AttributeError):
+            _ = view._session
+        with pytest.raises(AttributeError):
+            object.__getattribute__(view, "_session")
+
+        # 网关内部仍共享同一个强制预算载体：真实调用后预算被消费。
+        runtime.gateway.query_status("camera-3f-001")
+        consumed = view.budget_state.total_calls_consumed
+        batch_index = view.batch_index
+        assert consumed == 1
+
+        # 公开调用方无法 rotate：批次与预算都不被重置。
+        with pytest.raises(AttributeError):
+            view.rotate(_replacement_manifest())
+        assert view.batch_index == batch_index
+        assert view.budget_state.total_calls_consumed == consumed
+        assert runtime.authorization.manifest.manifest_id == "local-static-sample-read-only"
+    finally:
+        runtime.close()
+
+
+def test_runtime_authorization_view_cannot_bypass_after_close():
+    """容器关闭后，关闭前取得的旧视图也不能用来重置预算。"""
+    runtime = build_runtime_container(RuntimeSettings(repository_mode="memory"))
+    view = runtime.authorization
+    runtime.close()
+
+    assert view.closed is True
+    assert not hasattr(view, "rotate")
+    assert not hasattr(view, "authorize")
+    assert not hasattr(view, "close")
+    with pytest.raises(AttributeError):
+        view.rotate(_replacement_manifest())
+    with pytest.raises(AttributeError):
+        view.authorize(asset_alias="camera-3f-001", operation="query_status")
+
+
 # ---------------------------------------------------------------- 关闭后生命周期
 def test_sqlite_closed_container_rejects_all_entry_points(tmp_path: Path):
     from security_diagnosis_harness.runtime import RuntimeClosedError
