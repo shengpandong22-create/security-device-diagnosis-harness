@@ -16,6 +16,7 @@ from security_diagnosis_harness.evaluation import (
     EvaluationOutput,
     EvaluationRun,
     EvidenceTrace,
+    FileHistoryHeadStore,
     InMemoryHistoryHeadStore,
     JsonEvaluationHistory,
     RunIdentity,
@@ -379,4 +380,102 @@ def test_loaded_summary_rejects_sensitive_model_parameters(tmp_path, cases):
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(EvaluationHistoryError, match="协议"):
         history.load()
+
+
+# ---------------------------------------------------------------- 3 可持久化 Head
+def _file_history(path: Path, head_path: Path) -> JsonEvaluationHistory:
+    """使用落盘 HeadStore 的历史实例；head 与文档放在不同目录。"""
+    return JsonEvaluationHistory(
+        path,
+        integrity_key=HISTORY_INTEGRITY_KEY,
+        head_store=FileHistoryHeadStore(head_path),
+    )
+
+
+def _heads_path(tmp_path: Path) -> Path:
+    # Head 与历史文档分离存放，避免二者被一起回滚。
+    return tmp_path / "trusted-heads" / "history-heads.json"
+
+
+def test_file_head_store_survives_process_restart(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    baseline = _run(cases, "a" * 40)
+    _file_history(path, head_path).append(baseline)
+
+    # 模拟进程重启：全新实例 + 全新 HeadStore 读取同一份落盘状态。
+    restarted = _file_history(path, head_path)
+    document = restarted.load()
+    assert [record.summary.run_id for record in document.records] == [baseline.run_id]
+    assert restarted.trend().points[0].run_id == baseline.run_id
+
+
+def test_file_head_store_does_not_persist_integrity_key(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    _file_history(path, head_path).append(_run(cases, "a" * 40))
+
+    secret = HISTORY_INTEGRITY_KEY.decode("utf-8")
+    for artifact in (path, head_path):
+        assert artifact.exists()
+        assert secret not in artifact.read_text(encoding="utf-8")
+    # Head 文件只保存不透明认证标签，不保存任何密钥材料。
+    heads = json.loads(head_path.read_text(encoding="utf-8"))
+    assert all(
+        len(tag) == 64 and set(tag) <= set("0123456789abcdef")
+        for tag in heads.values()
+    )
+
+
+def test_file_head_store_rejects_missing_head(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    _file_history(path, head_path).append(_run(cases, "a" * 40))
+    head_path.unlink()
+
+    with pytest.raises(EvaluationHistoryError, match="缺少外部可信 Head"):
+        _file_history(path, head_path).load()
+
+
+def test_file_head_store_rejects_tampered_head(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    _file_history(path, head_path).append(_run(cases, "a" * 40))
+    heads = json.loads(head_path.read_text(encoding="utf-8"))
+    heads[next(iter(heads))] = "f" * 64
+    head_path.write_text(json.dumps(heads), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="旧快照回放"):
+        _file_history(path, head_path).load()
+
+
+def test_file_head_store_rejects_rollback_across_restart(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    history = _file_history(path, head_path)
+    baseline = _run(cases, "a" * 40)
+    candidate = _run(cases, "b" * 40)
+    history.append(baseline)
+    old_snapshot = path.read_bytes()
+    history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
+    path.write_bytes(old_snapshot)
+
+    with pytest.raises(EvaluationHistoryError, match="旧快照回放"):
+        _file_history(path, head_path).load()
+
+
+def test_file_head_store_rejects_truncation_across_restart(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    history = _file_history(path, head_path)
+    baseline = _run(cases, "a" * 40)
+    candidate = _run(cases, "b" * 40)
+    history.append(baseline)
+    history.append(candidate, baseline=baseline, dataset_cases=_expected(cases))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["records"].pop()
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(EvaluationHistoryError, match="文档认证失败"):
+        _file_history(path, head_path).load()
 

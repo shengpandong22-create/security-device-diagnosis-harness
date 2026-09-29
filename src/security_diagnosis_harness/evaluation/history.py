@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from datetime import datetime
 from pathlib import Path
-from threading import RLock
+from threading import Lock, RLock
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -40,7 +41,11 @@ class HistoryHeadStore(Protocol):
 
 
 class InMemoryHistoryHeadStore:
-    """Process-local implementation for tests and isolated offline runs."""
+    """Process-local implementation for tests and isolated offline runs.
+
+    注意：进程重启后 Head 会丢失，正式 / 跨重启场景必须使用
+    :class:`FileHistoryHeadStore`。
+    """
 
     def __init__(self) -> None:
         self._heads: dict[str, str] = {}
@@ -53,6 +58,81 @@ class InMemoryHistoryHeadStore:
     def save_head(self, history_id: str, auth_tag: str) -> None:
         with self._lock:
             self._heads[history_id] = auth_tag
+
+
+# 同一路径共享同一个进程内 RLock：模块级注册表保证"同进程多实例"也能串行化
+# 访问同一个落盘状态（Head 文件与历史文档锁都复用它）。
+_THREAD_LOCKS: dict[str, RLock] = {}
+_THREAD_LOCKS_GUARD = Lock()
+
+
+def _shared_thread_lock(key: str) -> RLock:
+    with _THREAD_LOCKS_GUARD:
+        return _THREAD_LOCKS.setdefault(key, RLock())
+
+
+class FileHistoryHeadStore:
+    """单机可持久化的可信 Head 存储。
+
+    信任边界（单机、显式声明）：
+
+    - 只回答"某段评测历史**曾经**提交过哪个文档认证标签"，用于识别历史文档被
+      回滚、截尾或替换成旧快照；它不校验历史内容本身（那由文档 / 记录 HMAC 负责）；
+    - 只保护**同机**信任域：能改写 Head 文件的攻击者同样能改写历史文档，因此这是
+      单机文件系统信任边界，不是分布式或抗内部篡改保证；
+    - **不保存完整性密钥**：文件里只有不透明的 HMAC 认证标签（hex 摘要），密钥
+      由调用方在内存中注入、绝不落盘；
+    - 建议 Head 文件与历史文档**分离存放**（不同目录或不同介质），避免二者被
+      一起回滚。
+
+    文件格式：``{"<history_id>": "<auth_tag>"}``；写入采用"临时文件 + 原子替换"，
+    不会在崩溃后留下半个 JSON。
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = Path(path)
+        # 同一 Head 文件在进程内共享同一把锁：多个 FileHistoryHeadStore 实例
+        # 指向同一文件时也不会互相覆盖（固定 staging 名因此是安全的）。
+        self._lock = _shared_thread_lock(str(self._path.resolve()))
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def load_head(self, history_id: str) -> str | None:
+        with self._lock:
+            return self._read().get(history_id)
+
+    def save_head(self, history_id: str, auth_tag: str) -> None:
+        with self._lock:
+            heads = self._read()
+            if heads.get(history_id) == auth_tag:
+                return
+            heads[history_id] = auth_tag
+            self._write(heads)
+
+    def _read(self) -> dict[str, str]:
+        if not self._path.exists():
+            return {}
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise EvaluationHistoryError("可信 Head 文件无法解析") from exc
+        if not isinstance(raw, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in raw.items()
+        ):
+            raise EvaluationHistoryError("可信 Head 文件格式非法")
+        return raw
+
+    def _write(self, heads: dict[str, str]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self._path.with_suffix(self._path.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(heads, ensure_ascii=True, sort_keys=True, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(self._path)
 
 
 class TrendComparabilityError(ComparisonConfigurationError):
