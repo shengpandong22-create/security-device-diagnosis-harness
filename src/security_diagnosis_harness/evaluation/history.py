@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from threading import Lock, RLock
-from typing import Any, Protocol
+from types import TracebackType
+from typing import Any, BinaryIO, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -58,17 +60,6 @@ class InMemoryHistoryHeadStore:
     def save_head(self, history_id: str, auth_tag: str) -> None:
         with self._lock:
             self._heads[history_id] = auth_tag
-
-
-# 同一路径共享同一个进程内 RLock：模块级注册表保证"同进程多实例"也能串行化
-# 访问同一个落盘状态（Head 文件与历史文档锁都复用它）。
-_THREAD_LOCKS: dict[str, RLock] = {}
-_THREAD_LOCKS_GUARD = Lock()
-
-
-def _shared_thread_lock(key: str) -> RLock:
-    with _THREAD_LOCKS_GUARD:
-        return _THREAD_LOCKS.setdefault(key, RLock())
 
 
 class FileHistoryHeadStore:
@@ -133,6 +124,86 @@ class FileHistoryHeadStore:
             encoding="utf-8",
         )
         temporary.replace(self._path)
+
+
+# --------------------------------------------------------------- 跨实例互斥锁
+# 同一路径共享同一个进程内 RLock：模块级注册表保证"同进程多实例"也串行化，
+# 不依赖操作系统的锁在单进程内的可见性。
+_THREAD_LOCKS: dict[str, RLock] = {}
+_THREAD_LOCKS_GUARD = Lock()
+
+
+def _shared_thread_lock(key: str) -> RLock:
+    with _THREAD_LOCKS_GUARD:
+        return _THREAD_LOCKS.setdefault(key, RLock())
+
+
+def _acquire_os_lock(handle: BinaryIO) -> None:
+    """获取跨进程的排它锁；阻塞直到成功。"""
+    if os.name == "nt":  # pragma: no cover - 平台相关分支
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+    else:  # pragma: no cover - 平台相关分支
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+
+
+def _release_os_lock(handle: BinaryIO) -> None:
+    if os.name == "nt":  # pragma: no cover - 平台相关分支
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:  # pragma: no cover - 平台相关分支
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+class _HistoryFileLock:
+    """单机排它锁：串行化历史文档的 load-modify-write 周期。
+
+    同时覆盖**同进程多实例**（共享 RLock）与**同机多进程**（OS 文件锁）。
+    信任边界与 Head 一致：只保证同机互斥，不保护跨主机共享目录。
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = Path(path)
+        self._thread_lock = _shared_thread_lock(str(self._path.resolve()))
+        self._handle: BinaryIO | None = None
+
+    def __enter__(self) -> _HistoryFileLock:
+        self._thread_lock.acquire()
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._handle = self._path.open("a+b")
+            _acquire_os_lock(self._handle)
+        except BaseException:
+            if self._handle is not None:
+                self._handle.close()
+                self._handle = None
+            self._thread_lock.release()
+            raise
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        try:
+            if self._handle is not None:
+                _release_os_lock(self._handle)
+        finally:
+            if self._handle is not None:
+                self._handle.close()
+                self._handle = None
+            self._thread_lock.release()
+        return False
 
 
 class TrendComparabilityError(ComparisonConfigurationError):
@@ -401,7 +472,20 @@ class EvaluationTrendReport(BaseModel):
 
 
 class JsonEvaluationHistory:
-    """Atomic local history repository containing summaries, never full runs."""
+    """Atomic local history repository containing summaries, never full runs.
+
+    Concurrency and crash recovery:
+
+    - the whole ``load → stage → publish → save head`` cycle runs under one
+      same-machine exclusive lock (per path), so two instances (threads or
+      processes) can no longer overwrite each other;
+    - staging uses a deterministic ``.pending`` slot guarded by that lock, so the
+      old "everyone writes the same ``.tmp``" race is gone;
+    - publish is ordered ``stage → save head → atomic replace``: a crash after the
+      head advances but before the document is replaced is finished on the next
+      ``load()`` from the pending slot; a crash before the head advances leaves a
+      stale pending slot that is discarded.
+    """
 
     def __init__(
         self,
@@ -412,10 +496,13 @@ class JsonEvaluationHistory:
     ) -> None:
         if len(integrity_key) < 32:
             raise ValueError("评测历史完整性密钥至少需要 32 字节")
-        self._path = path
+        self._path = Path(path)
         self._integrity_key = bytes(integrity_key)
         self._head_store = head_store
-        self._history_id = str(path.resolve())
+        self._history_id = str(self._path.resolve())
+        self._lock = _HistoryFileLock(self._path.with_suffix(self._path.suffix + ".lock"))
+        #: 崩溃恢复槽位：先于 head 更新写入，可能在任何写入阶段留下。
+        self._pending_path = self._path.with_suffix(self._path.suffix + ".pending")
 
     def _empty_document(self) -> EvaluationHistoryDocument:
         document = EvaluationHistoryDocument(document_auth_tag="0" * 64)
@@ -428,9 +515,14 @@ class JsonEvaluationHistory:
         )
 
     def load(self) -> EvaluationHistoryDocument:
+        with self._lock:
+            return self._load_locked()
+
+    def _load_locked(self) -> EvaluationHistoryDocument:
+        trusted_head = self._head_store.load_head(self._history_id)
+        self._recover_pending(trusted_head)
         if not self._path.exists():
             document = self._empty_document()
-            trusted_head = self._head_store.load_head(self._history_id)
             if trusted_head is not None and trusted_head != document.document_auth_tag:
                 raise EvaluationHistoryError("评测历史文件缺失或已回滚")
             return document
@@ -441,12 +533,32 @@ class JsonEvaluationHistory:
         except (OSError, ValueError) as exc:
             raise EvaluationHistoryError("评测历史文件无法通过协议校验") from exc
         document = _validate_document(document, self._integrity_key)
-        trusted_head = self._head_store.load_head(self._history_id)
         if trusted_head is None:
             raise EvaluationHistoryError("评测历史缺少外部可信 Head")
         if not hmac.compare_digest(trusted_head, document.document_auth_tag):
             raise EvaluationHistoryError("评测历史检测到旧快照回放")
         return document
+
+    def _recover_pending(self, trusted_head: str | None) -> None:
+        """完成或丢弃被中断的发布；绝不接受回滚到旧快照。"""
+        if not self._pending_path.exists():
+            return
+        if trusted_head is not None:
+            try:
+                candidate = EvaluationHistoryDocument.model_validate_json(
+                    self._pending_path.read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError):
+                candidate = None
+            if (
+                candidate is not None
+                and hmac.compare_digest(candidate.document_auth_tag, trusted_head)
+            ):
+                # 崩溃发生在「已提交新 head」与「替换正式文档」之间：完成发布。
+                self._pending_path.replace(self._path)
+                return
+        # head 未推进（或缺失）→ pending 尚未提交，丢弃即可（正式文档仍是旧的一致快照）。
+        self._pending_path.unlink(missing_ok=True)
 
     def append(
         self,
@@ -456,7 +568,21 @@ class JsonEvaluationHistory:
         policy: GatePolicy | None = None,
         dataset_cases: tuple[DatasetCase, ...] | None = None,
     ) -> EvaluationHistoryRecord:
-        document = self.load()
+        with self._lock:
+            record = self._append_locked(
+                run, baseline=baseline, policy=policy, dataset_cases=dataset_cases
+            )
+        return record
+
+    def _append_locked(
+        self,
+        run: EvaluationRun,
+        *,
+        baseline: EvaluationRun | None,
+        policy: GatePolicy | None,
+        dataset_cases: tuple[DatasetCase, ...] | None,
+    ) -> EvaluationHistoryRecord:
+        document = self._load_locked()
         summaries = {record.summary.run_id: record.summary for record in document.records}
         if run.run_id in summaries:
             raise EvaluationHistoryError(f"评测运行已存在: {run.run_id}")
@@ -541,11 +667,22 @@ class JsonEvaluationHistory:
         )
 
     def _write(self, document: EvaluationHistoryDocument) -> None:
+        """发布新历史快照：stage → 提交 head → 原子替换（调用方必须持锁）。
+
+        顺序刻意如此：pending 槽位先落盘，head 再推进，最后才替换正式文档。
+        这样崩溃点有两种，且都能收敛到一致状态：
+
+        - 在 head 推进前崩溃：head 仍是旧值、正式文档仍是旧的一致快照，
+          残留 pending 会在下次 ``load()`` 被丢弃；
+        - 在 head 推进后、替换前崩溃：head 已是新值、pending 内容与之一致，
+          下次 ``load()`` 会用它完成发布。
+        """
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self._path.with_suffix(self._path.suffix + ".tmp")
-        temporary.write_text(document.model_dump_json(indent=2), encoding="utf-8")
-        temporary.replace(self._path)
+        self._pending_path.write_text(
+            document.model_dump_json(indent=2), encoding="utf-8"
+        )
         self._head_store.save_head(self._history_id, document.document_auth_tag)
+        self._pending_path.replace(self._path)
 
 
 def write_evaluation_trend_report(

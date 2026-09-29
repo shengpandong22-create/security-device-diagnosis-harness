@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -421,10 +422,7 @@ def test_file_head_store_does_not_persist_integrity_key(tmp_path, cases):
         assert secret not in artifact.read_text(encoding="utf-8")
     # Head 文件只保存不透明认证标签，不保存任何密钥材料。
     heads = json.loads(head_path.read_text(encoding="utf-8"))
-    assert all(
-        len(tag) == 64 and set(tag) <= set("0123456789abcdef")
-        for tag in heads.values()
-    )
+    assert all(len(tag) == 64 and set(tag) <= set("0123456789abcdef") for tag in heads.values())
 
 
 def test_file_head_store_rejects_missing_head(tmp_path, cases):
@@ -478,4 +476,105 @@ def test_file_head_store_rejects_truncation_across_restart(tmp_path, cases):
 
     with pytest.raises(EvaluationHistoryError, match="文档认证失败"):
         _file_history(path, head_path).load()
+
+
+# ---------------------------------------------------------------- 4 并发与恢复
+def _published_document(tmp_path: Path, cases, *, name: str) -> dict:
+    """用独立副本生成"下一次发布"的文档内容，供崩溃恢复场景注入。"""
+    scratch_path = tmp_path / f"{name}.json"
+    scratch = _file_history(scratch_path, tmp_path / f"{name}-heads.json")
+    baseline = _run(cases, "a" * 40)
+    scratch.append(baseline)
+    scratch.append(
+        _run(cases, "b" * 40), baseline=baseline, dataset_cases=_expected(cases)
+    )
+    return json.loads(scratch_path.read_text(encoding="utf-8"))
+
+
+def test_two_instances_can_append_concurrently_without_lost_update(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    first = _file_history(path, head_path)
+    second = _file_history(path, head_path)
+    baseline = _run(cases, "a" * 40)
+    candidate_b = _run(cases, "b" * 40)
+    candidate_c = _run(cases, "c" * 40)
+    first.append(baseline)
+
+    barrier = threading.Barrier(2)
+    failures: list[BaseException] = []
+
+    def worker(history: JsonEvaluationHistory, candidate: EvaluationRun) -> None:
+        try:
+            barrier.wait(timeout=5)
+            history.append(
+                candidate, baseline=baseline, dataset_cases=_expected(cases)
+            )
+        except BaseException as exc:  # noqa: BLE001 - 记录后统一断言
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(first, candidate_b)),
+        threading.Thread(target=worker, args=(second, candidate_c)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failures == []
+    document = first.load()
+    run_ids = [record.summary.run_id for record in document.records]
+    # 两个并发 append 都必须存在，不丢更新。
+    assert run_ids[0] == baseline.run_id
+    assert set(run_ids) == {baseline.run_id, candidate_b.run_id, candidate_c.run_id}
+    # baseline 血缘合法：两条 candidate 都指向同一个已入历史的 baseline。
+    for record in document.records[1:]:
+        assert record.baseline_run_id == baseline.run_id
+        assert record.gate_allowed is True
+    # 不残留 staging / pending 文件。
+    assert not list(tmp_path.glob("*.pending"))
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_publish_crash_after_head_commit_is_recovered_from_pending(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    history = _file_history(path, head_path)
+    baseline = _run(cases, "a" * 40)
+    history.append(baseline)
+
+    published = _published_document(tmp_path, cases, name="scratch-head-commit")
+    pending = tmp_path / "history.json.pending"
+    pending.write_text(json.dumps(published), encoding="utf-8")
+    # 模拟崩溃点：pending 已落盘、head 已推进，但正式文档尚未替换。
+    FileHistoryHeadStore(head_path).save_head(
+        str(path.resolve()), published["document_auth_tag"]
+    )
+
+    recovered = _file_history(path, head_path).load()
+
+    assert [record.summary.run_id for record in recovered.records] == [
+        baseline.run_id,
+        _run(cases, "b" * 40).run_id,
+    ]
+    assert not pending.exists()
+
+
+def test_stale_pending_before_head_commit_is_discarded(tmp_path, cases):
+    path = tmp_path / "history.json"
+    head_path = _heads_path(tmp_path)
+    history = _file_history(path, head_path)
+    baseline = _run(cases, "a" * 40)
+    history.append(baseline)
+
+    published = _published_document(tmp_path, cases, name="scratch-stale")
+    pending = tmp_path / "history.json.pending"
+    pending.write_text(json.dumps(published), encoding="utf-8")
+    # head 未推进：残留 pending 必须被丢弃，正式文档仍是旧的一致快照。
+
+    document = _file_history(path, head_path).load()
+
+    assert [record.summary.run_id for record in document.records] == [baseline.run_id]
+    assert not pending.exists()
 
