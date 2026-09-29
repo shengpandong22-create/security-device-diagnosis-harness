@@ -11,6 +11,7 @@ from pathlib import Path
 from threading import Lock, RLock
 from types import TracebackType
 from typing import Any, BinaryIO, Protocol
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -65,37 +66,57 @@ class InMemoryHistoryHeadStore:
 class FileHistoryHeadStore:
     """单机可持久化的可信 Head 存储。
 
+    一个文件可以同时保存**多段**历史的 Head（``{"<history_id>": "<auth_tag>"}``），
+    因此必须假设存在"多个历史文件共享同一个 Head 文件"的装配方式。
+
     信任边界（单机、显式声明）：
 
     - 只回答"某段评测历史**曾经**提交过哪个文档认证标签"，用于识别历史文档被
       回滚、截尾或替换成旧快照；它不校验历史内容本身（那由文档 / 记录 HMAC 负责）；
     - 只保护**同机**信任域：能改写 Head 文件的攻击者同样能改写历史文档，因此这是
-      单机文件系统信任边界，不是分布式或抗内部篡改保证；
+      单机文件系统信任边界，不是分布式、多副本或抗内部篡改保证；
     - **不保存完整性密钥**：文件里只有不透明的 HMAC 认证标签（hex 摘要），密钥
-      由调用方在内存中注入、绝不落盘；
+      由调用方在内存中注入、绝不落盘，也不会写进锁文件或 staging 文件；
     - 建议 Head 文件与历史文档**分离存放**（不同目录或不同介质），避免二者被
       一起回滚。
 
-    文件格式：``{"<history_id>": "<auth_tag>"}``；写入采用"临时文件 + 原子替换"，
-    不会在崩溃后留下半个 JSON。
+    并发与崩溃：
+
+    - ``load_head`` 与 ``save_head`` 的文件访问都在**同一把 Head 自己的锁**内；
+      ``save_head`` 的完整 read → modify → stage → replace 周期在该锁内完成，因此
+      同进程多实例、同机多进程、以及多个不同历史文件共享同一个 Head 文件时都不会
+      丢更新；
+    - 锁文件路径推导：``<head 文件路径> + ".head-lock"``。刻意与历史文档的
+      ``.lock`` 区分，避免 Head 锁与历史锁退化成同一个文件；
+    - 写入使用**唯一的** staging 文件名（``<head>.<pid>.<uuid>.staging``）+ 原子
+      替换，因此不存在固定临时文件名冲突，Head 文件本身永远不会是半个 JSON；
+    - 锁顺序恒为"历史锁 → Head 锁"（History 在持锁时调用本 Store），本 Store 从不
+      反向获取历史锁，因此不存在锁循环。
     """
+
+    #: Head 锁文件后缀；与历史文档的 ``.lock`` 刻意区分。
+    LOCK_SUFFIX = ".head-lock"
 
     def __init__(self, path: Path) -> None:
         self._path = Path(path)
-        # 同一 Head 文件在进程内共享同一把锁：多个 FileHistoryHeadStore 实例
-        # 指向同一文件时也不会互相覆盖（固定 staging 名因此是安全的）。
-        self._lock = _shared_thread_lock(str(self._path.resolve()))
+        #: 锁文件路径的唯一推导方式：``<head>.head-lock``。
+        self._lock_path = self._path.with_suffix(self._path.suffix + self.LOCK_SUFFIX)
 
     @property
     def path(self) -> Path:
         return self._path
 
+    @property
+    def lock_path(self) -> Path:
+        return self._lock_path
+
     def load_head(self, history_id: str) -> str | None:
-        with self._lock:
+        with _HistoryFileLock(self._lock_path):
             return self._read().get(history_id)
 
     def save_head(self, history_id: str, auth_tag: str) -> None:
-        with self._lock:
+        # 完整 read → modify → stage → replace 周期都在同一把 Head 锁内。
+        with _HistoryFileLock(self._lock_path):
             heads = self._read()
             if heads.get(history_id) == auth_tag:
                 return
@@ -118,17 +139,28 @@ class FileHistoryHeadStore:
 
     def _write(self, heads: dict[str, str]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self._path.with_suffix(self._path.suffix + ".tmp")
-        temporary.write_text(
-            json.dumps(heads, ensure_ascii=True, sort_keys=True, indent=2),
-            encoding="utf-8",
+        # 唯一 staging 名：即使有人在未持锁的情况下调用，也不会与其它写者冲突。
+        staging = self._path.with_name(
+            f"{self._path.name}.{os.getpid()}.{uuid4().hex}.staging"
         )
-        temporary.replace(self._path)
+        try:
+            staging.write_text(
+                json.dumps(heads, ensure_ascii=True, sort_keys=True, indent=2),
+                encoding="utf-8",
+            )
+            staging.replace(self._path)
+        except BaseException:
+            staging.unlink(missing_ok=True)
+            raise
 
 
-# --------------------------------------------------------------- 跨实例互斥锁
+# --------------------------------------------------------------- 同机排它锁
 # 同一路径共享同一个进程内 RLock：模块级注册表保证"同进程多实例"也串行化，
 # 不依赖操作系统的锁在单进程内的可见性。
+#
+# 本节的锁既服务历史文档（``<history>.lock``），也服务 Head 文件
+# （``<head>.head-lock``，见 FileHistoryHeadStore，其类定义在本节之前，名称在
+# 调用时解析）。两者互不嵌套反向获取，锁顺序恒为"历史锁 → Head 锁"。
 _THREAD_LOCKS: dict[str, RLock] = {}
 _THREAD_LOCKS_GUARD = Lock()
 

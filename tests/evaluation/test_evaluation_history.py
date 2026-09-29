@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -577,4 +578,217 @@ def test_stale_pending_before_head_commit_is_discarded(tmp_path, cases):
 
     assert [record.summary.run_id for record in document.records] == [baseline.run_id]
     assert not pending.exists()
+
+
+# ------------------------------------------------- 4 共享 Head 文件的跨进程互斥
+def _head_tag(prefix: str) -> str:
+    return (prefix.replace("-", "") + "0" * 64)[:64]
+
+
+def _assert_no_staging_artifacts(directory: Path) -> None:
+    assert not list(directory.rglob("*.staging"))
+    assert not list(directory.rglob("*.tmp"))
+    assert not list(directory.rglob("*.pending"))
+
+
+# 顶层函数：Windows spawn 要求子进程目标必须是模块级、可 pickle 的引用。
+def _head_writer_worker(
+    head_path: str,
+    prefix: str,
+    iterations: int,
+    ready,
+    start,
+) -> None:
+    store = FileHistoryHeadStore(Path(head_path))
+    ready.put(prefix)
+    start.wait(timeout=60)
+    for index in range(iterations):
+        store.save_head(f"{prefix}-{index}", _head_tag(f"{prefix}{index}"))
+
+
+def _run_head_writers(
+    head_path: Path, prefixes: list[str], iterations: int
+) -> list[int | None]:
+    """在独立进程中并发写同一个 Head 文件；失败时 terminate/join，绝不遗留进程。"""
+    context = multiprocessing.get_context("spawn")
+    ready = context.Queue()
+    start = context.Event()
+    processes = [
+        context.Process(
+            target=_head_writer_worker,
+            args=(str(head_path), prefix, iterations, ready, start),
+        )
+        for prefix in prefixes
+    ]
+    try:
+        for process in processes:
+            process.start()
+        for _ in processes:
+            ready.get(timeout=60)
+        start.set()
+        for process in processes:
+            process.join(timeout=180)
+        assert all(not process.is_alive() for process in processes), "子进程未在超时内退出"
+        return [process.exitcode for process in processes]
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=60)
+            process.close()
+        ready.close()
+
+
+def test_same_process_head_store_instances_keep_both_updates(tmp_path):
+    head_path = _heads_path(tmp_path)
+    first = FileHistoryHeadStore(head_path)
+    second = FileHistoryHeadStore(head_path)
+    barrier = threading.Barrier(2)
+    failures: list[BaseException] = []
+
+    def worker(store: FileHistoryHeadStore, key: str) -> None:
+        try:
+            barrier.wait(timeout=10)
+            store.save_head(key, _head_tag(key))
+        except BaseException as exc:  # noqa: BLE001 - 记录后统一断言
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(first, "history-a")),
+        threading.Thread(target=worker, args=(second, "history-b")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert failures == []
+    heads = json.loads(head_path.read_text(encoding="utf-8"))
+    assert set(heads) == {"history-a", "history-b"}
+    assert heads["history-a"] == _head_tag("history-a")
+    assert heads["history-b"] == _head_tag("history-b")
+    _assert_no_staging_artifacts(head_path.parent)
+
+
+def test_two_processes_writing_different_history_ids_keep_all_heads(tmp_path):
+    head_path = _heads_path(tmp_path)
+
+    exitcodes = _run_head_writers(head_path, ["proc-a", "proc-b"], iterations=25)
+
+    assert exitcodes == [0, 0]
+    heads = json.loads(head_path.read_text(encoding="utf-8"))
+    assert len(heads) == 50
+    for prefix in ("proc-a", "proc-b"):
+        for index in range(25):
+            assert heads[f"{prefix}-{index}"] == _head_tag(f"{prefix}{index}")
+    _assert_no_staging_artifacts(head_path.parent)
+
+
+def test_multi_process_stress_loop_loses_no_head(tmp_path):
+    head_path = _heads_path(tmp_path)
+    prefixes = ["stress-0", "stress-1", "stress-2"]
+    iterations = 15
+
+    exitcodes = _run_head_writers(head_path, prefixes, iterations)
+
+    assert exitcodes == [0, 0, 0]
+    heads = json.loads(head_path.read_text(encoding="utf-8"))
+    assert len(heads) == len(prefixes) * iterations
+    _assert_no_staging_artifacts(head_path.parent)
+
+
+def test_concurrent_same_history_id_keeps_an_explainable_final_state(tmp_path):
+    """同一个 history_id 的并发更新：最终值必须是某一次完整写入，而不是混合结果。"""
+    head_path = _heads_path(tmp_path)
+    tags = [_head_tag(f"tag{index}") for index in range(3)]
+    stores = [FileHistoryHeadStore(head_path) for _ in tags]
+    barrier = threading.Barrier(len(tags))
+    failures: list[BaseException] = []
+
+    def worker(store: FileHistoryHeadStore, tag: str) -> None:
+        try:
+            barrier.wait(timeout=10)
+            store.save_head("shared-history", tag)
+        except BaseException as exc:  # noqa: BLE001 - 记录后统一断言
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(store, tag))
+        for store, tag in zip(stores, tags, strict=True)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert failures == []
+    heads = json.loads(head_path.read_text(encoding="utf-8"))
+    assert heads == {"shared-history": heads["shared-history"]}
+    assert heads["shared-history"] in tags
+
+
+def test_two_histories_sharing_one_head_store_both_reload(tmp_path, cases):
+    head_path = _heads_path(tmp_path)
+    shared_store = FileHistoryHeadStore(head_path)
+    first_path = tmp_path / "first-history.json"
+    second_path = tmp_path / "second-history.json"
+    first = JsonEvaluationHistory(
+        first_path, integrity_key=HISTORY_INTEGRITY_KEY, head_store=shared_store
+    )
+    second = JsonEvaluationHistory(
+        second_path, integrity_key=HISTORY_INTEGRITY_KEY, head_store=shared_store
+    )
+    baseline_first = _run(cases, "a" * 40)
+    baseline_second = _run(cases, "d" * 40)
+    candidate_first = _run(cases, "b" * 40)
+    candidate_second = _run(cases, "e" * 40)
+    first.append(baseline_first)
+    second.append(baseline_second)
+
+    barrier = threading.Barrier(2)
+    failures: list[BaseException] = []
+
+    def worker(history, run, baseline) -> None:
+        try:
+            barrier.wait(timeout=10)
+            history.append(run, baseline=baseline, dataset_cases=_expected(cases))
+        except BaseException as exc:  # noqa: BLE001 - 记录后统一断言
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(
+            target=worker, args=(first, candidate_first, baseline_first)
+        ),
+        threading.Thread(
+            target=worker, args=(second, candidate_second, baseline_second)
+        ),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+
+    assert failures == []
+    # 一个 Head 文件里必须同时存在两段历史的 Head。
+    heads = json.loads(head_path.read_text(encoding="utf-8"))
+    assert len(heads) == 2
+    for history, baseline, candidate in (
+        (first, baseline_first, candidate_first),
+        (second, baseline_second, candidate_second),
+    ):
+        document = history.load()
+        assert [record.summary.run_id for record in document.records] == [
+            baseline.run_id,
+            candidate.run_id,
+        ]
+    _assert_no_staging_artifacts(tmp_path)
+
+
+def test_head_lock_file_path_is_derived_next_to_the_head_file(tmp_path):
+    head_path = _heads_path(tmp_path)
+    store = FileHistoryHeadStore(head_path)
+
+    assert store.lock_path == head_path.with_name(head_path.name + ".head-lock")
+    # Head 锁与历史文档锁刻意不同名，避免两者退化成同一把锁。
+    assert not store.lock_path.name.endswith(".json.lock")
 
