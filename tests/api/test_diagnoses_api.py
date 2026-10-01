@@ -77,6 +77,7 @@ def test_run_diagnosis_returns_waiting_for_confirmation(client):
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["ok"] is True
+    assert data["cancellation_confirmed"] is True
     assert data["status"] == "waiting_for_confirmation"
     assert data["evidence_count"] >= 3
     assert data["conclusion"]["confidence"] == "probable"

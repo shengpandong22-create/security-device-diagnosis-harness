@@ -78,9 +78,6 @@ _T = TypeVar("_T")
 
 #: daemon worker 线程名的稳定常量：测试用它验证"超时返回后没有遗留 worker"。
 TOOL_LOOP_WORKER_NAME = "tool-loop-budget-worker"
-
-#: 置位取消令牌后，等待底层操作协作退出的**有限**宽限时间。
-#: 这是有界等待，不是无界 join；仍未退出说明操作不遵守取消契约。
 class _RunnerDeadlineExceeded(TimeoutError):
     """越过 deadline 的内部信号。
 
