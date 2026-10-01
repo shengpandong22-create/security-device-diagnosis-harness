@@ -102,6 +102,8 @@ class RunDiagnosisResult(BaseModel):
     rounds: int = 0
     tool_calls: int = 0
     error: str | None = None
+    # Runner 返回时底层模型/工具调用是否已确认停止。False 必须按不可信运行处理。
+    cancellation_confirmed: bool = True
     # Phase 1/2/3/4C：候选根因标签（只作为候选解释，不产生 confirmed）。
     candidate_label: (
         CameraDiagnosisLabel
@@ -404,6 +406,17 @@ class SecurityDiagnosisApplicationService:
 
         result = self._runner.run(case, context, self._tool_allowlist)
 
+        # 执行边界的强制消费点：若未来接入的 Runner/Adapter 无法确认底层操作已经
+        # 停止，应用层不得落 Evidence、不得形成结论，只能受控结束并向 API 传播状态。
+        if not result.cancellation_confirmed:
+            return self._finish_failure(
+                case,
+                result,
+                result.error or "底层操作取消未确认，本次运行不可信",
+                status=SecurityDiagnosisStatus.WAITING_FOR_INPUT,
+                before=before,
+            )
+
         # Phase 9C-3：从失败工具结果收集稳定 failure kinds（低基数，不含标识）。
         failure_kinds = collect_device_failure_kinds(result.tool_results)
         degraded = bool(failure_kinds)
@@ -553,6 +566,7 @@ class SecurityDiagnosisApplicationService:
             troubleshooting_order=insight.troubleshooting_order,
             degraded=degraded,
             failure_kinds=list(failure_kinds),
+            cancellation_confirmed=result.cancellation_confirmed,
         )
 
     # ------------------------------------------------------- 候选根因（Phase 1/2/3/4C）
@@ -658,6 +672,7 @@ class SecurityDiagnosisApplicationService:
             error=error,
             degraded=degraded,
             failure_kinds=list(failure_kinds),
+            cancellation_confirmed=result.cancellation_confirmed,
         )
 
     def _save_with_audit(

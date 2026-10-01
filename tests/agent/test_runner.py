@@ -14,7 +14,6 @@ from pydantic import BaseModel
 from security_diagnosis_harness.adapters.llm.fake import FakeLLM
 from security_diagnosis_harness.agent.runner import (
     TOOL_LOOP_WORKER_NAME,
-    OperationCancelledError,
     ToolLoopBudget,
     ToolLoopRunner,
     current_cancellation,
@@ -238,7 +237,7 @@ def test_runner_does_not_mutate_case(tool_registry, context):
 
 
 def test_deadline_is_still_enforced_for_a_non_cooperative_model(tool_registry, context):
-    """非严格模式：deadline 仍然有界生效，但必须如实上报"取消未确认"。"""
+    """非严格模式同步等待操作结束，再拒绝越过 deadline 的结果。"""
 
     class SlowLLM:
         def complete(self, request):
@@ -258,11 +257,10 @@ def test_deadline_is_still_enforced_for_a_non_cooperative_model(tool_registry, c
 
     assert result.ok is False
     assert "timeout_seconds=0.03" in (result.error or "")
-    assert elapsed < 0.2
+    assert elapsed >= 0.25
     assert result.rounds == 1
-    # 未声明参与者只能被"放弃等待"，因此绝不能声称取消已确认。
-    assert result.cancellation_confirmed is False
-    assert "取消未确认" in (result.error or "")
+    assert result.cancellation_confirmed is True
+    assert "取消未确认" not in (result.error or "")
 
 
 def test_deadline_is_still_enforced_for_a_non_cooperative_tool(
@@ -285,10 +283,10 @@ def test_deadline_is_still_enforced_for_a_non_cooperative_tool(
 
     assert result.ok is False
     assert "timeout_seconds=0.03" in (result.error or "")
-    assert monotonic() - started < 0.2
+    assert monotonic() - started >= 0.25
     assert result.tool_calls == 1
     assert result.tool_results == []
-    assert result.cancellation_confirmed is False
+    assert result.cancellation_confirmed is True
 
 
 @pytest.mark.parametrize(
@@ -403,28 +401,21 @@ def _live_workers() -> set[int]:
     }
 
 
-def test_timeout_cooperatively_cancels_the_model_operation(tool_registry, context):
-    """超时后底层模型操作必须停止，而不是在 daemon worker 中继续运行。"""
+def test_timeout_waits_for_declared_model_before_returning(tool_registry, context):
+    """即使参与者声明取消能力，Runner 也不靠声明提前返回。"""
     side_effects: list[int] = []
-    observed_cancel: list[bool] = []
-    started_calls: list[int] = []
 
-    class CooperativeSlowLLM:
+    class DeclaredSlowLLM:
         cancellation_aware = True
 
         def complete(self, request):
-            started_calls.append(1)
-            token = current_cancellation()
-            assert token is not None, "底层模型必须能看到协作取消令牌"
-            while not token.cancelled:
-                side_effects.append(1)
-                sleep(0.005)
-            observed_cancel.append(True)
+            sleep(0.08)
+            side_effects.append(1)
             return _final_response()
 
     before = _live_workers()
     runner = ToolLoopRunner(
-        CooperativeSlowLLM(),
+        DeclaredSlowLLM(),
         tool_registry,
         ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.05),
     )
@@ -436,37 +427,28 @@ def test_timeout_cooperatively_cancels_the_model_operation(tool_registry, contex
     assert result.final_conclusion is None
     assert result.tool_results == []
     assert result.evidence_drafts == []
-    # 操作确实观察到取消并主动退出：取消已被确认。
     assert result.cancellation_confirmed is True
-    # 且只被调用一次（无重试）。
-    assert observed_cancel == [True]
-    assert started_calls == [1]
-    # 返回后副作用计数不再变化。
-    settled = len(side_effects)
-    assert settled > 0
+    assert side_effects == [1]
+    # 返回时操作已经结束；之后不会出现迟到副作用。
     sleep(0.15)
-    assert len(side_effects) == settled
-    # 返回后没有遗留 worker。
+    assert side_effects == [1]
     assert _live_workers() <= before
 
 
-def test_timeout_cooperatively_cancels_the_tool_operation(
+def test_timeout_waits_for_tool_operation_before_returning(
     tool_registry, context, monkeypatch
 ):
-    """超时后底层工具 / Adapter 操作必须停止，不产生 Evidence。"""
-    ticks: list[int] = []
+    """工具越过 deadline 时，先等调用结束，再丢弃其迟到结果。"""
+    side_effects: list[int] = []
     calls: list[int] = []
 
-    def cooperative_execute(tool_name, arguments, tool_context):
+    def slow_execute(tool_name, arguments, tool_context):
         calls.append(1)
-        token = current_cancellation()
-        assert token is not None, "工具必须能看到协作取消令牌"
-        while not token.cancelled:
-            ticks.append(1)
-            sleep(0.005)
-        raise OperationCancelledError()
+        sleep(0.08)
+        side_effects.append(1)
+        return ToolExecutionResult(tool_name=tool_name, observation="late")
 
-    monkeypatch.setattr(tool_registry, "execute", cooperative_execute)
+    monkeypatch.setattr(tool_registry, "execute", slow_execute)
     before = _live_workers()
     runner = ToolLoopRunner(
         FakeLLM([_tool_call_response()]),
@@ -483,10 +465,9 @@ def test_timeout_cooperatively_cancels_the_tool_operation(
     assert result.tool_results == []
     assert result.evidence_drafts == []
     assert calls == [1]
-    settled = len(ticks)
-    assert settled > 0
+    assert side_effects == [1]
     sleep(0.15)
-    assert len(ticks) == settled
+    assert side_effects == [1]
     assert _live_workers() <= before
 
 
@@ -554,7 +535,7 @@ def test_strict_mode_refuses_non_cooperative_model_before_it_runs(tool_registry,
 
     assert result.ok is False
     assert "未声明支持协作取消" in (result.error or "")
-    assert result.cancellation_confirmed is False
+    assert result.cancellation_confirmed is True
     assert result.final_conclusion is None
     assert result.tool_results == []
     assert result.evidence_drafts == []
@@ -605,10 +586,10 @@ def test_strict_mode_refuses_non_cooperative_tool_before_it_runs(context):
     assert tool.started == 0
 
 
-def test_declared_but_violating_model_reports_unconfirmed_cancellation(
+def test_declared_slow_model_cannot_outlive_runner_return(
     tool_registry, context
 ):
-    """已声明却违反契约的参与者：残余风险必须被显式上报，不能伪装成干净超时。"""
+    """声明不能获得提前返回特权；Runner 必须等操作停止。"""
 
     class LyingLLM:
         cancellation_aware = True
@@ -623,12 +604,14 @@ def test_declared_but_violating_model_reports_unconfirmed_cancellation(
         ToolLoopBudget(max_rounds=1, max_tool_calls=1, timeout_seconds=0.05),
     )
 
+    started = monotonic()
     result = runner.run(make_case(), context)
 
     assert result.ok is False
     assert "timeout_seconds=0.05" in (result.error or "")
-    assert "取消未确认" in (result.error or "")
-    assert result.cancellation_confirmed is False
+    assert "取消未确认" not in (result.error or "")
+    assert result.cancellation_confirmed is True
+    assert monotonic() - started >= 0.25
     assert result.evidence_drafts == []
     assert result.final_conclusion is None
 

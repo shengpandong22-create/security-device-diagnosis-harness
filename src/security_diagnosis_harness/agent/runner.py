@@ -4,31 +4,23 @@ Runner 只负责"让模型在预算内通过 Registry 调工具并产出候选�
 它不修改 `SecurityDiagnosisCase` 的状态，也不把 EvidenceDraft 落成
 `DiagnosisEvidence`（这是应用服务的职责）。
 
-超时语义（Phase 12 修正，收窄且可证明）：
+超时语义（Phase 12 修正，安全优先）：
 
-Python **无法抢占式终止**正在运行的线程，因此本模块**不声称**"超时后任意代码都
-会停止"。实际保证分两层：
+Python 无法抢占式终止正在运行的线程。为保证 ``run()`` 返回时不再存在仍会产生迟到
+副作用的模型/工具调用，本模块不再把操作放到后台线程：调用在当前线程同步完成，随后
+检查 deadline。若调用越过 deadline，其结果被丢弃并返回受控超时；底层 I/O 必须同时
+配置自身的连接/读取超时，以限制单次同步调用最长阻塞时间。
 
-1. **准入闸门（严格模式，默认）**：`run()` 在调用任何模型或工具之前，先检查每个
-   参与者是否显式声明 ``cancellation_aware = True``（见
-   :func:`supports_cooperative_cancellation`）。未声明的实现——也就是"不可控后台
-   工作"——**根本不会被调用**，因此不可能在 Runner 返回后产生副作用。
-2. **协作取消 + 有限等待**：已声明的参与者通过 :func:`current_cancellation`
-   观察取消令牌。越过 deadline 后 Runner 置位令牌并**有限**等待其退出
-   （:data:`_CANCELLATION_GRACE_SECONDS`，不是无界 join）；迟到结果一律丢弃。
-
-残余风险被显式上报而不是静默接受：如果已声明的参与者违反契约、在宽限期内仍未
-退出，结果会带上 ``cancellation_confirmed=False``，调用方必须把该次运行视为不可信。
-未声明取消能力的参与者可以在非严格模式下以
-``require_cancellation_aware=False`` 显式放行，仅用于评测与实验。
+该取舍保证的是**返回边界**，不是任意 Python 代码的抢占式中止：一个永不返回的实现会
+阻塞调用方，但 Runner 不会在它仍运行时提前返回。严格模式仍拒绝未声明
+``cancellation_aware = True`` 的参与者，作为正式装配的能力治理门禁，而不再把布尔
+声明当成线程终止能力。
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from queue import Empty, Queue
-from threading import Thread
 from time import monotonic
 from typing import Any, TypeVar
 
@@ -89,15 +81,10 @@ TOOL_LOOP_WORKER_NAME = "tool-loop-budget-worker"
 
 #: 置位取消令牌后，等待底层操作协作退出的**有限**宽限时间。
 #: 这是有界等待，不是无界 join；仍未退出说明操作不遵守取消契约。
-_CANCELLATION_GRACE_SECONDS = 0.05
-
-
 class _RunnerDeadlineExceeded(TimeoutError):
     """越过 deadline 的内部信号。
 
-    ``cancellation_confirmed`` 为 ``False`` 表示：取消令牌已置位，但底层的已声明
-    参与者没有在有限宽限期内退出，因此**无法确认**它之后不会再产生副作用。调用方
-    必须把这种运行视为不可信，而不是当成一次干净的普通超时。
+    同步执行边界下，抛出本异常时操作已经返回，因此取消总是得到确认。
     """
 
     def __init__(self, *, cancellation_confirmed: bool = True) -> None:
@@ -146,9 +133,8 @@ class ToolLoopResult(BaseModel):
     #:
     #: - ``True``：正常返回 / 正常失败 / 超时后已确认取消（含未声明的参与者被拒绝
     #:   执行的情形，因为它从未开始运行）；
-    #: - ``False``：已声明的参与者违反契约、在宽限期内未退出，或本次运行因参与者
-    #:   未声明取消能力而被拒绝执行。调用方必须把该次运行视为不可信，不得把它的
-    #:   结果当作"干净的超时"。
+    #: - ``False``：保留给外部/旧实现显式表达无法确认的取消状态；当前同步 Runner
+    #:   不会产生该值。
     cancellation_confirmed: bool = True
 
 
@@ -160,9 +146,8 @@ class ToolLoopRunner:
         registry: 工具注册表。
         budget: 运行预算。
         require_cancellation_aware: 严格模式开关（默认 ``True``）。为 ``True`` 时，
-            Runner 在调用之前先拒绝所有未声明协作取消契约的模型 / 工具，从而保证
-            "Runner 返回后不会再出现迟到的副作用"。显式设为 ``False`` 只应用于评测
-            与实验场景，此时无法保证未声明参与者的迟到行为。
+            Runner 在调用之前拒绝未声明协作取消契约的模型 / 工具。该门禁用于能力
+            治理；返回后无迟到执行由同步调用边界保证。显式设为 ``False`` 仅用于评测。
     """
 
     def __init__(
@@ -215,7 +200,7 @@ class ToolLoopRunner:
                     case.diagnosis_id,
                     "运行参与者未声明支持协作取消，已拒绝执行: "
                     + ", ".join(unsupported),
-                    cancellation_confirmed=False,
+                    cancellation_confirmed=True,
                 )
         messages = [
             ChatMessage(role=ChatRole.SYSTEM, content=SYSTEM_PROMPT),
@@ -471,58 +456,30 @@ class ToolLoopRunner:
         deadline: float,
         cancellation: RunCancellation,
     ) -> _T:
-        """在 daemon worker 中执行操作；超时则置位取消并**有限**等待其退出。
+        """同步执行操作，并在其返回后落实 deadline。
 
-        语义（严格表述，不夸大）：
-
-        - worker 在协作取消令牌下运行操作，遵守契约的实现可以通过
-          :func:`current_cancellation` 观察取消；
-        - 若在 deadline 内完成，本方法按既有语义返回结果或原样抛出异常；
-        - 若越过 deadline，则先置位令牌再有限等待 worker 协作退出，最后抛出
-          :class:`_RunnerDeadlineExceeded`；迟到结果一律丢弃。
-
-        **本方法不能终止任意代码**：置位令牌只对遵守契约的实现有效。若 worker 在
-        有限宽限期后仍然存活（实现违反契约），异常会带上
-        ``cancellation_confirmed=False``，由调用方把该次运行标记为不可信。因此严格
-        模式会在调用之前就拒绝未声明的实现，使这里只可能遇到"已声明却违约"的残余
-        情况。
-
-        这里的等待是有界 join（``_CANCELLATION_GRACE_SECONDS``），不是无界 join。
+        不创建 worker，因此本方法返回或抛出时 ``operation`` 必然已经结束。若操作
+        越过 deadline，其结果或异常均被超时结论覆盖；这样不会把迟到结果提交给上层，
+        也不会留下后台副作用。底层网络/设备实现必须用自身 I/O timeout 限制阻塞时间。
         """
         remaining = deadline - monotonic()
         if remaining <= 0:
             cancellation.cancel()
             raise _RunnerDeadlineExceeded
-        # worker 每个生命周期只 put 一次，因此队列不会满；一次 put 也保证读取
-        # 到的就是本次运行的唯一结果。
-        outcome: Queue[tuple[bool, _T | BaseException]] = Queue()
-
-        def execute() -> None:
-            token = set_current_cancellation(cancellation)
-            try:
-                result = operation()
-            except BaseException as exc:  # 原异常交由调用线程按既有语义处理。
-                outcome.put((False, exc))
-                return
-            finally:
-                reset_current_cancellation(token)
-            outcome.put((True, result))
-
-        worker = Thread(target=execute, daemon=True, name=TOOL_LOOP_WORKER_NAME)
-        worker.start()
-        worker.join(remaining)
-        if worker.is_alive():
-            # 真取消：置位协作取消令牌，让遵守契约的操作停止产生副作用，再有限等待。
-            cancellation.cancel()
-            worker.join(_CANCELLATION_GRACE_SECONDS)
-            # 仍在运行说明实现违反契约：如实上报"取消未确认"，而不是假装已停止。
-            raise _RunnerDeadlineExceeded(
-                cancellation_confirmed=not worker.is_alive()
-            )
+        token = set_current_cancellation(cancellation)
         try:
-            succeeded, value = outcome.get_nowait()
-        except Empty:  # pragma: no cover - worker 已退出但未 put，仅防御性处理。
-            raise _RunnerDeadlineExceeded from None
+            try:
+                value: _T | BaseException = operation()
+                succeeded = True
+            except BaseException as exc:  # 原异常仅在 deadline 内交由调用方处理。
+                value = exc
+                succeeded = False
+        finally:
+            reset_current_cancellation(token)
+
+        if monotonic() > deadline:
+            cancellation.cancel()
+            raise _RunnerDeadlineExceeded(cancellation_confirmed=True)
         if not succeeded:
             raise value
         return value

@@ -104,6 +104,7 @@ class RunDiagnosisData(BaseModel):
     rounds: int = 0
     tool_calls: int = 0
     error: str | None = None
+    cancellation_confirmed: bool = True
     candidate_label: str | None = None
     candidate_explanation: str = ""
     evidence_chain: list[str] = Field(default_factory=list)

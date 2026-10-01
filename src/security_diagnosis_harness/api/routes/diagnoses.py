@@ -145,6 +145,7 @@ def create_diagnoses_router(
             rounds=result.rounds,
             tool_calls=result.tool_calls,
             error=result.error,
+            cancellation_confirmed=result.cancellation_confirmed,
             candidate_label=(
                 result.candidate_label.value if result.candidate_label is not None else None
             ),

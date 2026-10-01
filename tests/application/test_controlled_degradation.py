@@ -98,3 +98,30 @@ def test_partial_success_persists_only_real_evidence_and_marks_degraded():
     assert result.failure_kinds == ["timeout"]
     assert result.evidence_count == 1
     assert len(service.list_evidence(diagnosis_id)) == 1
+
+
+def test_unconfirmed_cancellation_is_consumed_before_evidence_is_persisted():
+    draft = ToolEvidenceDraft(
+        evidence_type=EvidenceType.DEVICE_STATUS,
+        source=EvidenceSource.DEVICE_GATEWAY,
+        summary="不得落库的迟到证据",
+        payload={"online": True},
+    )
+    service, runner, diagnosis_id = _service(
+        ToolLoopResult(
+            diagnosis_id="placeholder",
+            ok=False,
+            error="取消未确认",
+            cancellation_confirmed=False,
+            evidence_drafts=[draft],
+        )
+    )
+
+    result = service.run_diagnosis(diagnosis_id)
+
+    assert runner.calls == 1
+    assert result.ok is False
+    assert result.status is SecurityDiagnosisStatus.WAITING_FOR_INPUT
+    assert result.cancellation_confirmed is False
+    assert result.evidence_count == 0
+    assert service.list_evidence(diagnosis_id) == []
