@@ -59,7 +59,7 @@ passed 保留为封版时点证据，新提交以新的全量回归记录为准�
 
 - [x] 公开调用方无法通过 Runtime 公开入口 `rotate()` 替换授权清单或重置预算
 - [x] 容器关闭后，关闭前取得的授权快照视图仍不能旁路（无 rotate/authorize/close）
-- [x] Runner 返回 timeout 后底层模型/工具操作停止：副作用计数不再变化、无 Evidence、无重试、无遗留 worker
+- [x] Runner 返回 timeout 后底层模型/工具操作停止：副作用计数不再变化、无 Evidence、无重试、无遗留 worker（**2026-10-01 修订**：该条只在"参与者已声明协作取消契约"时成立；未声明的参与者在严格模式下被拒绝执行，见第 7 节）
 - [x] 评测历史存在可持久化可信 Head（跨进程重启可加载）
 - [x] 历史回滚 / 截尾 / Head 缺失 / Head 篡改均被拒绝；完整性密钥不落盘
 - [x] 两个实例并发 append 不丢失更新，两条记录都存在且 baseline 血缘合法
@@ -79,3 +79,27 @@ passed 保留为封版时点证据，新提交以新的全量回归记录为准�
 `git diff --check 5d6c1ae..HEAD` 通过；离线 Phase 回归（Phase 0 demo、授权 dry-run、
 Phase 8C 历史趋势、Phase 6 一致性、import 副作用探针）退出码均为 0。
 本轮未运行真实模型、真实 BGE、真机探针与联网 Bootstrap。
+
+## 7. 2026-10-01 跟进修复验收
+
+本节是对第 6 节的**跟进复核与修订**，不删除第 1～6 节的历史结论。复核结论：第 6 节有 4 条
+"测试通过但边界未闭环"，已在 `44409c9` / `378f87a` / `6221e0d` / `8ebde01` 修复。
+
+- [x] 未声明协作取消契约的模型 / 工具在严格模式下**根本不被调用**（无副作用、无 worker、无子进程）
+- [x] 声明了却违约的参与者被以 `cancellation_confirmed=False` + "取消未确认" 显式上报，不伪装成干净超时
+- [x] 正式装配的 `FakeLLM` 与全部工具都有声明契约的守卫测试
+- [x] 响应体上限在**传输期**生效：`client.stream` + `iter_bytes` 逐块累计，超限立刻停止读取并关闭响应
+- [x] 恰好等于上限允许；超出 1 字节拒绝；首块超限只读 1 块；累计超限不读剩余块
+- [x] 超限响应不进入 JSON 解析，错误不含 endpoint / 正文 / 凭证，注入 client 不被关闭
+- [x] `create_app()` 与 `create_diagnoses_router()` 都拒绝"认证 + Demo"与"两者都缺"的组合
+- [x] 只要存在已认证 principal，正文自报 reporter/reviewer 结构上不可能生效
+- [x] Head 文件有独立的 `.head-lock` 跨进程排它锁，`load_head` / `save_head` 全周期持锁
+- [x] 两个进程、三进程压力循环、两个历史共享一个 Head Store 都不丢更新，无 staging 残留，无死锁
+
+验证口径（2026-10-01）：全量 `uv run pytest` **1933 passed**；`uv run ruff check .` 通过；
+`git diff --check 5d6c1ae..HEAD` 通过；离线 Phase 回归 22 个脚本全部退出码 0（未运行脚本及原因见
+[交接报告第 11 节](../05-audits/2026-09-29安全与自洽性修复交接报告.md)）。
+本轮同样未运行真实模型、真实 BGE、真机探针与联网 Bootstrap，未 push。
+
+**仍未闭环（明确保留）**：Python 无法抢占式终止正在运行的线程，因此取消是协作式的；直接调用
+私有 `_within_deadline` 绕过准入闸门时，未声明参与者的迟到副作用仍无法阻止。
