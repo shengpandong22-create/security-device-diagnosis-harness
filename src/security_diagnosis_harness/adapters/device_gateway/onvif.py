@@ -11,6 +11,7 @@ import socket
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from time import monotonic
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree
@@ -219,6 +220,7 @@ class OnvifReadOnlySettings(BaseModel):
     allow_private_stream_uri_host_rewrite: bool = False
     connect_timeout_seconds: float = Field(default=2.0, gt=0, le=30)
     read_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    total_timeout_seconds: float = Field(default=15.0, gt=0, le=90)
     max_response_bytes: int = Field(default=256_000, ge=1_024, le=2_000_000)
     max_xml_elements: int = Field(default=4_096, ge=1, le=20_000)
     max_xml_depth: int = Field(default=32, ge=2, le=128)
@@ -329,6 +331,7 @@ class OnvifReadOnlyAdapter:
         </wsse:Security>"""
 
     def _soap(self, service: str, body: str, operation: str) -> ElementTree.Element:
+        deadline = monotonic() + self._settings.total_timeout_seconds
         username, password = self._credentials()
         security = (
             self._security_header(username, password)
@@ -394,6 +397,7 @@ class OnvifReadOnlyAdapter:
                     response,
                     max_bytes=self._settings.max_response_bytes,
                     operation=operation,
+                    deadline=deadline,
                 )
         except httpx.TimeoutException as exc:
             raise DeviceAdapterError(DeviceAdapterErrorKind.TIMEOUT, operation) from exc

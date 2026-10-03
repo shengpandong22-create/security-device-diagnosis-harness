@@ -15,9 +15,15 @@
 
 from __future__ import annotations
 
+from time import monotonic
+
 import httpx
 
-__all__ = ["ResponseTooLargeError", "read_bounded_bytes"]
+__all__ = ["ResponseDeadlineExceeded", "ResponseTooLargeError", "read_bounded_bytes"]
+
+
+class ResponseDeadlineExceeded(Exception):
+    """整次响应读取超过调用方给出的绝对墙钟 deadline。"""
 
 
 class ResponseTooLargeError(Exception):
@@ -32,7 +38,9 @@ class ResponseTooLargeError(Exception):
         super().__init__(f"响应体超过上限 {max_bytes} 字节")
 
 
-def read_bounded_bytes(response: httpx.Response, max_bytes: int) -> bytes:
+def read_bounded_bytes(
+    response: httpx.Response, max_bytes: int, *, deadline: float | None = None
+) -> bytes:
     """逐块读取响应体，累计超过 ``max_bytes`` 时立刻停止并关闭响应。
 
     读取过程中一旦超限就抛出 :class:`ResponseTooLargeError`，**不会**继续读取剩余
@@ -48,10 +56,14 @@ def read_bounded_bytes(response: httpx.Response, max_bytes: int) -> bytes:
     total = 0
     try:
         for chunk in response.iter_bytes():
+            if deadline is not None and monotonic() > deadline:
+                raise ResponseDeadlineExceeded
             total += len(chunk)
             if total > max_bytes:
                 raise ResponseTooLargeError(max_bytes)
             chunks.append(chunk)
+        if deadline is not None and monotonic() > deadline:
+            raise ResponseDeadlineExceeded
     except BaseException:
         # 立即释放连接：超限时停止读取，传输异常时避免连接泄漏。
         response.close()

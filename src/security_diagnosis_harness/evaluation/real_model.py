@@ -19,6 +19,7 @@ from security_diagnosis_harness.domain.redaction import redact_mapping, redact_t
 from security_diagnosis_harness.evaluation.dataset import DatasetCase
 from security_diagnosis_harness.evaluation.taxonomy import evaluation_taxonomy
 from security_diagnosis_harness.http_stream import (
+    ResponseDeadlineExceeded,
     ResponseTooLargeError,
     read_bounded_bytes,
 )
@@ -165,6 +166,7 @@ class OpenAICompatibleEvaluationClient:
     def evaluate(
         self, payload: Mapping[str, Any], *, max_completion_tokens: int
     ) -> EvaluationModelResponse:
+        deadline = time.monotonic() + self._settings.timeout_seconds
         try:
             with self._client.stream(
                 "POST",
@@ -188,9 +190,15 @@ class OpenAICompatibleEvaluationClient:
                 response.raise_for_status()
                 # 传输过程中的资源边界：逐块读取并在超限时立刻停止，不完整缓冲。
                 try:
-                    body_bytes = read_bounded_bytes(response, self._settings.max_response_bytes)
+                    body_bytes = read_bounded_bytes(
+                        response,
+                        self._settings.max_response_bytes,
+                        deadline=deadline,
+                    )
                 except ResponseTooLargeError:
                     raise ModelEvaluationError("response_too_large") from None
+                except ResponseDeadlineExceeded:
+                    raise ModelEvaluationError("timeout") from None
             body = json.loads(body_bytes)
             choice = body["choices"][0]
             if choice.get("finish_reason") == "length":

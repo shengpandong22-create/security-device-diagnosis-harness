@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Mapping
+from time import monotonic
 from types import TracebackType
 from typing import Any
 from urllib.parse import urlparse
@@ -25,6 +26,7 @@ from urllib.parse import urlparse
 import httpx
 
 from security_diagnosis_harness.http_stream import (
+    ResponseDeadlineExceeded,
     ResponseTooLargeError,
     read_bounded_bytes,
 )
@@ -132,6 +134,7 @@ class HttpBgeEmbeddingAdapter:
         self._max_text_chars = max_text_chars
         self._max_total_chars = max_total_chars
         self._max_response_bytes = max_response_bytes
+        self._timeout_seconds = timeout_seconds
         self._owns_client = client is None
         self._client = client or httpx.Client(
             base_url=self._base_url, timeout=timeout_seconds
@@ -147,6 +150,7 @@ class HttpBgeEmbeddingAdapter:
         if not texts:
             return []
         self._validate_texts(texts)
+        deadline = monotonic() + self._timeout_seconds
         try:
             with self._client.stream(
                 "POST", "/v1/embeddings", json={"model": self._model, "input": texts}
@@ -159,9 +163,15 @@ class HttpBgeEmbeddingAdapter:
                     ) from None
                 # 传输期资源边界：逐块读取，超限立刻停止并关闭响应。
                 try:
-                    body = read_bounded_bytes(response, self._max_response_bytes)
+                    body = read_bounded_bytes(
+                        response,
+                        self._max_response_bytes,
+                        deadline=deadline,
+                    )
                 except ResponseTooLargeError:
                     raise BgeEmbeddingError("response_too_large") from None
+                except ResponseDeadlineExceeded:
+                    raise BgeEmbeddingError("timeout") from None
         except httpx.HTTPError:
             # 不链式保留原始异常：httpx 异常文本包含请求 endpoint。
             raise BgeEmbeddingError("transport_error") from None

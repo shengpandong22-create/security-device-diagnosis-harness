@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from time import monotonic
 from typing import Any
 from urllib.parse import quote, urlsplit
 
@@ -100,6 +101,7 @@ class SecurityPlatformHttpAdapter:
         self.close()
 
     def _get(self, operation: str, path: str, params: dict[str, Any] | None = None) -> Any:
+        deadline = monotonic() + self._settings.total_timeout_seconds
         credential = self._credential_resolver.resolve(self._settings.credential_reference)
         try:
             with self._client.stream(
@@ -117,6 +119,7 @@ class SecurityPlatformHttpAdapter:
                     response,
                     max_bytes=self._settings.max_response_bytes,
                     operation=operation,
+                    deadline=deadline,
                 )
         except httpx.TimeoutException as exc:
             raise DeviceAdapterError(DeviceAdapterErrorKind.TIMEOUT, operation) from exc
