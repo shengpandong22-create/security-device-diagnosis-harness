@@ -791,4 +791,3 @@ def test_head_lock_file_path_is_derived_next_to_the_head_file(tmp_path):
     assert store.lock_path == head_path.with_name(head_path.name + ".head-lock")
     # Head 锁与历史文档锁刻意不同名，避免两者退化成同一把锁。
     assert not store.lock_path.name.endswith(".json.lock")
-

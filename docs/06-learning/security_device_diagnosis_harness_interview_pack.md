@@ -1,7 +1,7 @@
 # Security Device Diagnosis Harness —— 项目介绍 / 架构图 / 流程图 / 面试问答
 
 > 说明：本文档面向面试准备与项目介绍。
-> 
+>
 > - 图示使用 **Mermaid** 编写，可在 GitHub、Obsidian、Typora、Markdown Preview Enhanced 等支持 Mermaid 的环境中直接渲染。
 > - **每张 Mermaid 图都配有同内容的 SVG 版本**（位于 `docs/01-architecture/interview-0*.svg`），无法渲染 Mermaid 时直接看 SVG，两者内容一致、以 Mermaid 为准。
 > - 内容重点不是“用了多少技术”，而是围绕 **为什么存在、失败怎么兜底、如何验证效果** 来组织。
@@ -1087,4 +1087,3 @@ lifecycle                candidate / confirmed / rejected / retired
 3. **准备一个“失败案例”**
    - 比如：某次设计为什么不能直接自动写入知识库
    - 面试官通常很喜欢听“你做错过什么，然后怎么修正”
-
