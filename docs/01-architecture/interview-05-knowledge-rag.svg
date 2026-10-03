@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 792" width="100%">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .ts { font: 11px sans-serif; fill: #5F5E5A; }
+    .th { font: 500 13px sans-serif; fill: #2C2C2A; }
+    .td { font: 500 12px sans-serif; fill: #412402; }
+    .title { font: 500 16px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+    .arrd { stroke: #888; stroke-width: 1.6; fill: none; marker-end: url(#arr); stroke-dasharray: 5 3; }
+    .purple { fill: #EEEDFE; stroke: #7F77DD; stroke-width: 1.2; }
+    .green { fill: #E1F5EE; stroke: #1D9E75; stroke-width: 1.2; }
+    .orange { fill: #FAECE7; stroke: #D85A30; stroke-width: 1.2; }
+    .pink { fill: #FBEAF0; stroke: #D4537E; stroke-width: 1.2; }
+    .yellow { fill: #FAEEDA; stroke: #BA7517; stroke-width: 1.2; }
+    .gray { fill: #F1EFE8; stroke: #888780; stroke-width: 1.2; }
+  </style>
+</defs>
+<rect x="0" y="0" width="680" height="792" fill="#ffffff"/>
+<text class="title" x="340" y="28" text-anchor="middle">知识沉淀与 RAG 闭环（双 gate + 读侧隔离）</text>
+
+<rect class="pink" x="230" y="48" width="220" height="44" rx="8"/>
+<text class="th" x="340" y="66" text-anchor="middle">Confirmed Diagnosis</text>
+<text class="ts" x="340" y="83" text-anchor="middle">含人工 confirm review</text>
+<line class="arr" x1="340" y1="92" x2="340" y2="112"/>
+
+<polygon class="yellow" points="340,112 450,142 340,172 230,142"/>
+<text class="td" x="340" y="146" text-anchor="middle">有候选结论且引用有效？</text>
+<line class="arr" x1="340" y1="172" x2="340" y2="192"/>
+<text class="ts" x="352" y="186">是</text>
+
+<rect class="gray" x="470" y="114" width="180" height="56" rx="8"/>
+<text class="th" x="560" y="136" text-anchor="middle">不进入知识流程</text>
+<text class="ts" x="560" y="153" text-anchor="middle">无候选结论或引用无效</text>
+<line class="arr" x1="450" y1="142" x2="466" y2="142"/>
+<text class="ts" x="454" y="134">否</text>
+
+<rect class="purple" x="230" y="192" width="220" height="44" rx="8"/>
+<text class="th" x="340" y="209" text-anchor="middle">生成 Knowledge Candidate</text>
+<text class="ts" x="340" y="226" text-anchor="middle">状态 = candidate（非 confirmed）</text>
+<line class="arr" x1="340" y1="236" x2="340" y2="256"/>
+
+<polygon class="yellow" points="340,256 450,286 340,316 230,286"/>
+<text class="td" x="340" y="290" text-anchor="middle">Knowledge Review（人工）</text>
+
+<polyline class="arr" points="230,286 130,286 130,356"/>
+<text class="ts" x="214" y="278">否</text>
+<line class="arr" x1="340" y1="316" x2="340" y2="356"/>
+<text class="ts" x="352" y="340">retire</text>
+<polyline class="arr" points="450,286 550,286 550,356"/>
+<text class="ts" x="462" y="278">confirm</text>
+
+<rect class="gray" x="40" y="360" width="180" height="48" rx="8"/>
+<text class="th" x="130" y="380" text-anchor="middle">Rejected</text>
+<text class="ts" x="130" y="397" text-anchor="middle">不可召回</text>
+
+<rect class="gray" x="250" y="360" width="180" height="48" rx="8"/>
+<text class="th" x="340" y="380" text-anchor="middle">Retired</text>
+<text class="ts" x="340" y="397" text-anchor="middle">保留审计 · 退出召回</text>
+
+<rect class="green" x="460" y="360" width="180" height="48" rx="8"/>
+<text class="th" x="550" y="380" text-anchor="middle">Confirmed Knowledge</text>
+<text class="ts" x="550" y="397" text-anchor="middle">可被检索</text>
+<line class="arr" x1="550" y1="408" x2="550" y2="436"/>
+
+<rect class="pink" x="400" y="436" width="240" height="48" rx="8"/>
+<text class="th" x="520" y="456" text-anchor="middle">Knowledge Store</text>
+<text class="ts" x="520" y="473" text-anchor="middle">仅保存 confirmed 知识</text>
+<line class="arr" x1="458" y1="484" x2="458" y2="524"/>
+<line class="arr" x1="582" y1="484" x2="582" y2="524"/>
+
+<rect class="orange" x="400" y="524" width="115" height="48" rx="8"/>
+<text class="th" x="458" y="544" text-anchor="middle">Keyword 索引</text>
+<text class="ts" x="458" y="561" text-anchor="middle">中文二元组</text>
+
+<rect class="orange" x="525" y="524" width="115" height="48" rx="8"/>
+<text class="th" x="582" y="544" text-anchor="middle">向量索引</text>
+<text class="ts" x="582" y="561" text-anchor="middle">BGE 512 维</text>
+
+<line class="arr" x1="458" y1="572" x2="458" y2="612"/>
+<line class="arr" x1="582" y1="572" x2="582" y2="612"/>
+
+<rect class="purple" x="400" y="612" width="240" height="52" rx="8"/>
+<text class="th" x="520" y="633" text-anchor="middle">Hybrid Retriever</text>
+<text class="ts" x="520" y="650" text-anchor="middle">加权 RRF：词法 1.2 · 语义 1.0</text>
+<line class="arr" x1="520" y1="664" x2="520" y2="684"/>
+
+<rect class="gray" x="400" y="684" width="240" height="56" rx="8"/>
+<text class="th" x="520" y="706" text-anchor="middle">knowledge__search 进入上下文</text>
+<text class="ts" x="520" y="723" text-anchor="middle">reliability = LOW · 最多 possible</text>
+
+<polyline class="arrd" points="400,712 24,712 24,70 226,70"/>
+<text class="ts" x="40" y="400" transform="rotate(-90 40 400)">confirmed 知识进入后续诊断（闭环）</text>
+
+<g transform="translate(28,756)">
+  <rect x="0" y="0" width="624" height="22" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="15">图例</text>
+  <rect x="44" y="6" width="12" height="12" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.8"/>
+  <text class="ts" x="60" y="15">诊断/存储</text>
+  <rect x="140" y="6" width="12" height="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.8"/>
+  <text class="ts" x="156" y="15">候选/检索</text>
+  <rect x="236" y="6" width="12" height="12" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.8"/>
+  <text class="ts" x="252" y="15">治理判断</text>
+  <rect x="324" y="6" width="12" height="12" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.8"/>
+  <text class="ts" x="340" y="15">可召回知识</text>
+  <rect x="428" y="6" width="12" height="12" fill="#FAECE7" stroke="#D85A30" stroke-width="0.8"/>
+  <text class="ts" x="444" y="15">索引</text>
+  <rect x="488" y="6" width="12" height="12" fill="#F1EFE8" stroke="#888780" stroke-width="0.8"/>
+  <text class="ts" x="504" y="15">不可召回/说明</text>
+  <line x1="588" y1="12" x2="608" y2="12" stroke="#888" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+  <text class="ts" x="612" y="15">闭环</text>
+</g>
+</svg>

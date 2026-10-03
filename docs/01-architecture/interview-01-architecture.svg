@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 990" width="100%">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .ts { font: 11px sans-serif; fill: #5F5E5A; }
+    .th { font: 500 13px sans-serif; fill: #2C2C2A; }
+    .title { font: 500 16px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+    .layer-box { fill: none; stroke: #B0B0B0; stroke-width: 1.2; stroke-dasharray: 6 3; }
+    .layer-badge { font: 500 11px sans-serif; fill: #666; }
+    .blue { fill: #E6F1FB; stroke: #378ADD; stroke-width: 1.2; }
+    .purple { fill: #EEEDFE; stroke: #7F77DD; stroke-width: 1.2; }
+    .green { fill: #E1F5EE; stroke: #1D9E75; stroke-width: 1.2; }
+    .orange { fill: #FAECE7; stroke: #D85A30; stroke-width: 1.2; }
+    .pink { fill: #FBEAF0; stroke: #D4537E; stroke-width: 1.2; }
+    .gray { fill: #F1EFE8; stroke: #888780; stroke-width: 1.2; }
+  </style>
+</defs>
+<rect x="0" y="0" width="680" height="990" fill="#ffffff"/>
+<text class="title" x="340" y="28" text-anchor="middle">Security Device Diagnosis Harness — 总体架构</text>
+
+<!-- 第1层 用户交互 -->
+<rect class="layer-box" x="28" y="40" width="624" height="120" rx="10"/>
+<text class="layer-badge" x="40" y="56">第1层</text>
+<rect class="blue" x="240" y="52" width="200" height="28" rx="14"/>
+<text class="th" x="340" y="70" text-anchor="middle">用户交互层</text>
+<rect class="gray" x="48" y="98" width="288" height="44" rx="8"/>
+<text class="th" x="192" y="115" text-anchor="middle">运维人员 / 用户</text>
+<text class="ts" x="192" y="132" text-anchor="middle">提交症状 · 人工审核确认</text>
+<rect class="blue" x="352" y="98" width="288" height="44" rx="8"/>
+<text class="th" x="496" y="115" text-anchor="middle">FastAPI 接口层</text>
+<text class="ts" x="496" y="132" text-anchor="middle">创建 · 运行 · 审核 · 报告</text>
+<line class="arr" x1="340" y1="168" x2="340" y2="206"/>
+
+<!-- 第2层 应用编排 -->
+<rect class="layer-box" x="28" y="208" width="624" height="120" rx="10"/>
+<text class="layer-badge" x="40" y="224">第2层</text>
+<rect class="purple" x="240" y="220" width="200" height="28" rx="14"/>
+<text class="th" x="340" y="238" text-anchor="middle">应用编排层</text>
+<rect class="purple" x="44" y="266" width="136" height="44" rx="8"/>
+<text class="th" x="112" y="283" text-anchor="middle">Application</text>
+<text class="ts" x="112" y="300" text-anchor="middle">Service·事务边界</text>
+<rect class="purple" x="196" y="266" width="136" height="44" rx="8"/>
+<text class="th" x="264" y="283" text-anchor="middle">Diagnosis Case</text>
+<text class="ts" x="264" y="300" text-anchor="middle">状态机与不变量</text>
+<rect class="purple" x="348" y="266" width="136" height="44" rx="8"/>
+<text class="th" x="416" y="283" text-anchor="middle">CitationPolicy</text>
+<text class="ts" x="416" y="300" text-anchor="middle">结论引用门禁</text>
+<rect class="purple" x="500" y="266" width="136" height="44" rx="8"/>
+<text class="th" x="568" y="283" text-anchor="middle">HumanReview</text>
+<text class="ts" x="568" y="300" text-anchor="middle">唯一确认入口</text>
+<line class="arr" x1="340" y1="336" x2="340" y2="374"/>
+
+<!-- 第3层 AI 推理 -->
+<rect class="layer-box" x="28" y="376" width="624" height="120" rx="10"/>
+<text class="layer-badge" x="40" y="392">第3层</text>
+<rect class="green" x="240" y="388" width="200" height="28" rx="14"/>
+<text class="th" x="340" y="406" text-anchor="middle">AI 推理层</text>
+<rect class="green" x="48" y="434" width="184" height="44" rx="8"/>
+<text class="th" x="140" y="451" text-anchor="middle">ToolLoopRunner</text>
+<text class="ts" x="140" y="468" text-anchor="middle">受控模型-工具循环</text>
+<rect class="green" x="248" y="434" width="184" height="44" rx="8"/>
+<text class="th" x="340" y="451" text-anchor="middle">LLM Client</text>
+<text class="ts" x="340" y="468" text-anchor="middle">Fake / OpenAI 兼容</text>
+<rect class="green" x="448" y="434" width="184" height="44" rx="8"/>
+<text class="th" x="540" y="451" text-anchor="middle">ToolLoopBudget</text>
+<text class="ts" x="540" y="468" text-anchor="middle">3轮·5次·30s·上下文上限</text>
+<line class="arr" x1="340" y1="504" x2="340" y2="542"/>
+
+<!-- 第4层 工具与设备 -->
+<rect class="layer-box" x="28" y="544" width="624" height="174" rx="10"/>
+<text class="layer-badge" x="40" y="560">第4层</text>
+<rect class="orange" x="240" y="556" width="200" height="28" rx="14"/>
+<text class="th" x="340" y="574" text-anchor="middle">工具与设备层</text>
+<rect class="orange" x="48" y="602" width="184" height="44" rx="8"/>
+<text class="th" x="140" y="619" text-anchor="middle">ToolRegistry</text>
+<text class="ts" x="140" y="636" text-anchor="middle">权限·只读·参数闸门</text>
+<rect class="orange" x="248" y="602" width="184" height="44" rx="8"/>
+<text class="th" x="340" y="619" text-anchor="middle">只读工具</text>
+<text class="ts" x="340" y="636" text-anchor="middle">设备 19 方法 + 知识检索</text>
+<rect class="orange" x="448" y="602" width="184" height="44" rx="8"/>
+<text class="th" x="540" y="619" text-anchor="middle">RoutedGateway</text>
+<text class="ts" x="540" y="636" text-anchor="middle">资产·能力·授权路由</text>
+<rect class="orange" x="48" y="662" width="584" height="44" rx="8"/>
+<text class="th" x="340" y="679" text-anchor="middle">设备 Adapter（全部只读）</text>
+<text class="ts" x="340" y="696" text-anchor="middle">ONVIF(SOAP/Digest) · RTSP · 平台契约 · Simulator</text>
+<line class="arr" x1="340" y1="726" x2="340" y2="764"/>
+
+<!-- 第5层 存储与治理 -->
+<rect class="layer-box" x="28" y="772" width="624" height="174" rx="10"/>
+<text class="layer-badge" x="40" y="788">第5层</text>
+<rect class="pink" x="240" y="784" width="200" height="28" rx="14"/>
+<text class="th" x="340" y="802" text-anchor="middle">存储与治理层</text>
+<rect class="pink" x="48" y="830" width="184" height="44" rx="8"/>
+<text class="th" x="140" y="847" text-anchor="middle">SQLite Repository</text>
+<text class="ts" x="140" y="864" text-anchor="middle">CAS 乐观锁 · Alembic</text>
+<rect class="pink" x="248" y="830" width="184" height="44" rx="8"/>
+<text class="th" x="340" y="847" text-anchor="middle">追加式 Audit</text>
+<text class="ts" x="340" y="864" text-anchor="middle">一致性扫描 · 备份恢复</text>
+<rect class="pink" x="448" y="830" width="184" height="44" rx="8"/>
+<text class="th" x="540" y="847" text-anchor="middle">Knowledge Store</text>
+<text class="ts" x="540" y="864" text-anchor="middle">confirmed-only RAG</text>
+<rect class="pink" x="48" y="890" width="584" height="44" rx="8"/>
+<text class="th" x="340" y="907" text-anchor="middle">评测治理</text>
+<text class="ts" x="340" y="924" text-anchor="middle">Dataset(dev/val/test) · Grader · 失败归因 · Release Gate</text>
+
+<!-- 图例 -->
+<g transform="translate(28,962)">
+  <rect x="0" y="0" width="624" height="22" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="15">图例</text>
+  <rect x="44" y="6" width="12" height="12" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.8"/>
+  <text class="ts" x="60" y="15">用户交互</text>
+  <rect x="124" y="6" width="12" height="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.8"/>
+  <text class="ts" x="140" y="15">应用编排</text>
+  <rect x="204" y="6" width="12" height="12" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.8"/>
+  <text class="ts" x="220" y="15">AI 推理</text>
+  <rect x="284" y="6" width="12" height="12" fill="#FAECE7" stroke="#D85A30" stroke-width="0.8"/>
+  <text class="ts" x="300" y="15">工具与设备</text>
+  <rect x="380" y="6" width="12" height="12" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.8"/>
+  <text class="ts" x="396" y="15">存储与治理</text>
+  <line x1="486" y1="12" x2="506" y2="12" stroke="#888" stroke-width="1.6" marker-end="url(#arr)"/>
+  <text class="ts" x="512" y="15">层间调用</text>
+</g>
+</svg>

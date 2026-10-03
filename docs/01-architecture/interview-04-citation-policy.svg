@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 822" width="100%">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .ts { font: 11px sans-serif; fill: #5F5E5A; }
+    .th { font: 500 13px sans-serif; fill: #2C2C2A; }
+    .td { font: 500 12px sans-serif; fill: #412402; }
+    .title { font: 500 16px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+    .blue { fill: #E6F1FB; stroke: #378ADD; stroke-width: 1.2; }
+    .purple { fill: #EEEDFE; stroke: #7F77DD; stroke-width: 1.2; }
+    .pink { fill: #FBEAF0; stroke: #D4537E; stroke-width: 1.2; }
+    .orange { fill: #FAECE7; stroke: #D85A30; stroke-width: 1.2; }
+    .yellow { fill: #FAEEDA; stroke: #BA7517; stroke-width: 1.2; }
+    .gray { fill: #F1EFE8; stroke: #888780; stroke-width: 1.2; }
+  </style>
+</defs>
+<rect x="0" y="0" width="680" height="822" fill="#ffffff"/>
+<text class="title" x="340" y="28" text-anchor="middle">CitationPolicy 与结论分级（模型不能自我确认）</text>
+
+<rect class="purple" x="170" y="48" width="220" height="48" rx="8"/>
+<text class="th" x="280" y="66" text-anchor="middle">候选结论 DiagnosisConclusion</text>
+<text class="ts" x="280" y="84" text-anchor="middle">带 cited_evidence_ids</text>
+<line class="arr" x1="280" y1="96" x2="280" y2="116"/>
+
+<polygon class="yellow" points="280,116 390,148 280,180 170,148"/>
+<text class="td" x="280" y="142" text-anchor="middle">归属本诊断且</text>
+<text class="td" x="280" y="158" text-anchor="middle">fault_type 一致？</text>
+<line class="arr" x1="280" y1="180" x2="280" y2="200"/>
+<text class="ts" x="292" y="194">是</text>
+
+<polygon class="yellow" points="280,200 390,232 280,264 170,232"/>
+<text class="td" x="280" y="226" text-anchor="middle">至少一条引用且</text>
+<text class="td" x="280" y="242" text-anchor="middle">引用真实存在？</text>
+<line class="arr" x1="280" y1="264" x2="280" y2="284"/>
+<text class="ts" x="292" y="278">是</text>
+
+<polygon class="yellow" points="280,284 390,316 280,348 170,316"/>
+<text class="td" x="280" y="320" text-anchor="middle">是否尝试输出 confirmed？</text>
+<line class="arr" x1="280" y1="348" x2="280" y2="368"/>
+<text class="ts" x="292" y="362">否</text>
+
+<polygon class="yellow" points="280,368 390,400 280,432 170,400"/>
+<text class="td" x="280" y="394" text-anchor="middle">probable：≥2 类设备事实</text>
+<text class="td" x="280" y="410" text-anchor="middle">且无 LOW 可靠证据？</text>
+<line class="arr" x1="280" y1="432" x2="280" y2="500"/>
+<text class="ts" x="292" y="470">是（保持 probable）</text>
+
+<rect class="blue" x="170" y="500" width="220" height="48" rx="8"/>
+<text class="th" x="280" y="518" text-anchor="middle">输出 candidate</text>
+<text class="ts" x="280" y="536" text-anchor="middle">possible / probable</text>
+<line class="arr" x1="280" y1="548" x2="280" y2="568"/>
+
+<rect class="purple" x="170" y="568" width="220" height="48" rx="8"/>
+<text class="th" x="280" y="586" text-anchor="middle">Human Review</text>
+<text class="ts" x="280" y="604" text-anchor="middle">confirm · reject · 补充信息</text>
+<line class="arr" x1="280" y1="616" x2="280" y2="636"/>
+
+<polygon class="yellow" points="280,636 390,668 280,700 170,668"/>
+<text class="td" x="280" y="672" text-anchor="middle">人工是否确认？</text>
+<line class="arr" x1="280" y1="700" x2="280" y2="724"/>
+<text class="ts" x="292" y="714">是</text>
+
+<rect class="pink" x="170" y="724" width="220" height="48" rx="8"/>
+<text class="th" x="280" y="742" text-anchor="middle">Confirmed Diagnosis</text>
+<text class="ts" x="280" y="760" text-anchor="middle">终态（业务状态，非模型输出）</text>
+
+<rect class="gray" x="470" y="120" width="180" height="140" rx="8"/>
+<text class="th" x="560" y="148" text-anchor="middle">拒绝结论</text>
+<text class="ts" x="560" y="172" text-anchor="middle">CitationPolicyViolation</text>
+<text class="ts" x="560" y="194" text-anchor="middle">Case 状态不变</text>
+<text class="ts" x="560" y="216" text-anchor="middle">不留半写入</text>
+
+<rect class="gray" x="470" y="288" width="180" height="56" rx="8"/>
+<text class="th" x="560" y="310" text-anchor="middle">系统拒绝</text>
+<text class="ts" x="560" y="330" text-anchor="middle">模型不能产生 confirmed</text>
+
+<rect class="orange" x="470" y="372" width="180" height="56" rx="8"/>
+<text class="th" x="560" y="394" text-anchor="middle">降级为 possible</text>
+<text class="ts" x="560" y="414" text-anchor="middle">并打降级标记</text>
+
+<rect class="gray" x="470" y="640" width="180" height="56" rx="8"/>
+<text class="th" x="560" y="662" text-anchor="middle">rejected / 需补充信息</text>
+<text class="ts" x="560" y="682" text-anchor="middle">冲突不自动重放</text>
+
+<line class="arr" x1="390" y1="148" x2="466" y2="148"/>
+<text class="ts" x="416" y="140">否</text>
+<line class="arr" x1="390" y1="232" x2="466" y2="232"/>
+<text class="ts" x="416" y="224">否</text>
+<line class="arr" x1="390" y1="316" x2="466" y2="316"/>
+<text class="ts" x="416" y="308">是</text>
+<line class="arr" x1="390" y1="400" x2="466" y2="400"/>
+<text class="ts" x="416" y="392">否</text>
+<line class="arr" x1="390" y1="668" x2="466" y2="668"/>
+<text class="ts" x="416" y="660">否</text>
+
+<polyline class="arr" points="560,428 560,524 394,524"/>
+
+<g transform="translate(28,788)">
+  <rect x="0" y="0" width="624" height="22" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="15">图例</text>
+  <rect x="44" y="6" width="12" height="12" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.8"/>
+  <text class="ts" x="60" y="15">校验闸门</text>
+  <rect x="140" y="6" width="12" height="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.8"/>
+  <text class="ts" x="156" y="15">候选/审核</text>
+  <rect x="244" y="6" width="12" height="12" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.8"/>
+  <text class="ts" x="260" y="15">合规输出</text>
+  <rect x="340" y="6" width="12" height="12" fill="#FAECE7" stroke="#D85A30" stroke-width="0.8"/>
+  <text class="ts" x="356" y="15">降级</text>
+  <rect x="404" y="6" width="12" height="12" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.8"/>
+  <text class="ts" x="420" y="15">确认终态</text>
+  <rect x="500" y="6" width="12" height="12" fill="#F1EFE8" stroke="#888780" stroke-width="0.8"/>
+  <text class="ts" x="516" y="15">拒绝/驳回</text>
+</g>
+</svg>

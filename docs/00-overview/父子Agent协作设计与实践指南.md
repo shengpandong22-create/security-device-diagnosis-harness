@@ -81,12 +81,13 @@
 
 ```mermaid
 flowchart LR
-    U[用户] --> P[主代理]
-    P --> A[sol_final_four_retest<br/>复测已有绕过反例]
-    P --> B[sol_final_blind<br/>独立盲审提交范围]
-    A -->|审计结果| P
-    B -->|审计结果| P
-    P -->|复核、修复、测试| U
+    U["用户"] --> P["主代理"]
+    P --> A["sol_final_four_retest<br/>复测已有绕过反例"]
+    P --> B["sol_final_blind<br/>独立盲审提交范围"]
+    A -->|"审计结果"| P
+    B -->|"审计结果"| P
+    P -->|"复核、修复、测试"| U
+
 ```
 
 这两个子任务可以并行，因为它们都是只读审查，不会争用代码修改权。它们的目标也不重复：

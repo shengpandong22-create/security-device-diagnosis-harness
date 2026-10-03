@@ -38,8 +38,16 @@ Phase 7C 补充验收：`EvaluationRun` 不保存原始输入或密钥；比较�
 - [x] 返回标签、工具、Evidence 类型执行严格目录校验
 - [x] 标签准确率、工具 Precision/Recall、Evidence Compliance/Recall 分项统计
 - [x] 疑似语义等价结果进入 `review_pending`，不自动归一化或篡改标准答案
+- [x] 执行入口只验证预先签发的 Dataset Anchor，不在评测现场签发
+- [x] 报告记录 Dataset release/anchor、代码 commit、Prompt、配置与环境哈希
 
 Phase 7D 工程与真实模型协议验收已完成：外部模型入口默认关闭，必须显式传入 `--execute-real-model`；Validation/Test 每案例最多一次调用且不重试。增强后的 `deepseek-flash` Validation 基线为 Candidate Accuracy 1.0、Tool Precision 0.75、Tool Recall 1.0、Evidence Compliance/Recall 1.0。该结果仅覆盖 2 个案例，不冒充生产准确率；因未配置 token 单价，成本指标尚未形成有效基线。
+
+2026-10-03 使用预签 `security-diagnosis` 1.0.0 Validation Anchor 连续复验两轮。两轮均为
+2/2 调用成功，Candidate Accuracy 1.0、Tool Precision 0.5、Tool Recall 1.0、Evidence
+Compliance/Recall 1.0；输入 token 均为 638，输出 token 分别为 226 和 223。两份报告的
+Dataset release/anchor、代码 commit、Prompt、配置与环境哈希一致。未配置 token 单价，报告中的
+成本 0 只表示未计算价格，不构成成本基线。
 
 能力口径：上述真实模型脚本评测受限事实上的结构化诊断决策，没有执行正式 ToolLoopRunner、真实工具或 DeviceGateway。真实端到端 Agent 与设备诊断效果必须在 Phase 9 建成只读 Adapter 后另行评测。
 

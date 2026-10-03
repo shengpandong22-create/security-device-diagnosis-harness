@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 600" width="100%">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .ml { font: 11px sans-serif; fill: #2C2C2A; }
+    .th { font: 500 12px sans-serif; fill: #2C2C2A; }
+    .ts { font: 10px sans-serif; fill: #5F5E5A; }
+    .title { font: 500 16px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.4; fill: none; marker-end: url(#arr); }
+    .arrd { stroke: #888; stroke-width: 1.4; fill: none; marker-end: url(#arr); stroke-dasharray: 5 3; }
+    .life { stroke: #CCCCCC; stroke-width: 1; stroke-dasharray: 4 2; }
+    .blue { fill: #E6F1FB; stroke: #378ADD; stroke-width: 1.2; }
+    .purple { fill: #EEEDFE; stroke: #7F77DD; stroke-width: 1.2; }
+    .green { fill: #E1F5EE; stroke: #1D9E75; stroke-width: 1.2; }
+    .orange { fill: #FAECE7; stroke: #D85A30; stroke-width: 1.2; }
+    .gray { fill: #F1EFE8; stroke: #888780; stroke-width: 1; }
+  </style>
+</defs>
+<rect x="0" y="0" width="680" height="600" fill="#ffffff"/>
+<text class="title" x="340" y="28" text-anchor="middle">一次诊断的完整时序（创建 → 循环 → 人工确认）</text>
+
+<rect class="gray" x="24" y="44" width="104" height="36" rx="8"/>
+<text class="th" x="76" y="66" text-anchor="middle">用户 / 运维</text>
+<rect class="blue" x="148" y="44" width="104" height="36" rx="8"/>
+<text class="th" x="200" y="66" text-anchor="middle">FastAPI API</text>
+<rect class="purple" x="284" y="44" width="104" height="36" rx="8"/>
+<text class="th" x="336" y="66" text-anchor="middle">App Service</text>
+<rect class="green" x="426" y="44" width="104" height="36" rx="8"/>
+<text class="th" x="478" y="66" text-anchor="middle">Runner + LLM</text>
+<rect class="orange" x="560" y="44" width="108" height="36" rx="8"/>
+<text class="th" x="614" y="66" text-anchor="middle">Registry·Tool·GW</text>
+
+<line class="life" x1="76" y1="80" x2="76" y2="556"/>
+<line class="life" x1="200" y1="80" x2="200" y2="556"/>
+<line class="life" x1="336" y1="80" x2="336" y2="556"/>
+<line class="life" x1="478" y1="80" x2="478" y2="556"/>
+<line class="life" x1="614" y1="80" x2="614" y2="556"/>
+
+<line class="arr" x1="76" y1="108" x2="200" y2="108"/>
+<text class="ml" x="138" y="102" text-anchor="middle">POST /diagnoses</text>
+<line class="arr" x1="200" y1="134" x2="336" y2="134"/>
+<text class="ml" x="268" y="128" text-anchor="middle">create_diagnosis()</text>
+
+<rect class="gray" x="252" y="146" width="170" height="20" rx="4"/>
+<text class="ts" x="337" y="160" text-anchor="middle">Case 落库 version 0→1</text>
+
+<line class="arrd" x1="200" y1="186" x2="76" y2="186"/>
+<text class="ml" x="138" y="180" text-anchor="middle">201 diagnosis_id</text>
+
+<line class="arr" x1="76" y1="216" x2="200" y2="216"/>
+<text class="ml" x="138" y="210" text-anchor="middle">POST /diagnoses/{id}/run</text>
+<line class="arr" x1="200" y1="242" x2="336" y2="242"/>
+<text class="ml" x="268" y="236" text-anchor="middle">run_diagnosis()</text>
+<line class="arr" x1="336" y1="268" x2="478" y2="268"/>
+<text class="ml" x="407" y="262" text-anchor="middle">ToolLoopRunner.run(case)</text>
+
+<line class="arr" x1="478" y1="294" x2="614" y2="294"/>
+<text class="ml" x="546" y="288" text-anchor="middle">execute(tool, args) ×N</text>
+<line class="arrd" x1="614" y1="320" x2="478" y2="320"/>
+<text class="ml" x="546" y="314" text-anchor="middle">设备事实 / 受控失败</text>
+<line class="arrd" x1="478" y1="346" x2="336" y2="346"/>
+<text class="ml" x="407" y="340" text-anchor="middle">ToolLoopResult（候选+草稿）</text>
+
+<rect class="gray" x="400" y="358" width="230" height="20" rx="4"/>
+<text class="ts" x="515" y="372" text-anchor="middle">预算：3 轮 · 5 次工具 · 30s</text>
+
+<rect class="gray" x="230" y="394" width="300" height="20" rx="4"/>
+<text class="ts" x="380" y="408" text-anchor="middle">Evidence 落地 → CitationPolicy → 待人工确认</text>
+
+<line class="arrd" x1="336" y1="434" x2="200" y2="434"/>
+<text class="ml" x="268" y="428" text-anchor="middle">候选结论（possible/probable）</text>
+
+<line class="arr" x1="76" y1="462" x2="200" y2="462"/>
+<text class="ml" x="138" y="456" text-anchor="middle">POST /review（confirm）</text>
+<line class="arr" x1="200" y1="488" x2="336" y2="488"/>
+<text class="ml" x="268" y="482" text-anchor="middle">apply_human_review()</text>
+
+<rect class="gray" x="252" y="500" width="170" height="20" rx="4"/>
+<text class="ts" x="337" y="514" text-anchor="middle">confirmed 唯一入口</text>
+
+<line class="arrd" x1="336" y1="540" x2="76" y2="540"/>
+<text class="ml" x="206" y="534" text-anchor="middle">confirmed / rejected</text>
+
+<g transform="translate(28,572)">
+  <rect x="0" y="0" width="624" height="20" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="14">实线 = 调用　虚线 = 返回/响应　灰框 = 系统内部动作（不影响状态机外部语义）</text>
+</g>
+</svg>

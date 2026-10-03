@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 950" width="100%">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .ts { font: 11px sans-serif; fill: #5F5E5A; }
+    .th { font: 500 13px sans-serif; fill: #2C2C2A; }
+    .td { font: 500 12px sans-serif; fill: #412402; }
+    .title { font: 500 16px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+    .blue { fill: #E6F1FB; stroke: #378ADD; stroke-width: 1.2; }
+    .purple { fill: #EEEDFE; stroke: #7F77DD; stroke-width: 1.2; }
+    .green { fill: #E1F5EE; stroke: #1D9E75; stroke-width: 1.2; }
+    .orange { fill: #FAECE7; stroke: #D85A30; stroke-width: 1.2; }
+    .yellow { fill: #FAEEDA; stroke: #BA7517; stroke-width: 1.2; }
+    .gray { fill: #F1EFE8; stroke: #888780; stroke-width: 1.2; }
+  </style>
+</defs>
+<rect x="0" y="0" width="680" height="950" fill="#ffffff"/>
+<text class="title" x="340" y="28" text-anchor="middle">Tool 调用与 Evidence 生成（五道闸门）</text>
+
+<rect class="green" x="200" y="48" width="160" height="40" rx="20"/>
+<text class="th" x="280" y="72" text-anchor="middle">LLM 提出 Tool Call</text>
+<line class="arr" x1="280" y1="88" x2="280" y2="108"/>
+
+<rect class="orange" x="180" y="108" width="200" height="44" rx="8"/>
+<text class="th" x="280" y="125" text-anchor="middle">ToolRegistry 受控执行</text>
+<text class="ts" x="280" y="142" text-anchor="middle">工具调用的唯一入口</text>
+<line class="arr" x1="280" y1="152" x2="280" y2="172"/>
+
+<polygon class="yellow" points="280,172 380,202 280,232 180,202"/>
+<text class="td" x="280" y="206" text-anchor="middle">工具已注册？</text>
+<line class="arr" x1="280" y1="232" x2="280" y2="252"/>
+<text class="ts" x="292" y="246">是</text>
+
+<polygon class="yellow" points="280,252 380,282 280,312 180,282"/>
+<text class="td" x="280" y="286" text-anchor="middle">仅允许 READ_ONLY？</text>
+<line class="arr" x1="280" y1="312" x2="280" y2="332"/>
+<text class="ts" x="292" y="326">是</text>
+
+<polygon class="yellow" points="280,332 380,362 280,392 180,362"/>
+<text class="td" x="280" y="366" text-anchor="middle">权限足够？</text>
+<line class="arr" x1="280" y1="392" x2="280" y2="412"/>
+<text class="ts" x="292" y="406">是</text>
+
+<polygon class="yellow" points="280,412 380,442 280,472 180,442"/>
+<text class="td" x="280" y="446" text-anchor="middle">故障域支持？</text>
+<line class="arr" x1="280" y1="472" x2="280" y2="492"/>
+<text class="ts" x="292" y="486">是</text>
+
+<polygon class="yellow" points="280,492 380,522 280,552 180,522"/>
+<text class="td" x="280" y="526" text-anchor="middle">参数 Schema 合法？</text>
+<line class="arr" x1="280" y1="552" x2="280" y2="572"/>
+<text class="ts" x="292" y="566">是</text>
+
+<rect class="orange" x="180" y="572" width="200" height="44" rx="8"/>
+<text class="th" x="280" y="589" text-anchor="middle">执行 Adapter / Gateway</text>
+<text class="ts" x="280" y="606" text-anchor="middle">只读设备访问</text>
+<line class="arr" x1="280" y1="616" x2="280" y2="636"/>
+
+<polygon class="yellow" points="280,636 380,666 280,696 180,666"/>
+<text class="td" x="280" y="670" text-anchor="middle">调用成功？</text>
+<line class="arr" x1="280" y1="696" x2="280" y2="716"/>
+<text class="ts" x="292" y="710">是</text>
+
+<rect class="blue" x="180" y="716" width="200" height="44" rx="8"/>
+<text class="th" x="280" y="733" text-anchor="middle">得到原始设备事实</text>
+<text class="ts" x="280" y="750" text-anchor="middle">状态 · 配置 · 事件</text>
+<line class="arr" x1="280" y1="760" x2="280" y2="780"/>
+
+<rect class="purple" x="180" y="780" width="200" height="56" rx="8"/>
+<text class="th" x="280" y="802" text-anchor="middle">Structured Evidence</text>
+<text class="ts" x="280" y="819" text-anchor="middle">脱敏 + content_hash</text>
+<line class="arr" x1="280" y1="836" x2="280" y2="856"/>
+
+<rect class="green" x="180" y="856" width="200" height="44" rx="8"/>
+<text class="th" x="280" y="873" text-anchor="middle">回传 Agent Runner</text>
+<text class="ts" x="280" y="890" text-anchor="middle">observation + drafts</text>
+
+<rect class="gray" x="470" y="172" width="180" height="560" rx="8"/>
+<text class="th" x="560" y="200" text-anchor="middle">拒绝调用（统一出口）</text>
+<text class="ts" x="560" y="222" text-anchor="middle">受控失败结果</text>
+<line x1="486" y1="236" x2="634" y2="236" stroke="#888780" stroke-width="0.8"/>
+<text class="ts" x="486" y="260">· 未注册 / 非 READ_ONLY</text>
+<text class="ts" x="486" y="282">· 权限不足</text>
+<text class="ts" x="486" y="304">· 故障域不支持</text>
+<text class="ts" x="486" y="326">· 参数非法</text>
+<text class="ts" x="486" y="348">· 调用失败</text>
+<text class="th" x="560" y="390" text-anchor="middle">ok = false</text>
+<text class="th" x="560" y="412" text-anchor="middle">evidence_drafts = []</text>
+<text class="ts" x="560" y="440" text-anchor="middle">不生成任何 Evidence</text>
+<text class="ts" x="560" y="462" text-anchor="middle">进入 trace 与审计</text>
+
+<line class="arr" x1="380" y1="202" x2="466" y2="202"/>
+<text class="ts" x="416" y="194">否</text>
+<line class="arr" x1="380" y1="282" x2="466" y2="282"/>
+<text class="ts" x="416" y="274">否</text>
+<line class="arr" x1="380" y1="362" x2="466" y2="362"/>
+<text class="ts" x="416" y="354">否</text>
+<line class="arr" x1="380" y1="442" x2="466" y2="442"/>
+<text class="ts" x="416" y="434">否</text>
+<line class="arr" x1="380" y1="522" x2="466" y2="522"/>
+<text class="ts" x="416" y="514">否</text>
+<line class="arr" x1="380" y1="666" x2="466" y2="666"/>
+<text class="ts" x="416" y="658">否</text>
+
+<g transform="translate(28,916)">
+  <rect x="0" y="0" width="624" height="22" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="15">图例</text>
+  <rect x="44" y="6" width="12" height="12" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.8"/>
+  <text class="ts" x="60" y="15">判断闸门</text>
+  <rect x="140" y="6" width="12" height="12" fill="#FAECE7" stroke="#D85A30" stroke-width="0.8"/>
+  <text class="ts" x="156" y="15">执行</text>
+  <rect x="204" y="6" width="12" height="12" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.8"/>
+  <text class="ts" x="220" y="15">设备事实</text>
+  <rect x="292" y="6" width="12" height="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.8"/>
+  <text class="ts" x="308" y="15">证据草稿</text>
+  <rect x="388" y="6" width="12" height="12" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.8"/>
+  <text class="ts" x="404" y="15">模型动作</text>
+  <rect x="476" y="6" width="12" height="12" fill="#F1EFE8" stroke="#888780" stroke-width="0.8"/>
+  <text class="ts" x="492" y="15">拒绝出口</text>
+</g>
+</svg>

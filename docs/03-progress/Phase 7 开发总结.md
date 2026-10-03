@@ -33,11 +33,18 @@ Phase 7 把项目从“固定案例能够回归”推进到“数据集受治理
 - 自动 confirmed、敏感泄漏、越权工具、跨域和预算超限由代码规则判为 P0；
 - 模型返回的说明、标签、工具名、Evidence 类型和模型版本都再次脱敏；
 - 真实模型调用必须显式传入开关，每案例一次，不自动重试；
+- 执行入口必须验证外部预先签发的 Dataset Anchor，禁止在评测现场签发；
+- 报告固定记录 Dataset release/anchor、代码 commit、Prompt、配置与环境哈希；
 - 人工 approve 只生成准入候选，不自动修改正式数据集或版本。
 
 ## 4. 当前未完成的外部验收
 
 已使用 `deepseek-flash` 完成受控 Validation 协议验证及增强后复验：每轮 2 个案例、每案例一次、无自动重试。原始运行报告位于被 Git 忽略的 `demo-output/`，版本化基线只保留脱敏评分结果，不包含输入事实、API Key 或服务地址。该小样本只能证明真实链路和评测协议可运行，不能作为生产准确率证明。由于未配置 token 单价，成本仍显示为 0，暂不具备成本基线意义。
+
+2026-10-03 又完成两轮预签 Anchor 复验：两轮均 2/2 成功，Candidate Accuracy 1.0、Tool
+Precision 0.5、Tool Recall 1.0、Evidence Compliance/Recall 1.0。两份报告绑定同一个 Dataset
+release/anchor、代码 commit、Prompt、配置与环境哈希，输入 token 均为 638，输出 token 分别为
+226 和 223。报告未保存 API Key 或 endpoint 原值。
 
 ## 5. 后续演进建议
 

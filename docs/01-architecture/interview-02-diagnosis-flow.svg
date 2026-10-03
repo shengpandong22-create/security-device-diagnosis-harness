@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 1052" width="100%">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .ts { font: 11px sans-serif; fill: #5F5E5A; }
+    .th { font: 500 13px sans-serif; fill: #2C2C2A; }
+    .td { font: 500 12px sans-serif; fill: #412402; }
+    .title { font: 500 16px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.6; fill: none; marker-end: url(#arr); }
+    .arrd { stroke: #888; stroke-width: 1.6; fill: none; marker-end: url(#arr); stroke-dasharray: 5 3; }
+    .blue { fill: #E6F1FB; stroke: #378ADD; stroke-width: 1.2; }
+    .purple { fill: #EEEDFE; stroke: #7F77DD; stroke-width: 1.2; }
+    .green { fill: #E1F5EE; stroke: #1D9E75; stroke-width: 1.2; }
+    .orange { fill: #FAECE7; stroke: #D85A30; stroke-width: 1.2; }
+    .pink { fill: #FBEAF0; stroke: #D4537E; stroke-width: 1.2; }
+    .yellow { fill: #FAEEDA; stroke: #BA7517; stroke-width: 1.2; }
+    .gray { fill: #F1EFE8; stroke: #888780; stroke-width: 1.2; }
+  </style>
+</defs>
+<rect x="0" y="0" width="680" height="1052" fill="#ffffff"/>
+<text class="title" x="340" y="28" text-anchor="middle">故障诊断主流程（含失败与回路）</text>
+
+<rect class="green" x="190" y="44" width="220" height="40" rx="20"/>
+<text class="th" x="300" y="68" text-anchor="middle">用户提交故障症状</text>
+<line class="arr" x1="300" y1="84" x2="300" y2="104"/>
+
+<rect class="blue" x="190" y="104" width="220" height="44" rx="8"/>
+<text class="th" x="300" y="121" text-anchor="middle">创建 Diagnosis Case</text>
+<text class="ts" x="300" y="138" text-anchor="middle">created → investigating</text>
+<line class="arr" x1="300" y1="148" x2="300" y2="168"/>
+
+<rect class="green" x="190" y="168" width="220" height="44" rx="8"/>
+<text class="th" x="300" y="185" text-anchor="middle">ToolLoopRunner 受控循环</text>
+<text class="ts" x="300" y="202" text-anchor="middle">读取 Case 与已有 Evidence</text>
+<line class="arr" x1="300" y1="212" x2="300" y2="232"/>
+
+<polygon class="yellow" points="300,232 410,264 300,296 190,264"/>
+<text class="td" x="300" y="268" text-anchor="middle">已有足够 Evidence？</text>
+<line class="arr" x1="300" y1="296" x2="300" y2="316"/>
+<text class="ts" x="312" y="310">否</text>
+
+<rect class="orange" x="190" y="316" width="220" height="44" rx="8"/>
+<text class="th" x="300" y="333" text-anchor="middle">LLM 选工具 → Registry 校验</text>
+<text class="ts" x="300" y="350" text-anchor="middle">权限 · 故障域 · 参数 Schema</text>
+<line class="arr" x1="300" y1="360" x2="300" y2="380"/>
+
+<polygon class="yellow" points="300,380 410,412 300,444 190,412"/>
+<text class="td" x="300" y="416" text-anchor="middle">校验通过且调用成功？</text>
+<line class="arr" x1="300" y1="444" x2="300" y2="464"/>
+<text class="ts" x="312" y="458">是</text>
+
+<rect class="purple" x="190" y="464" width="220" height="44" rx="8"/>
+<text class="th" x="300" y="481" text-anchor="middle">生成 Structured Evidence</text>
+<text class="ts" x="300" y="498" text-anchor="middle">脱敏 + content_hash 去重</text>
+
+<rect class="green" x="190" y="528" width="220" height="44" rx="8"/>
+<text class="th" x="300" y="545" text-anchor="middle">LLM 生成候选结论</text>
+<text class="ts" x="300" y="562" text-anchor="middle">基于已落地 Evidence</text>
+<line class="arr" x1="300" y1="572" x2="300" y2="592"/>
+
+<rect class="orange" x="190" y="592" width="220" height="44" rx="8"/>
+<text class="th" x="300" y="609" text-anchor="middle">CitationPolicy 校验</text>
+<text class="ts" x="300" y="626" text-anchor="middle">归属 · 类型数量 · 可靠性</text>
+<line class="arr" x1="300" y1="636" x2="300" y2="656"/>
+
+<polygon class="yellow" points="300,656 410,688 300,720 190,688"/>
+<text class="td" x="300" y="692" text-anchor="middle">引用与置信度合规？</text>
+<line class="arr" x1="300" y1="720" x2="300" y2="740"/>
+<text class="ts" x="312" y="734">是</text>
+
+<rect class="blue" x="190" y="740" width="220" height="44" rx="8"/>
+<text class="th" x="300" y="757" text-anchor="middle">输出 candidate</text>
+<text class="ts" x="300" y="774" text-anchor="middle">possible / probable</text>
+<line class="arr" x1="300" y1="784" x2="300" y2="804"/>
+
+<rect class="purple" x="190" y="804" width="220" height="44" rx="8"/>
+<text class="th" x="300" y="821" text-anchor="middle">Human Review</text>
+<text class="ts" x="300" y="838" text-anchor="middle">confirm · reject · 补充信息</text>
+<line class="arr" x1="300" y1="848" x2="300" y2="868"/>
+
+<polygon class="yellow" points="300,868 410,900 300,932 190,900"/>
+<text class="td" x="300" y="904" text-anchor="middle">人工审核通过？</text>
+<line class="arr" x1="300" y1="932" x2="300" y2="952"/>
+<text class="ts" x="312" y="946">是</text>
+
+<rect class="pink" x="190" y="952" width="220" height="48" rx="8"/>
+<text class="th" x="300" y="972" text-anchor="middle">Confirmed Diagnosis</text>
+<text class="ts" x="300" y="989" text-anchor="middle">终态（唯一人工入口）</text>
+
+<rect class="gray" x="450" y="380" width="190" height="56" rx="8"/>
+<text class="th" x="545" y="402" text-anchor="middle">受控失败记录</text>
+<text class="ts" x="545" y="419" text-anchor="middle">无 Evidence · 进 trace/审计</text>
+<line class="arr" x1="545" y1="436" x2="545" y2="456"/>
+
+<polygon class="yellow" points="545,456 640,488 545,520 450,488"/>
+<text class="td" x="545" y="492" text-anchor="middle">预算是否耗尽？</text>
+<line class="arr" x1="545" y1="520" x2="545" y2="540"/>
+<text class="ts" x="557" y="534">是</text>
+
+<rect class="gray" x="450" y="540" width="190" height="44" rx="8"/>
+<text class="th" x="545" y="557" text-anchor="middle">生成有限结论或失败</text>
+<text class="ts" x="545" y="574" text-anchor="middle">进入 inconclusive 终态</text>
+
+<rect class="gray" x="450" y="656" width="190" height="56" rx="8"/>
+<text class="th" x="545" y="678" text-anchor="middle">降级为 possible / 拒绝</text>
+<text class="ts" x="545" y="695" text-anchor="middle">回到循环补证据</text>
+
+<rect class="gray" x="450" y="872" width="190" height="56" rx="8"/>
+<text class="th" x="545" y="894" text-anchor="middle">Rejected / 需补充信息</text>
+<text class="ts" x="545" y="911" text-anchor="middle">责任动作不自动重放</text>
+
+<line class="arr" x1="410" y1="412" x2="450" y2="412"/>
+<text class="ts" x="424" y="404">否</text>
+<line class="arr" x1="410" y1="688" x2="450" y2="688"/>
+<text class="ts" x="424" y="680">否</text>
+<line class="arr" x1="410" y1="900" x2="450" y2="900"/>
+<text class="ts" x="424" y="892">否</text>
+
+<polyline class="arrd" points="190,486 64,486 64,190 186,190"/>
+<text class="ts" x="96" y="476">回到循环（虚线）</text>
+
+<polyline class="arrd" points="610,488 656,488 656,190 414,190"/>
+<text class="ts" x="620" y="478">否</text>
+
+<polyline class="arr" points="410,264 430,264 430,550 414,550"/>
+<text class="ts" x="418" y="256">是</text>
+
+<polyline class="arrd" points="640,684 672,684 672,174 414,174"/>
+<text class="ts" x="648" y="676">否</text>
+
+<g transform="translate(28,1016)">
+  <rect x="0" y="0" width="624" height="22" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="15">图例</text>
+  <rect x="44" y="6" width="12" height="12" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.8"/>
+  <text class="ts" x="60" y="15">模型动作</text>
+  <rect x="132" y="6" width="12" height="12" fill="#FAECE7" stroke="#D85A30" stroke-width="0.8"/>
+  <text class="ts" x="148" y="15">校验/工具</text>
+  <rect x="228" y="6" width="12" height="12" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.8"/>
+  <text class="ts" x="244" y="15">判断</text>
+  <rect x="288" y="6" width="12" height="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.8"/>
+  <text class="ts" x="304" y="15">证据/审核</text>
+  <rect x="380" y="6" width="12" height="12" fill="#F1EFE8" stroke="#888780" stroke-width="0.8"/>
+  <text class="ts" x="396" y="15">失败/降级</text>
+  <rect x="472" y="6" width="12" height="12" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.8"/>
+  <text class="ts" x="488" y="15">终态</text>
+  <line x1="540" y1="12" x2="560" y2="12" stroke="#888" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+  <text class="ts" x="566" y="15">回到循环</text>
+</g>
+</svg>
