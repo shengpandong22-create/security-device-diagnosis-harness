@@ -96,10 +96,10 @@ Phase 8C 历史趋势、Phase 6 一致性、import 副作用探针）退出码�
 - [x] Head 文件有独立的 `.head-lock` 跨进程排它锁，`load_head` / `save_head` 全周期持锁
 - [x] 两个进程、三进程压力循环、两个历史共享一个 Head Store 都不丢更新，无 staging 残留，无死锁
 
-验证口径（2026-10-01）：全量 `uv run pytest` **1933 passed**；`uv run ruff check .` 通过；
+验证口径（2026-10-01）：全量 `uv run pytest` **1934 passed**；`uv run ruff check .` 通过；
 `git diff --check 5d6c1ae..HEAD` 通过；离线 Phase 回归 22 个脚本全部退出码 0（未运行脚本及原因见
 [交接报告第 11 节](../05-audits/2026-09-29安全与自洽性修复交接报告.md)）。
 本轮同样未运行真实模型、真实 BGE、真机探针与联网 Bootstrap，未 push。
 
-**仍未闭环（明确保留）**：Python 无法抢占式终止正在运行的线程，因此取消是协作式的；直接调用
-私有 `_within_deadline` 绕过准入闸门时，未声明参与者的迟到副作用仍无法阻止。
+**明确边界**：Python 无法抢占式终止任意代码，因此 Runner 采用同步返回边界。永不返回的底层实现
+会阻塞调用方；但 Runner 一旦返回，底层调用已经结束，不存在后台 worker 或迟到副作用。
