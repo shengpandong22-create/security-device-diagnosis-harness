@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
+from security_diagnosis_harness.domain.common import sha256_text
 from security_diagnosis_harness.domain.redaction import redact_mapping, redact_text
 from security_diagnosis_harness.evaluation.dataset import DatasetCase
 from security_diagnosis_harness.evaluation.taxonomy import evaluation_taxonomy
@@ -94,13 +95,9 @@ class RealModelSettings:
         if self.input_cost_per_million < 0 or self.output_cost_per_million < 0:
             raise RealModelConfigurationError("token 单价不能为负数")
         if not 1 <= self.max_response_bytes <= 64 * 1_048_576:
-            raise RealModelConfigurationError(
-                "max_response_bytes 必须在 1 字节到 64 MiB 之间"
-            )
+            raise RealModelConfigurationError("max_response_bytes 必须在 1 字节到 64 MiB 之间")
         if not 1 <= self.max_content_chars <= 4_000_000:
-            raise RealModelConfigurationError(
-                "max_content_chars 必须在 1 到 4000000 之间"
-            )
+            raise RealModelConfigurationError("max_content_chars 必须在 1 到 4000000 之间")
 
     @classmethod
     def from_env(cls) -> RealModelSettings:
@@ -182,13 +179,7 @@ class OpenAICompatibleEvaluationClient:
                     "messages": [
                         {
                             "role": "system",
-                            "content": (
-                                "你是安防诊断评测模型。只基于输入事实返回 JSON，字段为 "
-                                "candidate_label、explanation、selected_tools、"
-                                "cited_evidence_types；candidate_label 必须从输入的 "
-                                "candidate_label_options 选择，工具和证据类型必须从对应 "
-                                "allowed 列表选择；不得返回 confirmed。"
-                            ),
+                            "content": REAL_MODEL_SYSTEM_PROMPT,
                         },
                         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
                     ],
@@ -197,9 +188,7 @@ class OpenAICompatibleEvaluationClient:
                 response.raise_for_status()
                 # 传输过程中的资源边界：逐块读取并在超限时立刻停止，不完整缓冲。
                 try:
-                    body_bytes = read_bounded_bytes(
-                        response, self._settings.max_response_bytes
-                    )
+                    body_bytes = read_bounded_bytes(response, self._settings.max_response_bytes)
                 except ResponseTooLargeError:
                     raise ModelEvaluationError("response_too_large") from None
             body = json.loads(body_bytes)
@@ -292,6 +281,12 @@ class RealModelBatchReport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     report_kind: str = "real_model"
+    dataset_release_id: str = "unbound"
+    dataset_anchor_hash: str = "0" * 64
+    code_commit: str = "unknown"
+    prompt_hash: str = Field(default_factory=lambda: sha256_text(REAL_MODEL_SYSTEM_PROMPT))
+    configuration_hash: str = "0" * 64
+    environment_hash: str = "0" * 64
     model_name: str
     total_cases: int
     total_calls: int
@@ -314,6 +309,11 @@ class RealModelBatchReport(BaseModel):
             "# Phase 7D 低频真实模型评测",
             "",
             "- 报告类型：`real_model`（不得与 Fake 基线混报）",
+            f"- Dataset release：`{self.dataset_release_id}`",
+            f"- Dataset anchor hash：`{self.dataset_anchor_hash}`",
+            f"- Code commit：`{self.code_commit}`",
+            f"- Prompt / configuration / environment：`{self.prompt_hash}` / "
+            f"`{self.configuration_hash}` / `{self.environment_hash}`",
             f"- 模型：`{self.model_name}`",
             f"- 案例数 / 调用数：`{self.total_cases}` / `{self.total_calls}`",
             f"- 成功 / 失败：`{self.successful_cases}` / `{self.failed_cases}`",
@@ -498,9 +498,7 @@ class _ResponseQuality:
     review_reason: str | None
 
 
-def _grade_model_response(
-    case: DatasetCase, response: EvaluationModelResponse
-) -> _ResponseQuality:
+def _grade_model_response(case: DatasetCase, response: EvaluationModelResponse) -> _ResponseQuality:
     taxonomy = evaluation_taxonomy(case.fault_type)
     selected_tools = set(response.selected_tools)
     expected_tools = set(case.expected_tools)
@@ -575,3 +573,11 @@ def _atomic_write(path: Path, content: str) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(content, encoding="utf-8")
     temporary.replace(path)
+
+
+REAL_MODEL_SYSTEM_PROMPT = (
+    "你是安防诊断评测模型。只基于输入事实返回 JSON，字段为 "
+    "candidate_label、explanation、selected_tools、cited_evidence_types；"
+    "candidate_label 必须从输入的 candidate_label_options 选择，工具和证据类型必须从对应 "
+    "allowed 列表选择；不得返回 confirmed。"
+)

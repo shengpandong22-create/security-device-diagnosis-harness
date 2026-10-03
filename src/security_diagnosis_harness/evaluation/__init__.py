@@ -85,6 +85,7 @@ from security_diagnosis_harness.evaluation.history import (
     write_evaluation_trend_report,
 )
 from security_diagnosis_harness.evaluation.real_model import (
+    REAL_MODEL_SYSTEM_PROMPT,
     EvaluationModelClient,
     EvaluationModelResponse,
     ModelEvaluationError,
@@ -207,6 +208,7 @@ __all__ = [
     "ModelEvaluationError",
     "OpenAICompatibleEvaluationClient",
     "RealModelBatchReport",
+    "REAL_MODEL_SYSTEM_PROMPT",
     "RealModelCaseResult",
     "RealModelConfigurationError",
     "RealModelEvaluationRunner",

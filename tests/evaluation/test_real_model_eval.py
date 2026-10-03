@@ -804,3 +804,14 @@ def test_cli_requires_explicit_real_model_flag(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["eval_phase7_real_model.py"])
     assert real_model_main() == 2
     assert '"executed": false' in capsys.readouterr().out.lower()
+
+
+def test_cli_requires_pre_signed_dataset_anchor(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["eval_phase7_real_model.py", "--execute-real-model"],
+    )
+
+    assert real_model_main() == 2
+    assert "--dataset-anchor" in capsys.readouterr().out
