@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 636" width="680" height="636">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .t { font: 14px sans-serif; fill: #2C2C2A; }
+    .ts { font: 12px sans-serif; fill: #5F5E5A; }
+    .lbl { font: 11px sans-serif; fill: #5F5E5A; }
+    .th { font: 500 14px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.8; fill: none; marker-end: url(#arr); }
+    .arr-dash { stroke: #888; stroke-width: 1.5; fill: none; marker-end: url(#arr); stroke-dasharray: 5 3; }
+  </style>
+</defs>
+
+<text class="th" x="340" y="28" text-anchor="middle" font-size="16">SecurityDiagnosisCase 状态机（domain/case.py 跳转表）</text>
+
+<!-- 初始标记 -->
+<circle cx="42" cy="182" r="9" fill="#E1F5EE" stroke="#1D9E75" stroke-width="1.5"/>
+<line x1="51" y1="182" x2="72" y2="182" class="arr"/>
+
+<!-- 主路径：created -> investigating -> waiting_for_confirmation -->
+<rect x="76" y="160" width="105" height="44" rx="22" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+<text class="th" x="128" y="182" text-anchor="middle" dominant-baseline="central" fill="#04342C">created</text>
+
+<line x1="181" y1="182" x2="221" y2="182" class="arr"/>
+<text class="lbl" x="201" y="150" text-anchor="middle">开始运行</text>
+
+<rect x="225" y="160" width="150" height="44" rx="22" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="300" y="182" text-anchor="middle" dominant-baseline="central" fill="#042C53">investigating</text>
+
+<line x1="375" y1="182" x2="466" y2="182" class="arr"/>
+<text class="lbl" x="420" y="146" text-anchor="middle">Runner 成功</text>
+<text class="lbl" x="420" y="162" text-anchor="middle">候选结论 + 证据</text>
+
+<rect x="470" y="156" width="180" height="52" rx="22" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="560" y="174" text-anchor="middle" fill="#042C53">waiting_for_</text>
+<text class="th" x="560" y="194" text-anchor="middle" fill="#042C53">confirmation</text>
+
+<!-- request_more_info：先回到 waiting_for_input，再由补充输入后的运行回到 investigating -->
+<path d="M 500 208 V 260 H 430 V 292" class="arr-dash"/>
+<text class="lbl" x="465" y="250" text-anchor="middle">request_more_info</text>
+
+<!-- investigating <-> waiting_for_input：平行竖箭头 -->
+<line x1="300" y1="204" x2="300" y2="290" class="arr"/>
+<text class="lbl" x="292" y="252" text-anchor="end">失败但有证据</text>
+
+<line x1="370" y1="292" x2="370" y2="208" class="arr"/>
+<text class="lbl" x="382" y="252" text-anchor="start">补充输入后继续</text>
+
+<rect x="240" y="296" width="190" height="48" rx="22" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="335" y="320" text-anchor="middle" dominant-baseline="central" fill="#042C53">waiting_for_input</text>
+
+<!-- investigating -> inconclusive：左侧直斜线，避开 waiting_for_input -->
+<line x1="240" y1="204" x2="160" y2="426" class="arr"/>
+<text class="lbl" x="118" y="340" text-anchor="middle">失败且无证据</text>
+
+<!-- waiting_for_confirmation -> confirmed：竖直唯一入口 -->
+<line x1="565" y1="208" x2="565" y2="426" class="arr"/>
+<text class="lbl" x="577" y="296" text-anchor="start">review confirm ★</text>
+<text class="lbl" x="577" y="312" text-anchor="start">唯一人工入口</text>
+
+<!-- waiting_for_confirmation -> rejected：右侧 L 型通道 -->
+<polyline points="480,208 480,390 330,390 330,426" class="arr"/>
+<text class="lbl" x="408" y="382" text-anchor="middle">review reject</text>
+
+<!-- 终态 -->
+<rect x="60" y="430" width="180" height="48" rx="22" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="150" y="454" text-anchor="middle" dominant-baseline="central" fill="#4B1528">inconclusive</text>
+
+<rect x="250" y="430" width="160" height="48" rx="22" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="330" y="454" text-anchor="middle" dominant-baseline="central" fill="#4B1528">rejected</text>
+
+<rect x="485" y="430" width="160" height="48" rx="22" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="565" y="454" text-anchor="middle" dominant-baseline="central" fill="#4B1528">confirmed ★</text>
+
+<!-- 不变量说明 -->
+<rect x="28" y="500" width="624" height="80" rx="8" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+<text class="th" x="340" y="524" text-anchor="middle" fill="#412402">★ confirmed 不在任何普通跳转的目标集合中，唯一入口 apply_human_review(CONFIRM)</text>
+<text class="ts" x="340" y="546" text-anchor="middle">终态 confirmed / rejected / inconclusive 均无出边</text>
+<text class="ts" x="340" y="566" text-anchor="middle">主路径之外：created / investigating / waiting_for_input 亦可直接进入 rejected 或 inconclusive</text>
+
+<!-- 图例 -->
+<g transform="translate(28, 596)">
+  <rect x="0" y="0" width="624" height="24" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="16" fill="#666">图例</text>
+  <rect x="52" y="6" width="12" height="12" rx="6" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+  <text class="ts" x="70" y="16" fill="#666">初始状态</text>
+  <rect x="146" y="6" width="12" height="12" rx="6" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+  <text class="ts" x="164" y="16" fill="#666">中间状态</text>
+  <rect x="252" y="6" width="12" height="12" rx="6" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+  <text class="ts" x="270" y="16" fill="#666">终态（无出边）</text>
+  <line x1="378" y1="12" x2="414" y2="12" stroke="#888" stroke-width="1.8"/>
+  <text class="ts" x="420" y="16" fill="#666">普通跳转</text>
+  <line x1="496" y1="12" x2="532" y2="12" stroke="#888" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text class="ts" x="538" y="16" fill="#666">人工驱动回退</text>
+</g>
+</svg>

@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 1290" width="680" height="1290">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .ts { font: 12px sans-serif; fill: #5F5E5A; }
+    .lbl { font: 11px sans-serif; fill: #5F5E5A; }
+    .th { font: 500 14px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.8; fill: none; marker-end: url(#arr); }
+    .arr-dash { stroke: #888; stroke-width: 1.5; fill: none; marker-end: url(#arr); stroke-dasharray: 5 3; }
+  </style>
+</defs>
+
+<text class="th" x="340" y="28" text-anchor="middle" font-size="16">可信诊断闭环流程（Runner → 引用校验 → HumanReview → 知识沉淀）</text>
+
+<!-- ===== 主路径 ===== -->
+<circle cx="98" cy="66" r="8" fill="#E1F5EE" stroke="#1D9E75" stroke-width="1.5"/>
+<line x1="106" y1="66" x2="124" y2="66" class="arr"/>
+
+<rect x="128" y="44" width="200" height="44" rx="22" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="228" y="66" text-anchor="middle" dominant-baseline="central" fill="#042C53">POST /diagnoses 创建</text>
+
+<line x1="228" y1="88" x2="228" y2="112" class="arr"/>
+
+<rect x="88" y="116" width="280" height="56" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="228" y="138" text-anchor="middle" fill="#042C53">POST /runs 运行 Harness</text>
+<text class="ts" x="228" y="158" text-anchor="middle">仅 created / waiting_for_input 可运行</text>
+
+<line x1="228" y1="172" x2="228" y2="200" class="arr"/>
+
+<rect x="88" y="204" width="280" height="58" rx="8" fill="#FAECE7" stroke="#D85A30" stroke-width="0.5"/>
+<text class="th" x="228" y="228" text-anchor="middle" fill="#712B13">ToolLoop：模型选择只读工具</text>
+<text class="ts" x="228" y="250" text-anchor="middle">Registry 校验 → Gateway 按资产/能力路由</text>
+
+<line x1="228" y1="262" x2="228" y2="292" class="arr"/>
+
+<!-- 判定1：工具调用成功？ -->
+<polygon points="228,296 368,336 228,376 88,336" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+<text class="th" x="228" y="336" text-anchor="middle" dominant-baseline="central" fill="#412402">工具调用成功？</text>
+
+<line x1="228" y1="376" x2="228" y2="408" class="arr"/>
+<text class="lbl" x="240" y="398" text-anchor="start">是</text>
+
+<line x1="368" y1="336" x2="400" y2="336" class="arr"/>
+<text class="lbl" x="384" y="326" text-anchor="middle">否</text>
+
+<rect x="88" y="412" width="280" height="56" rx="8" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+<text class="th" x="228" y="434" text-anchor="middle" fill="#26215C">Evidence 落地（仅应用服务可写）</text>
+<text class="ts" x="228" y="454" text-anchor="middle">唯一脱敏入口 · content_hash 重算</text>
+
+<line x1="228" y1="468" x2="228" y2="498" class="arr"/>
+
+<rect x="88" y="502" width="280" height="56" rx="8" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+<text class="th" x="228" y="524" text-anchor="middle" fill="#04342C">模型候选结论</text>
+<text class="ts" x="228" y="544" text-anchor="middle">仅 possible / probable（类型中无 confirmed）</text>
+
+<line x1="228" y1="558" x2="228" y2="588" class="arr"/>
+
+<!-- 判定2：CitationPolicy -->
+<polygon points="228,590 368,630 228,670 88,630" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+<text class="th" x="228" y="622" text-anchor="middle" fill="#412402">CitationPolicy</text>
+<text class="th" x="228" y="642" text-anchor="middle" fill="#412402">校验通过？</text>
+
+<line x1="228" y1="670" x2="228" y2="702" class="arr"/>
+<text class="lbl" x="240" y="692" text-anchor="start">是（不足则降级 possible）</text>
+
+<line x1="368" y1="630" x2="380" y2="630" stroke="#888" stroke-width="1.8" fill="none"/>
+<text class="lbl" x="372" y="620" text-anchor="middle">否</text>
+
+<rect x="88" y="706" width="280" height="56" rx="8" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+<text class="th" x="228" y="728" text-anchor="middle" fill="#26215C">waiting_for_confirmation</text>
+<text class="ts" x="228" y="748" text-anchor="middle">候选结论 + 证据链，等待人工确认</text>
+
+<line x1="228" y1="762" x2="228" y2="790" class="arr"/>
+
+<!-- 判定3：HumanReview -->
+<polygon points="228,794 368,834 228,874 88,834" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+<text class="th" x="228" y="828" text-anchor="middle" fill="#412402">HumanReview</text>
+<text class="th" x="228" y="848" text-anchor="middle" fill="#412402">决议</text>
+
+<line x1="228" y1="874" x2="228" y2="906" class="arr"/>
+<text class="lbl" x="240" y="896" text-anchor="start">confirm（唯一人工入口）</text>
+
+<line x1="368" y1="834" x2="400" y2="834" class="arr"/>
+<text class="lbl" x="384" y="824" text-anchor="middle">reject</text>
+
+<!-- request_more_info 回退车道（左） -->
+<polyline points="88,834 44,834 44,144 88,144" class="arr"/>
+<text class="lbl" x="32" y="500" text-anchor="middle" transform="rotate(-90 32 500)">request_more_info → waiting_for_input</text>
+
+<rect x="140" y="910" width="176" height="44" rx="22" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="228" y="932" text-anchor="middle" dominant-baseline="central" fill="#4B1528">confirmed 终态</text>
+
+<line x1="228" y1="954" x2="228" y2="982" class="arr"/>
+
+<rect x="88" y="986" width="280" height="56" rx="8" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="228" y="1008" text-anchor="middle" fill="#4B1528">KnowledgeCandidate（candidate）</text>
+<text class="ts" x="228" y="1028" text-anchor="middle">追溯 source 诊断/结论/Evidence ID · 仍需审核</text>
+
+<line x1="228" y1="1042" x2="228" y2="1070" class="arr"/>
+
+<rect x="88" y="1074" width="280" height="56" rx="8" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="228" y="1096" text-anchor="middle" fill="#4B1528">confirmed 知识 → Hybrid 检索</text>
+<text class="ts" x="228" y="1116" text-anchor="middle">Keyword(1.2)+BGE(1.0) RRF 融合 · BGE 故障降级</text>
+
+<line x1="88" y1="1102" x2="48" y2="1102" class="arr-dash"/>
+<text class="lbl" x="44" y="1056" text-anchor="start">knowledge_sop 回流诊断</text>
+
+<!-- ===== 受控失败路径（右列） ===== -->
+<rect x="400" y="308" width="216" height="56" rx="8" fill="#F1EFE8" stroke="#888780" stroke-width="0.5"/>
+<text class="th" x="508" y="330" text-anchor="middle">受控错误</text>
+<text class="ts" x="508" y="350" text-anchor="middle">evidence_drafts=[] 不伪造</text>
+
+<line x1="508" y1="364" x2="508" y2="398" class="arr"/>
+
+<!-- 判定4：是否已有可用证据？ -->
+<polygon points="508,400 616,440 508,480 400,440" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+<text class="th" x="508" y="440" text-anchor="middle" dominant-baseline="central" fill="#412402">是否已有可用证据？</text>
+
+<line x1="508" y1="480" x2="508" y2="510" class="arr"/>
+<text class="lbl" x="520" y="498" text-anchor="start">有</text>
+
+<!-- 无分支主干：与 CitationPolicy 否 汇合，共同进入 inconclusive -->
+<polyline points="400,440 380,440 380,766 400,766" class="arr"/>
+<circle cx="380" cy="630" r="3.5" fill="#888"/>
+<text class="lbl" x="390" y="432" text-anchor="start">无</text>
+<text class="lbl" x="390" y="700" text-anchor="start">受控结束 → 不落结论</text>
+
+<rect x="400" y="514" width="216" height="62" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="508" y="538" text-anchor="middle" fill="#042C53">waiting_for_input</text>
+<text class="ts" x="508" y="558" text-anchor="middle">补充信息后可重新运行</text>
+
+<!-- 重新运行车道（右） -->
+<polyline points="616,545 664,545 664,144 368,144" class="arr"/>
+<text class="lbl" x="676" y="340" text-anchor="middle" transform="rotate(-90 676 340)">补充信息后重新运行</text>
+
+<rect x="400" y="738" width="216" height="56" rx="8" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="508" y="760" text-anchor="middle" fill="#4B1528">inconclusive 终态</text>
+<text class="ts" x="508" y="780" text-anchor="middle">无证据（仅 capability 类）</text>
+
+<rect x="400" y="810" width="216" height="56" rx="8" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="508" y="832" text-anchor="middle" fill="#4B1528">rejected 终态</text>
+<text class="ts" x="508" y="852" text-anchor="middle">review reject · 无出边</text>
+
+<!-- 说明 -->
+<rect x="28" y="1160" width="624" height="76" rx="8" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+<text class="th" x="340" y="1184" text-anchor="middle" fill="#412402">受控失败不自动重试：有证据但 Runner 未达结论 → waiting_for_input</text>
+<text class="ts" x="340" y="1206" text-anchor="middle">无证据且仅 capability 类失败 → inconclusive；timeout / authentication / rate_limited 等 → waiting_for_input</text>
+<text class="ts" x="340" y="1226" text-anchor="middle">CitationPolicy 未通过 → 受控结束不落结论；confirmed 只能由 review confirm 产生</text>
+
+<!-- 图例 -->
+<g transform="translate(28, 1250)">
+  <rect x="0" y="0" width="624" height="24" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="16" fill="#666">图例</text>
+  <rect x="52" y="6" width="12" height="12" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+  <text class="ts" x="70" y="16" fill="#666">API 入口</text>
+  <rect x="146" y="6" width="12" height="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+  <text class="ts" x="164" y="16" fill="#666">应用</text>
+  <rect x="222" y="6" width="12" height="12" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+  <text class="ts" x="240" y="16" fill="#666">模型</text>
+  <rect x="292" y="6" width="12" height="12" fill="#FAECE7" stroke="#D85A30" stroke-width="0.5"/>
+  <text class="ts" x="310" y="16" fill="#666">工具</text>
+  <rect x="360" y="6" width="12" height="12" fill="#FAEEDA" stroke="#BA7517" stroke-width="0.5"/>
+  <text class="ts" x="378" y="16" fill="#666">判定</text>
+  <rect x="428" y="6" width="12" height="12" fill="#F1EFE8" stroke="#888780" stroke-width="0.5"/>
+  <text class="ts" x="446" y="16" fill="#666">受控失败</text>
+  <rect x="524" y="6" width="12" height="12" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+  <text class="ts" x="542" y="16" fill="#666">终态</text>
+  <line x1="584" y1="12" x2="600" y2="12" stroke="#888" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text class="ts" x="606" y="16" fill="#666">回退</text>
+</g>
+</svg>

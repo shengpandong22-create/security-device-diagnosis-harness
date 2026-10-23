@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 890" width="680" height="890">
+<defs>
+  <marker id="arr-d" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" orient="auto">
+    <path d="M1 2L8 5L1 8" fill="#888"/>
+  </marker>
+  <style>
+    .t { font: 14px sans-serif; fill: #2C2C2A; }
+    .ts { font: 12px sans-serif; fill: #5F5E5A; }
+    .th { font: 500 14px sans-serif; fill: #2C2C2A; }
+    .arr { stroke: #888; stroke-width: 1.8; fill: none; marker-end: url(#arr-d); }
+    .layer-box { fill: none; stroke: #B0B0B0; stroke-width: 1.2; stroke-dasharray: 6 3; }
+    .layer-badge { font: 500 11px sans-serif; fill: #666; }
+  </style>
+</defs>
+
+<text class="th" x="340" y="28" text-anchor="middle" font-size="16">可信安防设备诊断 Harness 总体架构</text>
+
+<!-- 第1层 接入层 (蓝) -->
+<rect class="layer-box" x="28" y="40" width="624" height="112" rx="10"/>
+<text class="layer-badge" x="40" y="56">第1层</text>
+<rect x="220" y="52" width="240" height="28" rx="14" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="340" y="70" text-anchor="middle" fill="#042C53">接入层 User / API</text>
+<rect x="60" y="96" width="270" height="44" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="195" y="114" text-anchor="middle" fill="#042C53">FastAPI 路由</text>
+<text class="ts" x="195" y="132" text-anchor="middle">创建 · 运行 · 证据 · 审核 · 报告</text>
+<rect x="370" y="96" width="250" height="44" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text class="th" x="495" y="114" text-anchor="middle" fill="#042C53">Bearer 认证</text>
+<text class="ts" x="495" y="132" text-anchor="middle">operator / reviewer 职责分离</text>
+
+<line x1="340" y1="160" x2="340" y2="184" class="arr"/>
+
+<!-- 第2层 应用编排层 (紫) -->
+<rect class="layer-box" x="28" y="192" width="624" height="112" rx="10"/>
+<text class="layer-badge" x="40" y="208">第2层</text>
+<rect x="220" y="204" width="240" height="28" rx="14" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+<text class="th" x="340" y="222" text-anchor="middle" fill="#26215C">应用编排层 Application</text>
+<rect x="60" y="248" width="280" height="44" rx="8" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+<text class="th" x="200" y="266" text-anchor="middle" fill="#26215C">ApplicationService</text>
+<text class="ts" x="200" y="284" text-anchor="middle">Evidence 落地 · 引用修复 · probable 降级</text>
+<rect x="370" y="248" width="250" height="44" rx="8" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+<text class="th" x="495" y="266" text-anchor="middle" fill="#26215C">Case 状态机 + Repository</text>
+<text class="ts" x="495" y="284" text-anchor="middle">CAS 乐观锁 · 审计 · 深层脱敏</text>
+
+<line x1="340" y1="312" x2="340" y2="336" class="arr"/>
+
+<!-- 第3层 Agent 推理层 (绿) -->
+<rect class="layer-box" x="28" y="344" width="624" height="104" rx="10"/>
+<text class="layer-badge" x="40" y="360">第3层</text>
+<rect x="220" y="356" width="240" height="28" rx="14" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+<text class="th" x="340" y="374" text-anchor="middle" fill="#04342C">Agent 推理层</text>
+<rect x="60" y="400" width="280" height="40" rx="8" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+<text class="th" x="200" y="416" text-anchor="middle" fill="#04342C">ToolLoopRunner 受控循环</text>
+<text class="ts" x="200" y="434" text-anchor="middle">max_rounds=3 · max_tool_calls=5 预算</text>
+<rect x="370" y="400" width="250" height="40" rx="8" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+<text class="th" x="495" y="416" text-anchor="middle" fill="#04342C">LLM 仅产候选</text>
+<text class="ts" x="495" y="434" text-anchor="middle">只输出 possible / probable</text>
+
+<line x1="340" y1="456" x2="340" y2="480" class="arr"/>
+
+<!-- 第4层 工具闸门层 (橙) -->
+<rect class="layer-box" x="28" y="488" width="624" height="104" rx="10"/>
+<text class="layer-badge" x="40" y="504">第4层</text>
+<rect x="220" y="500" width="240" height="28" rx="14" fill="#FAECE7" stroke="#D85A30" stroke-width="0.5"/>
+<text class="th" x="340" y="518" text-anchor="middle" fill="#712B13">工具闸门层</text>
+<rect x="60" y="544" width="280" height="40" rx="8" fill="#FAECE7" stroke="#D85A30" stroke-width="0.5"/>
+<text class="th" x="200" y="560" text-anchor="middle" fill="#712B13">ToolRegistry</text>
+<text class="ts" x="200" y="578" text-anchor="middle">allowlist · READ_ONLY · 权限检查</text>
+<rect x="370" y="544" width="250" height="40" rx="8" fill="#FAECE7" stroke="#D85A30" stroke-width="0.5"/>
+<text class="th" x="495" y="560" text-anchor="middle" fill="#712B13">20 个只读工具</text>
+<text class="ts" x="495" y="578" text-anchor="middle">device/recording/access/alarm/knowledge</text>
+
+<line x1="340" y1="600" x2="340" y2="624" class="arr"/>
+
+<!-- 第5层 持久化与设备适配层 (粉) -->
+<rect class="layer-box" x="28" y="632" width="624" height="132" rx="10"/>
+<text class="layer-badge" x="40" y="648">第5层</text>
+<rect x="220" y="644" width="240" height="28" rx="14" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="340" y="662" text-anchor="middle" fill="#4B1528">持久化与设备适配层</text>
+<rect x="44" y="688" width="186" height="64" rx="8" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="137" y="714" text-anchor="middle" fill="#4B1528">SQLite Repository</text>
+<text class="ts" x="137" y="732" text-anchor="middle">Alembic · 审计 · 备份恢复</text>
+<rect x="246" y="688" width="186" height="64" rx="8" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="339" y="714" text-anchor="middle" fill="#4B1528">RoutedDeviceGateway</text>
+<text class="ts" x="339" y="732" text-anchor="middle">资产 · 能力 · readiness 路由</text>
+<rect x="448" y="688" width="192" height="64" rx="8" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+<text class="th" x="544" y="714" text-anchor="middle" fill="#4B1528">设备 Adapters</text>
+<text class="ts" x="544" y="732" text-anchor="middle">Static·Simulator·ONVIF/RTSP</text>
+
+<!-- 跨层护栏带 (灰) -->
+<rect x="28" y="784" width="624" height="48" rx="8" fill="#F1EFE8" stroke="#888780" stroke-width="1"/>
+<text class="th" x="340" y="804" text-anchor="middle" fill="#2C2C2A">跨层护栏</text>
+<text class="ts" x="340" y="822" text-anchor="middle">CitationPolicy · 授权清单与调用预算预检 · 统一脱敏入口 · 追加式审计 · 一致性扫描</text>
+
+<!-- 图例 -->
+<g transform="translate(28, 850)">
+  <rect x="0" y="0" width="624" height="24" rx="4" fill="#F8F8F8" stroke="#D0D0D0" stroke-width="0.5"/>
+  <text class="ts" x="8" y="16" fill="#666">图例</text>
+  <rect x="52" y="6" width="12" height="12" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+  <text class="ts" x="70" y="16" fill="#666">接入</text>
+  <rect x="112" y="6" width="12" height="12" fill="#EEEDFE" stroke="#7F77DD" stroke-width="0.5"/>
+  <text class="ts" x="130" y="16" fill="#666">编排</text>
+  <rect x="172" y="6" width="12" height="12" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+  <text class="ts" x="190" y="16" fill="#666">推理</text>
+  <rect x="232" y="6" width="12" height="12" fill="#FAECE7" stroke="#D85A30" stroke-width="0.5"/>
+  <text class="ts" x="250" y="16" fill="#666">工具</text>
+  <rect x="292" y="6" width="12" height="12" fill="#FBEAF0" stroke="#D4537E" stroke-width="0.5"/>
+  <text class="ts" x="310" y="16" fill="#666">存储/适配</text>
+  <rect x="372" y="6" width="12" height="12" fill="#F1EFE8" stroke="#888780" stroke-width="0.5"/>
+  <text class="ts" x="390" y="16" fill="#666">跨层护栏</text>
+</g>
+</svg>
