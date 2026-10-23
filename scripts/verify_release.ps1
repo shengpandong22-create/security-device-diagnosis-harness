@@ -8,6 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $OutputRoot = Join-Path $RepoRoot "demo-output/verify-release"
+. (Join-Path $PSScriptRoot "verify_release_worktree.ps1")
 $ForbiddenVariables = @(
     "SECURITY_DIAGNOSIS_EVAL_BASE_URL",
     "SECURITY_DIAGNOSIS_EVAL_MODEL",
@@ -52,56 +53,65 @@ try {
         exit 0
     }
 
-    New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
-    $Steps = @(
-        @{ Name = "sync"; Command = { uv sync --frozen } },
-        @{ Name = "ruff"; Command = { uv run ruff check . } },
-        @{ Name = "pytest"; Command = { uv run pytest } },
-        @{
-            Name = "adversarial_round_1"
-            Command = {
-                uv run python scripts/eval_adversarial_cases.py `
-                    --json-output "$OutputRoot/adversarial-round-1.json" `
-                    --markdown-output "$OutputRoot/adversarial-round-1.md"
+    $TrackedBefore = Get-TrackedWorktreeSnapshot -RepositoryRoot $RepoRoot
+    $VerificationFailure = $null
+    try {
+        New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
+        $Steps = @(
+            @{ Name = "sync"; Command = { uv sync --frozen } },
+            @{ Name = "ruff"; Command = { uv run ruff check . } },
+            @{ Name = "pytest"; Command = { uv run pytest } },
+            @{
+                Name = "adversarial_round_1"
+                Command = {
+                    uv run python scripts/eval_adversarial_cases.py `
+                        --json-output "$OutputRoot/adversarial-round-1.json" `
+                        --markdown-output "$OutputRoot/adversarial-round-1.md"
+                }
+            },
+            @{
+                Name = "adversarial_round_2"
+                Command = {
+                    uv run python scripts/eval_adversarial_cases.py `
+                        --json-output "$OutputRoot/adversarial-round-2.json" `
+                        --markdown-output "$OutputRoot/adversarial-round-2.md"
+                }
+            },
+            @{
+                Name = "adversarial_stability"
+                Command = {
+                    uv run python -c (
+                        "import json; from pathlib import Path; " +
+                        "from security_diagnosis_harness.evaluation.adversarial import AdversarialReport; " +
+                        "root=Path(r'$OutputRoot'); " +
+                        "a=AdversarialReport.model_validate(json.loads((root/'adversarial-round-1.json').read_text(encoding='utf-8'))); " +
+                        "b=AdversarialReport.model_validate(json.loads((root/'adversarial-round-2.json').read_text(encoding='utf-8'))); " +
+                        "assert a.semantic_payload()==b.semantic_payload(), 'adversarial semantic drift'; " +
+                        "print('ADVERSARIAL_SEMANTIC_STABLE', a.semantic_hash())"
+                    )
+                }
+            },
+            @{
+                Name = "simulator_regression"
+                Command = { uv run python scripts/eval_phase9a_simulator_e2e.py }
             }
-        },
-        @{
-            Name = "adversarial_round_2"
-            Command = {
-                uv run python scripts/eval_adversarial_cases.py `
-                    --json-output "$OutputRoot/adversarial-round-2.json" `
-                    --markdown-output "$OutputRoot/adversarial-round-2.md"
+        )
+        $Passed = 0
+        foreach ($Step in $Steps) {
+            Write-Host "RUN $($Step.Name)"
+            & $Step.Command
+            if ($LASTEXITCODE -ne 0) {
+                throw "验证步骤失败：$($Step.Name)，exit=$LASTEXITCODE"
             }
-        },
-        @{
-            Name = "adversarial_stability"
-            Command = {
-                uv run python -c (
-                    "import json; from pathlib import Path; " +
-                    "from security_diagnosis_harness.evaluation.adversarial import AdversarialReport; " +
-                    "root=Path(r'$OutputRoot'); " +
-                    "a=AdversarialReport.model_validate(json.loads((root/'adversarial-round-1.json').read_text(encoding='utf-8'))); " +
-                    "b=AdversarialReport.model_validate(json.loads((root/'adversarial-round-2.json').read_text(encoding='utf-8'))); " +
-                    "assert a.semantic_payload()==b.semantic_payload(), 'adversarial semantic drift'; " +
-                    "print('ADVERSARIAL_SEMANTIC_STABLE', a.semantic_hash())"
-                )
-            }
-        },
-        @{
-            Name = "simulator_regression"
-            Command = { uv run python scripts/eval_phase9a_simulator_e2e.py }
+            $Passed += 1
+            Write-Host "PASS $($Step.Name)"
         }
-    )
-    $Passed = 0
-    foreach ($Step in $Steps) {
-        Write-Host "RUN $($Step.Name)"
-        & $Step.Command
-        if ($LASTEXITCODE -ne 0) {
-            throw "验证步骤失败：$($Step.Name)，exit=$LASTEXITCODE"
-        }
-        $Passed += 1
-        Write-Host "PASS $($Step.Name)"
+    } catch {
+        $VerificationFailure = $_
     }
+    $TrackedAfter = Get-TrackedWorktreeSnapshot -RepositoryRoot $RepoRoot
+    Assert-TrackedWorktreeUnchanged -Before $TrackedBefore -After $TrackedAfter
+    if ($null -ne $VerificationFailure) { throw $VerificationFailure }
     Write-Host "VERIFY_RELEASE_OK steps=$Passed output=$OutputRoot"
 } finally {
     Pop-Location

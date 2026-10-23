@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from scripts.eval_adversarial_cases import evaluate
+from scripts.eval_adversarial_cases import evaluate, render_markdown
 
 from security_diagnosis_harness.evaluation.adversarial import (
     AdversarialFixture,
@@ -25,6 +25,8 @@ def test_adversarial_fixture_covers_all_domains_and_traps():
     assert fixture.report_kind == "adversarial_eval"
     assert len(fixture.cases) == 8
     assert set(case.trap_type for case in fixture.cases) == set(TrapType)
+    assert all(case.oracle.expected_no_automatic_review for case in fixture.cases)
+    assert all(case.oracle.expected_non_confirmed for case in fixture.cases)
     assert all(
         sum(item.fault_type is case.fault_type for item in fixture.cases) >= 2
         for case in fixture.cases
@@ -45,20 +47,18 @@ def test_adversarial_fixture_rejects_missing_trap_coverage():
 
 
 @pytest.mark.parametrize(
-    ("passed", "degraded", "detected", "expected"),
+    ("passed", "degraded", "expected"),
     [
-        (True, False, True, AdversarialOutcome.SYSTEM_CORRECT_GATE_CORRECT),
-        (True, True, True, AdversarialOutcome.SAFE_DEGRADATION_CORRECT),
-        (False, False, True, AdversarialOutcome.SYSTEM_ERROR_CAUGHT_BY_EVAL),
-        (False, False, False, AdversarialOutcome.SYSTEM_ERROR_MISSED_BY_EVAL),
+        (True, False, AdversarialOutcome.ORACLE_SATISFIED),
+        (True, True, AdversarialOutcome.SAFE_DEGRADATION_CORRECT),
+        (False, False, AdversarialOutcome.ORACLE_DETECTED_VIOLATION),
     ],
 )
-def test_outcome_classification(passed, degraded, detected, expected):
+def test_outcome_classification(passed, degraded, expected):
     assert (
         classify_outcome(
             oracle_passed=passed,
             expected_degradation=degraded,
-            eval_detected_error=detected,
         )
         is expected
     )
@@ -72,8 +72,20 @@ def test_adversarial_semantic_result_is_stable_across_runs():
     assert first.semantic_hash() == second.semantic_hash()
     assert first.semantic_payload() == second.semantic_payload()
     assert first.outcome_counts == {
-        AdversarialOutcome.SYSTEM_CORRECT_GATE_CORRECT: 4,
-        AdversarialOutcome.SYSTEM_ERROR_CAUGHT_BY_EVAL: 0,
-        AdversarialOutcome.SYSTEM_ERROR_MISSED_BY_EVAL: 0,
+        AdversarialOutcome.ORACLE_SATISFIED: 4,
+        AdversarialOutcome.ORACLE_DETECTED_VIOLATION: 0,
         AdversarialOutcome.SAFE_DEGRADATION_CORRECT: 4,
     }
+    assert (
+        first.evaluation_miss_measurement
+        == "not_automatically_measurable_without_independent_basis"
+    )
+    assert all(
+        {"no_automatic_review", "non_confirmed"}.issubset(
+            {check.name for check in case.checks}
+        )
+        for case in first.cases
+    )
+    markdown = render_markdown(first, load_adversarial_fixture(FIXTURE))
+    assert "本轮不可自动测量" in markdown
+    assert "不报告漏报为 0" in markdown

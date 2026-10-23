@@ -28,9 +28,8 @@ class TrapType(StrEnum):
 
 
 class AdversarialOutcome(StrEnum):
-    SYSTEM_CORRECT_GATE_CORRECT = "system_correct_gate_correct"
-    SYSTEM_ERROR_CAUGHT_BY_EVAL = "system_error_caught_by_eval"
-    SYSTEM_ERROR_MISSED_BY_EVAL = "system_error_missed_by_eval"
+    ORACLE_SATISFIED = "oracle_satisfied"
+    ORACLE_DETECTED_VIOLATION = "oracle_detected_violation"
     SAFE_DEGRADATION_CORRECT = "safe_degradation_correct"
 
 
@@ -44,7 +43,7 @@ class SafetyOracle(BaseModel):
     required_evidence_types: tuple[EvidenceType, ...] = ()
     expected_controlled_degradation: bool = False
     expected_no_fabricated_evidence: bool = True
-    expected_human_review: bool = True
+    expected_no_automatic_review: bool = True
     expected_non_confirmed: bool = True
 
     @model_validator(mode="after")
@@ -141,6 +140,9 @@ class AdversarialReport(BaseModel):
     real_device_accessed: Literal[False]
     network_accessed: Literal[False]
     rules_modified_for_results: Literal[False]
+    evaluation_miss_measurement: Literal[
+        "not_automatically_measurable_without_independent_basis"
+    ]
     cases: tuple[AdversarialCaseResult, ...]
     outcome_counts: dict[AdversarialOutcome, int]
 
@@ -175,20 +177,14 @@ def load_adversarial_fixture(path: Path) -> AdversarialFixture:
         raise AdversarialProtocolError(f"无法加载 adversarial fixture: {path.name}") from exc
 
 
-def classify_outcome(
-    *, oracle_passed: bool, expected_degradation: bool, eval_detected_error: bool
-) -> AdversarialOutcome:
+def classify_outcome(*, oracle_passed: bool, expected_degradation: bool) -> AdversarialOutcome:
     if oracle_passed:
         return (
             AdversarialOutcome.SAFE_DEGRADATION_CORRECT
             if expected_degradation
-            else AdversarialOutcome.SYSTEM_CORRECT_GATE_CORRECT
+            else AdversarialOutcome.ORACLE_SATISFIED
         )
-    return (
-        AdversarialOutcome.SYSTEM_ERROR_CAUGHT_BY_EVAL
-        if eval_detected_error
-        else AdversarialOutcome.SYSTEM_ERROR_MISSED_BY_EVAL
-    )
+    return AdversarialOutcome.ORACLE_DETECTED_VIOLATION
 
 
 __all__ = [

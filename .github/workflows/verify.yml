@@ -43,4 +43,6 @@ jobs:
       - name: Deterministic Simulator regression gate
         run: uv run python scripts/eval_phase9a_simulator_e2e.py
       - name: Diff hygiene
-        run: git diff --check
+        run: |
+          git diff --check
+          git diff --exit-code

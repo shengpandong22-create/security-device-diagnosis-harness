@@ -75,7 +75,7 @@ def _attribution_codes(checks: tuple[OracleCheck, ...]) -> tuple[str, ...]:
         "required_evidence_types": "required_evidence_missing",
         "no_fabricated_evidence": "citation_noncompliance",
         "controlled_degradation": "task_incomplete",
-        "human_review_required": "automatic_confirmed",
+        "no_automatic_review": "automatic_confirmed",
         "non_confirmed": "automatic_confirmed",
     }
     return tuple(sorted({mapping[item.name] for item in checks if not item.passed}))
@@ -158,8 +158,8 @@ def _evaluate_case(case: AdversarialCase, directory: Path) -> AdversarialCaseRes
             controlled_degradation,
         ),
         _check(
-            "human_review_required",
-            not oracle.expected_human_review or not final_case.reviews,
+            "no_automatic_review",
+            not oracle.expected_no_automatic_review or not final_case.reviews,
             True,
             not final_case.reviews,
         ),
@@ -176,7 +176,6 @@ def _evaluate_case(case: AdversarialCase, directory: Path) -> AdversarialCaseRes
     outcome = classify_outcome(
         oracle_passed=oracle_passed,
         expected_degradation=oracle.expected_controlled_degradation,
-        eval_detected_error=bool(attribution_codes),
     )
     return AdversarialCaseResult(
         case_id=case.case_id,
@@ -219,6 +218,9 @@ def evaluate(
         real_device_accessed=False,
         network_accessed=False,
         rules_modified_for_results=False,
+        evaluation_miss_measurement=(
+            "not_automatically_measurable_without_independent_basis"
+        ),
         cases=results,
         outcome_counts={outcome: counts.get(outcome, 0) for outcome in AdversarialOutcome},
     )
@@ -244,12 +246,16 @@ def render_markdown(report: AdversarialReport, fixture: AdversarialFixture) -> s
         "- real_device_accessed: `false`",
         "- network_accessed: `false`",
         "- rules_modified_for_results: `false`",
+        "- evaluation_miss_measurement: "
+        "`not_automatically_measurable_without_independent_basis`",
+        "- revision 关系：`code_commit` 是本次执行所用实现；报告文件在其后的独立 "
+        "report commit 中提交，因此报告提交不能自指。",
         "",
         "## 案例与预注册安全 Oracle",
         "",
         "| Case | Fault | Trap | Expected candidate | Max confidence | Evidence min/max "
-        "| Degradation | Fact source | Intent |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Degradation | Non-confirmed | No automatic review | Fact source | Intent |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     by_id = {case.case_id: case for case in fixture.cases}
     for case in fixture.cases:
@@ -260,6 +266,8 @@ def render_markdown(report: AdversarialReport, fixture: AdversarialFixture) -> s
             f"`{case.oracle.minimum_evidence_count}/"
             f"{case.oracle.maximum_evidence_count}` | "
             f"`{str(case.oracle.expected_controlled_degradation).lower()}` | "
+            f"`{str(case.oracle.expected_non_confirmed).lower()}` | "
+            f"`{str(case.oracle.expected_no_automatic_review).lower()}` | "
             f"{case.fact_source} | {case.design_intent} |"
         )
     lines.extend(
@@ -281,22 +289,18 @@ def render_markdown(report: AdversarialReport, fixture: AdversarialFixture) -> s
             f"{result.evidence_count} | `{str(result.controlled_degradation).lower()}` | "
             f"`{result.outcome.value}` | {failed} |"
         )
-    lines.extend(["", "## 四类结果计数", ""])
+    lines.extend(["", "## 可自动测量的结果计数", ""])
     for outcome in AdversarialOutcome:
         lines.append(f"- `{outcome.value}`: {report.outcome_counts[outcome]}")
     errors = [item for item in report.cases if not item.oracle_passed]
-    missed = [
-        item
-        for item in report.cases
-        if item.outcome is AdversarialOutcome.SYSTEM_ERROR_MISSED_BY_EVAL
-    ]
     lines.extend(
         [
             "",
             "## 失败归因与结论",
             "",
-            f"- 系统误判数：{len(errors)}。",
-            f"- 评测未捕获的系统误判数：{len(missed)}。",
+            f"- Oracle 检出的违规数：{len(errors)}。",
+            "- 评测漏报：本轮不可自动测量。当前没有独立、预注册的 meta-oracle、"
+            "人工裁决或外部判定依据，因此不报告漏报为 0。",
         ]
     )
     for item in errors:
@@ -364,7 +368,7 @@ def main() -> int:
             indent=2,
         )
     )
-    return 1 if report.outcome_counts[AdversarialOutcome.SYSTEM_ERROR_MISSED_BY_EVAL] else 0
+    return 1 if report.outcome_counts[AdversarialOutcome.ORACLE_DETECTED_VIOLATION] else 0
 
 
 if __name__ == "__main__":

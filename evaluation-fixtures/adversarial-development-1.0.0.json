@@ -74,7 +74,7 @@
         ],
         "expected_controlled_degradation": false,
         "expected_no_fabricated_evidence": true,
-        "expected_human_review": true,
+        "expected_no_automatic_review": true,
         "expected_non_confirmed": true
       }
     },
@@ -128,7 +128,7 @@
         "required_evidence_types": [],
         "expected_controlled_degradation": true,
         "expected_no_fabricated_evidence": true,
-        "expected_human_review": true,
+        "expected_no_automatic_review": true,
         "expected_non_confirmed": true
       }
     },
@@ -228,7 +228,7 @@
         ],
         "expected_controlled_degradation": false,
         "expected_no_fabricated_evidence": true,
-        "expected_human_review": true,
+        "expected_no_automatic_review": true,
         "expected_non_confirmed": true
       }
     },
@@ -315,7 +315,7 @@
         "required_evidence_types": [],
         "expected_controlled_degradation": true,
         "expected_no_fabricated_evidence": true,
-        "expected_human_review": true,
+        "expected_no_automatic_review": true,
         "expected_non_confirmed": true
       }
     },
@@ -417,7 +417,7 @@
         ],
         "expected_controlled_degradation": false,
         "expected_no_fabricated_evidence": true,
-        "expected_human_review": true,
+        "expected_no_automatic_review": true,
         "expected_non_confirmed": true
       }
     },
@@ -487,7 +487,7 @@
         "required_evidence_types": [],
         "expected_controlled_degradation": true,
         "expected_no_fabricated_evidence": true,
-        "expected_human_review": true,
+        "expected_no_automatic_review": true,
         "expected_non_confirmed": true
       }
     },
@@ -585,7 +585,7 @@
         ],
         "expected_controlled_degradation": false,
         "expected_no_fabricated_evidence": true,
-        "expected_human_review": true,
+        "expected_no_automatic_review": true,
         "expected_non_confirmed": true
       }
     },
@@ -650,7 +650,7 @@
         "required_evidence_types": [],
         "expected_controlled_degradation": true,
         "expected_no_fabricated_evidence": true,
-        "expected_human_review": true,
+        "expected_no_automatic_review": true,
         "expected_non_confirmed": true
       }
     }

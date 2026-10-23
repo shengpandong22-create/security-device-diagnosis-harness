@@ -16,6 +16,7 @@
 4. `uv run python scripts/eval_adversarial_cases.py`，输出仅写入被忽略的 `demo-output/`
 5. `uv run python scripts/eval_phase9a_simulator_e2e.py`
 6. `git diff --check`
+7. `git diff --exit-code`
 
 工作流把真实模型、真实设备、Device Lab 与正式 API 凭证相关环境变量显式设为空，不引用
 GitHub Secret。Simulator 结果仍只表示本地确定性契约，不代表真机或生产准确率。
@@ -29,7 +30,8 @@ pwsh -NoProfile -File scripts/verify_release.ps1
 脚本先打印 commit、Python/uv 版本和检测到的真实调用变量数量。只要任一真实模型、真机、
 Device Lab 或 API 凭证变量非空，就以退出码 2 拒绝运行且不打印变量值。通过环境检查后执行与
 CI 相同的核心步骤，并额外连续运行两次 adversarial suite，比较排除随机诊断/Evidence ID 和
-运行时间后的语义结果。
+运行时间后的语义结果。脚本在验证前后记录受跟踪文件的差异名单与内容哈希；已有的未提交
+修改可以保留，但验证过程不得新增或改变任何受跟踪差异。
 
 所有临时报告写入 `demo-output/verify-release/`。脚本不部署服务、不启动 Docker、不修改规则、
 不更新 fixed、simulator_e2e 或 real_model baseline。
