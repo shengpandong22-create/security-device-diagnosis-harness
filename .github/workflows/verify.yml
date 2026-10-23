@@ -1,0 +1,46 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SECURITY_DIAGNOSIS_EVAL_BASE_URL: ""
+      SECURITY_DIAGNOSIS_EVAL_MODEL: ""
+      SECURITY_DIAGNOSIS_EVAL_API_KEY: ""
+      SECURITY_DIAGNOSIS_EVAL_INTEGRITY_KEY: ""
+      SECURITY_DIAGNOSIS_DEVICE_HOST: ""
+      SECURITY_DIAGNOSIS_DEVICE_USERNAME: ""
+      SECURITY_DIAGNOSIS_DEVICE_PASSWORD: ""
+      SECURITY_DIAGNOSIS_DEVICE_RTSP_PORT: ""
+      SECURITY_DIAGNOSIS_LAB_CREDENTIAL: ""
+      SECURITY_DIAGNOSIS_API_TOKEN: ""
+      SECURITY_DIAGNOSIS_API_REVIEWER_TOKEN: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check .
+      - name: Test
+        run: uv run pytest
+      - name: Adversarial Development gate
+        run: |
+          uv run python scripts/eval_adversarial_cases.py \
+            --json-output demo-output/ci-adversarial.json \
+            --markdown-output demo-output/ci-adversarial.md
+      - name: Deterministic Simulator regression gate
+        run: uv run python scripts/eval_phase9a_simulator_e2e.py
+      - name: Diff hygiene
+        run: git diff --check
