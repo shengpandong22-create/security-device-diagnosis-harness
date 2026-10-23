@@ -2,14 +2,15 @@
   "report_kind": "adversarial_eval",
   "fixture_version": "1.0.0",
   "dataset_version": "0.1.0",
-  "fixture_hash": "7a6f8f64246387e7dc0e005760697cc47c47b8882cc7be01920391e445fbf3ce",
-  "code_commit": "151101314ac4d082693ce44e52a7da43b730b7b7",
-  "run_at": "2026-10-23T15:32:23.363245Z",
+  "fixture_hash": "1f002fa9c49b7b44dafb7061a1f42f65a94294af02d593586c2b568fb51c25b0",
+  "code_commit": "c05e7a1e53fce4e2bcb51c3a85f346e5fefc26ad",
+  "run_at": "2026-10-23T15:45:35.337237Z",
   "runner_name": "formal_application_static_fake",
   "external_model_called": false,
   "real_device_accessed": false,
   "network_accessed": false,
   "rules_modified_for_results": false,
+  "evaluation_miss_measurement": "not_automatically_measurable_without_independent_basis",
   "cases": [
     {
       "case_id": "adv-camera-precedence",
@@ -30,8 +31,8 @@
         "platform_pull"
       ],
       "cited_evidence_ids": [
-        "evd_6f2c49bfefb9423d9c174d5c8d36298a",
-        "evd_01bbebd1b7844e9aafef6d8e6ada5e5d"
+        "evd_0aabac1694e1484c82701b29d7b7c871",
+        "evd_8c817922c4d84e7b8b4812f882dd5081"
       ],
       "controlled_degradation": false,
       "error": null,
@@ -90,7 +91,7 @@
           "actual": false
         },
         {
-          "name": "human_review_required",
+          "name": "no_automatic_review",
           "passed": true,
           "expected": true,
           "actual": true
@@ -102,7 +103,7 @@
           "actual": true
         }
       ],
-      "outcome": "system_correct_gate_correct",
+      "outcome": "oracle_satisfied",
       "attribution_codes": []
     },
     {
@@ -122,8 +123,8 @@
         "device_channel"
       ],
       "cited_evidence_ids": [
-        "evd_eaff726d8b324ceca998b5b8a660974a",
-        "evd_a5f3f7fa0d1942e081c23b1a9d978cf9"
+        "evd_966aa19e19754bfa9fb2e831781c4eab",
+        "evd_d99827c05c264b1896f8321b947acfcf"
       ],
       "controlled_degradation": true,
       "error": null,
@@ -177,7 +178,7 @@
           "actual": true
         },
         {
-          "name": "human_review_required",
+          "name": "no_automatic_review",
           "passed": true,
           "expected": true,
           "actual": true
@@ -208,8 +209,8 @@
         "knowledge_sop"
       ],
       "cited_evidence_ids": [
-        "evd_0cea4a7a207b4f48a245a02cf9bc4f89",
-        "evd_0f12908f96014bdaa678b7f403764c5e"
+        "evd_3e2131406de24612b37477d0cb5e2ce5",
+        "evd_03191f3b5c59454da0598a5d0da2fc16"
       ],
       "controlled_degradation": false,
       "error": null,
@@ -265,7 +266,7 @@
           "actual": false
         },
         {
-          "name": "human_review_required",
+          "name": "no_automatic_review",
           "passed": true,
           "expected": true,
           "actual": true
@@ -277,7 +278,7 @@
           "actual": true
         }
       ],
-      "outcome": "system_correct_gate_correct",
+      "outcome": "oracle_satisfied",
       "attribution_codes": []
     },
     {
@@ -295,8 +296,8 @@
         "knowledge_sop"
       ],
       "cited_evidence_ids": [
-        "evd_dfe7fb4663b4447492817607a0546fbd",
-        "evd_9ca31be88792405aa1a398a7c517f75b"
+        "evd_1bdae05cd15c473ea3990eee2b1b78c7",
+        "evd_dc050cd8b566487bacab63a6e7badc74"
       ],
       "controlled_degradation": true,
       "error": null,
@@ -348,7 +349,7 @@
           "actual": true
         },
         {
-          "name": "human_review_required",
+          "name": "no_automatic_review",
           "passed": true,
           "expected": true,
           "actual": true
@@ -380,8 +381,8 @@
         "knowledge_sop"
       ],
       "cited_evidence_ids": [
-        "evd_c34978ab36cc42638c5c9a6fe5a14bb7",
-        "evd_6d7f6567b1f74f569766547140fb9054"
+        "evd_96151ac316f34a4aa7d8334dd4fd5e0c",
+        "evd_7d1fb6c33ae84bbfb3dce0c19025c050"
       ],
       "controlled_degradation": false,
       "error": null,
@@ -438,7 +439,7 @@
           "actual": false
         },
         {
-          "name": "human_review_required",
+          "name": "no_automatic_review",
           "passed": true,
           "expected": true,
           "actual": true
@@ -450,7 +451,7 @@
           "actual": true
         }
       ],
-      "outcome": "system_correct_gate_correct",
+      "outcome": "oracle_satisfied",
       "attribution_codes": []
     },
     {
@@ -470,8 +471,8 @@
         "knowledge_sop"
       ],
       "cited_evidence_ids": [
-        "evd_cd0fde81c85c4e48aeef6afe7768206d",
-        "evd_d9061ad0c1a54067a3d203a3c37dee52"
+        "evd_6f3dfa85cef3461d925986ef8c9b2879",
+        "evd_0d99cb90b3e14f3c9579740c120d6983"
       ],
       "controlled_degradation": true,
       "error": null,
@@ -525,7 +526,7 @@
           "actual": true
         },
         {
-          "name": "human_review_required",
+          "name": "no_automatic_review",
           "passed": true,
           "expected": true,
           "actual": true
@@ -558,8 +559,8 @@
         "knowledge_sop"
       ],
       "cited_evidence_ids": [
-        "evd_bf316d49462e4344b59e39fd79a56110",
-        "evd_c3833d28120e40719987cf8ada4a9fb5"
+        "evd_f60acb1046f046a19638e08def4d025c",
+        "evd_e9cd8b14aa684d1faefe39f00d6f2962"
       ],
       "controlled_degradation": false,
       "error": null,
@@ -617,7 +618,7 @@
           "actual": false
         },
         {
-          "name": "human_review_required",
+          "name": "no_automatic_review",
           "passed": true,
           "expected": true,
           "actual": true
@@ -629,7 +630,7 @@
           "actual": true
         }
       ],
-      "outcome": "system_correct_gate_correct",
+      "outcome": "oracle_satisfied",
       "attribution_codes": []
     },
     {
@@ -649,8 +650,8 @@
         "knowledge_sop"
       ],
       "cited_evidence_ids": [
-        "evd_c470819d6c1a45768e2da0fc2c5f1302",
-        "evd_de194c91b9594a739d3a203c505555ff"
+        "evd_500a3b41780a4f1eaabbe0deeda8e225",
+        "evd_b44d26f26df54a778210ae25a4e35e97"
       ],
       "controlled_degradation": true,
       "error": null,
@@ -704,7 +705,7 @@
           "actual": true
         },
         {
-          "name": "human_review_required",
+          "name": "no_automatic_review",
           "passed": true,
           "expected": true,
           "actual": true
@@ -721,9 +722,8 @@
     }
   ],
   "outcome_counts": {
-    "system_correct_gate_correct": 4,
-    "system_error_caught_by_eval": 0,
-    "system_error_missed_by_eval": 0,
+    "oracle_satisfied": 4,
+    "oracle_detected_violation": 0,
     "safe_degradation_correct": 4
   }
 }
