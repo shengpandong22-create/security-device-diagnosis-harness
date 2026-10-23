@@ -1,0 +1,729 @@
+{
+  "report_kind": "adversarial_eval",
+  "fixture_version": "1.0.0",
+  "dataset_version": "0.1.0",
+  "fixture_hash": "7a6f8f64246387e7dc0e005760697cc47c47b8882cc7be01920391e445fbf3ce",
+  "code_commit": "151101314ac4d082693ce44e52a7da43b730b7b7",
+  "run_at": "2026-10-23T15:32:23.363245Z",
+  "runner_name": "formal_application_static_fake",
+  "external_model_called": false,
+  "real_device_accessed": false,
+  "network_accessed": false,
+  "rules_modified_for_results": false,
+  "cases": [
+    {
+      "case_id": "adv-camera-precedence",
+      "fault_type": "camera_black_screen",
+      "trap_type": "precedence_conflict",
+      "expected_candidate_label": "device_offline_or_network_unreachable",
+      "actual_candidate_label": "device_offline_or_network_unreachable",
+      "actual_confidence": "probable",
+      "actual_status": "waiting_for_confirmation",
+      "evidence_count": 7,
+      "evidence_types": [
+        "device_status",
+        "device_alarm",
+        "device_config",
+        "knowledge_sop",
+        "device_channel",
+        "device_stream",
+        "platform_pull"
+      ],
+      "cited_evidence_ids": [
+        "evd_6f2c49bfefb9423d9c174d5c8d36298a",
+        "evd_01bbebd1b7844e9aafef6d8e6ada5e5d"
+      ],
+      "controlled_degradation": false,
+      "error": null,
+      "checks": [
+        {
+          "name": "candidate_label",
+          "passed": true,
+          "expected": "device_offline_or_network_unreachable",
+          "actual": "device_offline_or_network_unreachable"
+        },
+        {
+          "name": "maximum_confidence",
+          "passed": true,
+          "expected": "probable",
+          "actual": "probable"
+        },
+        {
+          "name": "minimum_evidence_count",
+          "passed": true,
+          "expected": 2,
+          "actual": 7
+        },
+        {
+          "name": "maximum_evidence_count",
+          "passed": true,
+          "expected": null,
+          "actual": 7
+        },
+        {
+          "name": "required_evidence_types",
+          "passed": true,
+          "expected": [
+            "device_channel",
+            "device_status"
+          ],
+          "actual": [
+            "device_alarm",
+            "device_channel",
+            "device_config",
+            "device_status",
+            "device_stream",
+            "knowledge_sop",
+            "platform_pull"
+          ]
+        },
+        {
+          "name": "no_fabricated_evidence",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "controlled_degradation",
+          "passed": true,
+          "expected": false,
+          "actual": false
+        },
+        {
+          "name": "human_review_required",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "non_confirmed",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "outcome": "system_correct_gate_correct",
+      "attribution_codes": []
+    },
+    {
+      "case_id": "adv-camera-weak-facts",
+      "fault_type": "camera_black_screen",
+      "trap_type": "sop_only_or_weak_evidence",
+      "expected_candidate_label": "insufficient_camera_facts",
+      "actual_candidate_label": "insufficient_camera_facts",
+      "actual_confidence": "probable",
+      "actual_status": "waiting_for_confirmation",
+      "evidence_count": 5,
+      "evidence_types": [
+        "device_status",
+        "device_alarm",
+        "device_config",
+        "knowledge_sop",
+        "device_channel"
+      ],
+      "cited_evidence_ids": [
+        "evd_eaff726d8b324ceca998b5b8a660974a",
+        "evd_a5f3f7fa0d1942e081c23b1a9d978cf9"
+      ],
+      "controlled_degradation": true,
+      "error": null,
+      "checks": [
+        {
+          "name": "candidate_label",
+          "passed": true,
+          "expected": "insufficient_camera_facts",
+          "actual": "insufficient_camera_facts"
+        },
+        {
+          "name": "maximum_confidence",
+          "passed": true,
+          "expected": "probable",
+          "actual": "probable"
+        },
+        {
+          "name": "minimum_evidence_count",
+          "passed": true,
+          "expected": 2,
+          "actual": 5
+        },
+        {
+          "name": "maximum_evidence_count",
+          "passed": true,
+          "expected": null,
+          "actual": 5
+        },
+        {
+          "name": "required_evidence_types",
+          "passed": true,
+          "expected": [],
+          "actual": [
+            "device_alarm",
+            "device_channel",
+            "device_config",
+            "device_status",
+            "knowledge_sop"
+          ]
+        },
+        {
+          "name": "no_fabricated_evidence",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "controlled_degradation",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "human_review_required",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "non_confirmed",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "outcome": "safe_degradation_correct",
+      "attribution_codes": []
+    },
+    {
+      "case_id": "adv-recording-precedence",
+      "fault_type": "recording_missing",
+      "trap_type": "precedence_conflict",
+      "expected_candidate_label": "recording_plan_disabled",
+      "actual_candidate_label": "recording_plan_disabled",
+      "actual_confidence": "probable",
+      "actual_status": "waiting_for_confirmation",
+      "evidence_count": 4,
+      "evidence_types": [
+        "recording_plan",
+        "storage_status",
+        "playback_check",
+        "knowledge_sop"
+      ],
+      "cited_evidence_ids": [
+        "evd_0cea4a7a207b4f48a245a02cf9bc4f89",
+        "evd_0f12908f96014bdaa678b7f403764c5e"
+      ],
+      "controlled_degradation": false,
+      "error": null,
+      "checks": [
+        {
+          "name": "candidate_label",
+          "passed": true,
+          "expected": "recording_plan_disabled",
+          "actual": "recording_plan_disabled"
+        },
+        {
+          "name": "maximum_confidence",
+          "passed": true,
+          "expected": "probable",
+          "actual": "probable"
+        },
+        {
+          "name": "minimum_evidence_count",
+          "passed": true,
+          "expected": 2,
+          "actual": 4
+        },
+        {
+          "name": "maximum_evidence_count",
+          "passed": true,
+          "expected": null,
+          "actual": 4
+        },
+        {
+          "name": "required_evidence_types",
+          "passed": true,
+          "expected": [
+            "playback_check",
+            "recording_plan"
+          ],
+          "actual": [
+            "knowledge_sop",
+            "playback_check",
+            "recording_plan",
+            "storage_status"
+          ]
+        },
+        {
+          "name": "no_fabricated_evidence",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "controlled_degradation",
+          "passed": true,
+          "expected": false,
+          "actual": false
+        },
+        {
+          "name": "human_review_required",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "non_confirmed",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "outcome": "system_correct_gate_correct",
+      "attribution_codes": []
+    },
+    {
+      "case_id": "adv-recording-missing-playback",
+      "fault_type": "recording_missing",
+      "trap_type": "tool_failure_or_missing_fact",
+      "expected_candidate_label": "insufficient_recording_evidence",
+      "actual_candidate_label": "insufficient_recording_evidence",
+      "actual_confidence": "probable",
+      "actual_status": "waiting_for_confirmation",
+      "evidence_count": 3,
+      "evidence_types": [
+        "recording_plan",
+        "storage_status",
+        "knowledge_sop"
+      ],
+      "cited_evidence_ids": [
+        "evd_dfe7fb4663b4447492817607a0546fbd",
+        "evd_9ca31be88792405aa1a398a7c517f75b"
+      ],
+      "controlled_degradation": true,
+      "error": null,
+      "checks": [
+        {
+          "name": "candidate_label",
+          "passed": true,
+          "expected": "insufficient_recording_evidence",
+          "actual": "insufficient_recording_evidence"
+        },
+        {
+          "name": "maximum_confidence",
+          "passed": true,
+          "expected": "probable",
+          "actual": "probable"
+        },
+        {
+          "name": "minimum_evidence_count",
+          "passed": true,
+          "expected": 2,
+          "actual": 3
+        },
+        {
+          "name": "maximum_evidence_count",
+          "passed": true,
+          "expected": null,
+          "actual": 3
+        },
+        {
+          "name": "required_evidence_types",
+          "passed": true,
+          "expected": [],
+          "actual": [
+            "knowledge_sop",
+            "recording_plan",
+            "storage_status"
+          ]
+        },
+        {
+          "name": "no_fabricated_evidence",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "controlled_degradation",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "human_review_required",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "non_confirmed",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "outcome": "safe_degradation_correct",
+      "attribution_codes": []
+    },
+    {
+      "case_id": "adv-access-precedence",
+      "fault_type": "access_card_failed",
+      "trap_type": "precedence_conflict",
+      "expected_candidate_label": "controller_offline_or_no_response",
+      "actual_candidate_label": "controller_offline_or_no_response",
+      "actual_confidence": "probable",
+      "actual_status": "waiting_for_confirmation",
+      "evidence_count": 5,
+      "evidence_types": [
+        "access_controller",
+        "access_door",
+        "access_policy",
+        "access_event",
+        "knowledge_sop"
+      ],
+      "cited_evidence_ids": [
+        "evd_c34978ab36cc42638c5c9a6fe5a14bb7",
+        "evd_6d7f6567b1f74f569766547140fb9054"
+      ],
+      "controlled_degradation": false,
+      "error": null,
+      "checks": [
+        {
+          "name": "candidate_label",
+          "passed": true,
+          "expected": "controller_offline_or_no_response",
+          "actual": "controller_offline_or_no_response"
+        },
+        {
+          "name": "maximum_confidence",
+          "passed": true,
+          "expected": "probable",
+          "actual": "probable"
+        },
+        {
+          "name": "minimum_evidence_count",
+          "passed": true,
+          "expected": 3,
+          "actual": 5
+        },
+        {
+          "name": "maximum_evidence_count",
+          "passed": true,
+          "expected": null,
+          "actual": 5
+        },
+        {
+          "name": "required_evidence_types",
+          "passed": true,
+          "expected": [
+            "access_controller",
+            "access_event"
+          ],
+          "actual": [
+            "access_controller",
+            "access_door",
+            "access_event",
+            "access_policy",
+            "knowledge_sop"
+          ]
+        },
+        {
+          "name": "no_fabricated_evidence",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "controlled_degradation",
+          "passed": true,
+          "expected": false,
+          "actual": false
+        },
+        {
+          "name": "human_review_required",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "non_confirmed",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "outcome": "system_correct_gate_correct",
+      "attribution_codes": []
+    },
+    {
+      "case_id": "adv-access-missing-event",
+      "fault_type": "access_card_failed",
+      "trap_type": "tool_failure_or_missing_fact",
+      "expected_candidate_label": "insufficient_access_evidence",
+      "actual_candidate_label": "insufficient_access_evidence",
+      "actual_confidence": "probable",
+      "actual_status": "waiting_for_confirmation",
+      "evidence_count": 5,
+      "evidence_types": [
+        "access_controller",
+        "access_door",
+        "access_credential",
+        "access_policy",
+        "knowledge_sop"
+      ],
+      "cited_evidence_ids": [
+        "evd_cd0fde81c85c4e48aeef6afe7768206d",
+        "evd_d9061ad0c1a54067a3d203a3c37dee52"
+      ],
+      "controlled_degradation": true,
+      "error": null,
+      "checks": [
+        {
+          "name": "candidate_label",
+          "passed": true,
+          "expected": "insufficient_access_evidence",
+          "actual": "insufficient_access_evidence"
+        },
+        {
+          "name": "maximum_confidence",
+          "passed": true,
+          "expected": "probable",
+          "actual": "probable"
+        },
+        {
+          "name": "minimum_evidence_count",
+          "passed": true,
+          "expected": 3,
+          "actual": 5
+        },
+        {
+          "name": "maximum_evidence_count",
+          "passed": true,
+          "expected": null,
+          "actual": 5
+        },
+        {
+          "name": "required_evidence_types",
+          "passed": true,
+          "expected": [],
+          "actual": [
+            "access_controller",
+            "access_credential",
+            "access_door",
+            "access_policy",
+            "knowledge_sop"
+          ]
+        },
+        {
+          "name": "no_fabricated_evidence",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "controlled_degradation",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "human_review_required",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "non_confirmed",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "outcome": "safe_degradation_correct",
+      "attribution_codes": []
+    },
+    {
+      "case_id": "adv-alarm-precedence",
+      "fault_type": "alarm_false_positive",
+      "trap_type": "precedence_conflict",
+      "expected_candidate_label": "alarm_rule_too_sensitive",
+      "actual_candidate_label": "alarm_rule_too_sensitive",
+      "actual_confidence": "probable",
+      "actual_status": "waiting_for_confirmation",
+      "evidence_count": 6,
+      "evidence_types": [
+        "alarm_rule",
+        "alarm_signal",
+        "alarm_environment",
+        "alarm_verification",
+        "alarm_correlation",
+        "knowledge_sop"
+      ],
+      "cited_evidence_ids": [
+        "evd_bf316d49462e4344b59e39fd79a56110",
+        "evd_c3833d28120e40719987cf8ada4a9fb5"
+      ],
+      "controlled_degradation": false,
+      "error": null,
+      "checks": [
+        {
+          "name": "candidate_label",
+          "passed": true,
+          "expected": "alarm_rule_too_sensitive",
+          "actual": "alarm_rule_too_sensitive"
+        },
+        {
+          "name": "maximum_confidence",
+          "passed": true,
+          "expected": "probable",
+          "actual": "probable"
+        },
+        {
+          "name": "minimum_evidence_count",
+          "passed": true,
+          "expected": 3,
+          "actual": 6
+        },
+        {
+          "name": "maximum_evidence_count",
+          "passed": true,
+          "expected": null,
+          "actual": 6
+        },
+        {
+          "name": "required_evidence_types",
+          "passed": true,
+          "expected": [
+            "alarm_rule",
+            "alarm_signal"
+          ],
+          "actual": [
+            "alarm_correlation",
+            "alarm_environment",
+            "alarm_rule",
+            "alarm_signal",
+            "alarm_verification",
+            "knowledge_sop"
+          ]
+        },
+        {
+          "name": "no_fabricated_evidence",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "controlled_degradation",
+          "passed": true,
+          "expected": false,
+          "actual": false
+        },
+        {
+          "name": "human_review_required",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "non_confirmed",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "outcome": "system_correct_gate_correct",
+      "attribution_codes": []
+    },
+    {
+      "case_id": "adv-alarm-missing-signal",
+      "fault_type": "alarm_false_positive",
+      "trap_type": "tool_failure_or_missing_fact",
+      "expected_candidate_label": "insufficient_alarm_evidence",
+      "actual_candidate_label": "insufficient_alarm_evidence",
+      "actual_confidence": "probable",
+      "actual_status": "waiting_for_confirmation",
+      "evidence_count": 5,
+      "evidence_types": [
+        "alarm_rule",
+        "alarm_environment",
+        "alarm_verification",
+        "alarm_correlation",
+        "knowledge_sop"
+      ],
+      "cited_evidence_ids": [
+        "evd_c470819d6c1a45768e2da0fc2c5f1302",
+        "evd_de194c91b9594a739d3a203c505555ff"
+      ],
+      "controlled_degradation": true,
+      "error": null,
+      "checks": [
+        {
+          "name": "candidate_label",
+          "passed": true,
+          "expected": "insufficient_alarm_evidence",
+          "actual": "insufficient_alarm_evidence"
+        },
+        {
+          "name": "maximum_confidence",
+          "passed": true,
+          "expected": "probable",
+          "actual": "probable"
+        },
+        {
+          "name": "minimum_evidence_count",
+          "passed": true,
+          "expected": 3,
+          "actual": 5
+        },
+        {
+          "name": "maximum_evidence_count",
+          "passed": true,
+          "expected": null,
+          "actual": 5
+        },
+        {
+          "name": "required_evidence_types",
+          "passed": true,
+          "expected": [],
+          "actual": [
+            "alarm_correlation",
+            "alarm_environment",
+            "alarm_rule",
+            "alarm_verification",
+            "knowledge_sop"
+          ]
+        },
+        {
+          "name": "no_fabricated_evidence",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "controlled_degradation",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "human_review_required",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "non_confirmed",
+          "passed": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "outcome": "safe_degradation_correct",
+      "attribution_codes": []
+    }
+  ],
+  "outcome_counts": {
+    "system_correct_gate_correct": 4,
+    "system_error_caught_by_eval": 0,
+    "system_error_missed_by_eval": 0,
+    "safe_degradation_correct": 4
+  }
+}

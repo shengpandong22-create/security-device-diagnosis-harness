@@ -1,0 +1,658 @@
+{
+  "report_kind": "adversarial_eval",
+  "fixture_version": "1.0.0",
+  "dataset_version": "0.1.0",
+  "cases": [
+    {
+      "case_id": "adv-camera-precedence",
+      "fault_type": "camera_black_screen",
+      "trap_type": "precedence_conflict",
+      "design_intent": "设备离线必须优先于表层码流与平台拉流错误。",
+      "fact_source": "Phase 1 fixture 派生的合成 Development 反例",
+      "gateway_entry": {
+        "device_id": "cam-offline-01",
+        "case_id": "adv-camera-precedence",
+        "expected_label": "device_offline_or_network_unreachable",
+        "snapshot": {
+          "online": false,
+          "channel_online": false,
+          "stream_status": "unknown",
+          "recording_status": "stopped"
+        },
+        "channel": {
+          "channel_id": "1",
+          "channel_status": "offline",
+          "bound": true,
+          "platform_registered": true
+        },
+        "streams": {
+          "main": {
+            "pull_status": "failed",
+            "encoding": "H.265",
+            "resolution": "1920x1080",
+            "frame_rate": 25,
+            "bitrate_kbps": 2048,
+            "error_code": "STREAM_PUBLISH_FAILED"
+          }
+        },
+        "platform_pull": {
+          "platform": "vms-platform-a",
+          "pull_status": "failed",
+          "error_code": "PLATFORM_PULL_FAILED"
+        },
+        "alarms": [
+          {
+            "event_type": "DEVICE_OFFLINE",
+            "severity": "critical",
+            "message": "设备离线，最后心跳超时"
+          },
+          {
+            "event_type": "HEARTBEAT_TIMEOUT",
+            "severity": "critical",
+            "message": "设备心跳超时"
+          }
+        ],
+        "config": {
+          "enabled": true,
+          "encoding": "H.265",
+          "resolution": "1920x1080",
+          "frame_rate": 25,
+          "bitrate_kbps": 2048,
+          "config": {
+            "bitrate_mode": "CBR",
+            "admin_password": "sample-admin-pwd-not-real"
+          }
+        }
+      },
+      "oracle": {
+        "expected_candidate_label": "device_offline_or_network_unreachable",
+        "maximum_confidence": "probable",
+        "minimum_evidence_count": 2,
+        "required_evidence_types": [
+          "device_status",
+          "device_channel"
+        ],
+        "expected_controlled_degradation": false,
+        "expected_no_fabricated_evidence": true,
+        "expected_human_review": true,
+        "expected_non_confirmed": true
+      }
+    },
+    {
+      "case_id": "adv-camera-weak-facts",
+      "fault_type": "camera_black_screen",
+      "trap_type": "sop_only_or_weak_evidence",
+      "design_intent": "只有设备与通道弱事实、码流与平台事实缺失时不得猜测具体主因。",
+      "fact_source": "Phase 1 fixture 派生的合成 Development 反例",
+      "gateway_entry": {
+        "device_id": "cam-platform-pull-01",
+        "case_id": "adv-camera-weak-facts",
+        "expected_label": "insufficient_camera_facts",
+        "snapshot": {
+          "online": true,
+          "channel_online": true,
+          "stream_status": "normal",
+          "recording_status": "recording"
+        },
+        "channel": {
+          "channel_id": "1",
+          "channel_status": "online",
+          "bound": true,
+          "platform_registered": true
+        },
+        "streams": {},
+        "platform_pull": {},
+        "alarms": [
+          {
+            "event_type": "PLATFORM_PULL_FAILED",
+            "severity": "warning",
+            "message": "平台侧拉流失败"
+          }
+        ],
+        "config": {
+          "enabled": true,
+          "encoding": "H.264",
+          "resolution": "1920x1080",
+          "frame_rate": 25,
+          "bitrate_kbps": 4096,
+          "config": {
+            "bitrate_mode": "VBR",
+            "admin_password": "sample-admin-pwd-not-real"
+          }
+        }
+      },
+      "oracle": {
+        "expected_candidate_label": "insufficient_camera_facts",
+        "maximum_confidence": "probable",
+        "minimum_evidence_count": 2,
+        "required_evidence_types": [],
+        "expected_controlled_degradation": true,
+        "expected_no_fabricated_evidence": true,
+        "expected_human_review": true,
+        "expected_non_confirmed": true
+      }
+    },
+    {
+      "case_id": "adv-recording-precedence",
+      "fault_type": "recording_missing",
+      "trap_type": "precedence_conflict",
+      "design_intent": "计划禁用与存储满同时出现时遵循已注册的计划优先级。",
+      "fact_source": "Phase 2 fixture 派生的合成 Development 反例",
+      "gateway_entry": {
+        "device_id": "cam-rec-plan-disabled-01",
+        "case_id": "adv-recording-precedence",
+        "expected_label": "recording_plan_disabled",
+        "snapshot": {
+          "online": true,
+          "channel_online": true,
+          "stream_status": "normal",
+          "recording_status": "stopped"
+        },
+        "channel": {
+          "channel_id": "1",
+          "channel_status": "online",
+          "bound": true,
+          "platform_registered": true
+        },
+        "recording_plans": {
+          "1": {
+            "plan_id": "plan-disabled-001",
+            "status": "disabled",
+            "mode": "manual",
+            "time_ranges": [
+              {
+                "start": "00:00:00",
+                "end": "23:59:59",
+                "weekdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ]
+              }
+            ],
+            "retention_days": 30,
+            "last_updated_at": "2026-08-01T09:00:00+08:00"
+          }
+        },
+        "storage": {
+          "1": {
+            "storage_id": "storage-pool-a",
+            "status": "full",
+            "total_gb": 4000.0,
+            "free_gb": 1.0,
+            "used_percent": 99.9
+          }
+        },
+        "playback": {
+          "1": [
+            {
+              "start_at": "2026-09-08T00:00:00+08:00",
+              "end_at": "2026-09-09T00:00:00+08:00",
+              "status": "missing",
+              "file_count": 0,
+              "playable": false,
+              "failure_reason": "录像计划未启用，该时间段没有产生录像"
+            }
+          ]
+        },
+        "alarms": [
+          {
+            "event_type": "RECORDING_PLAN_DISABLED",
+            "severity": "warning",
+            "message": "录像计划未启用"
+          }
+        ],
+        "config": {
+          "enabled": true,
+          "encoding": "H.265",
+          "resolution": "1920x1080",
+          "frame_rate": 25,
+          "bitrate_kbps": 4096,
+          "config": {
+            "bitrate_mode": "CBR",
+            "admin_password": "sample-admin-pwd-not-real"
+          }
+        }
+      },
+      "oracle": {
+        "expected_candidate_label": "recording_plan_disabled",
+        "maximum_confidence": "probable",
+        "minimum_evidence_count": 2,
+        "required_evidence_types": [
+          "recording_plan",
+          "playback_check"
+        ],
+        "expected_controlled_degradation": false,
+        "expected_no_fabricated_evidence": true,
+        "expected_human_review": true,
+        "expected_non_confirmed": true
+      }
+    },
+    {
+      "case_id": "adv-recording-missing-playback",
+      "fault_type": "recording_missing",
+      "trap_type": "tool_failure_or_missing_fact",
+      "design_intent": "回放关键事实缺失时工具受控失败且规则不得把存储表象直接确认为根因。",
+      "fact_source": "Phase 2 fixture 派生的合成 Development 反例",
+      "gateway_entry": {
+        "device_id": "cam-rec-storage-full-01",
+        "case_id": "adv-recording-missing-playback",
+        "expected_label": "insufficient_recording_evidence",
+        "snapshot": {
+          "online": true,
+          "channel_online": true,
+          "stream_status": "normal",
+          "recording_status": "stopped"
+        },
+        "channel": {
+          "channel_id": "1",
+          "channel_status": "online",
+          "bound": true,
+          "platform_registered": true
+        },
+        "recording_plans": {
+          "1": {
+            "plan_id": "plan-full-001",
+            "status": "enabled",
+            "mode": "continuous",
+            "time_ranges": [
+              {
+                "start": "00:00:00",
+                "end": "00:00:00",
+                "weekdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ]
+              }
+            ],
+            "retention_days": 7,
+            "last_updated_at": "2026-09-01T08:00:00+08:00"
+          }
+        },
+        "storage": {
+          "1": {
+            "storage_id": "storage-pool-b",
+            "status": "full",
+            "total_gb": 2000.0,
+            "free_gb": 8.0,
+            "used_percent": 99.6,
+            "last_error": "storage pool full, overwrite stopped"
+          }
+        },
+        "playback": {},
+        "alarms": [
+          {
+            "event_type": "STORAGE_FULL",
+            "severity": "critical",
+            "message": "存储池已满，录像写入中断"
+          }
+        ],
+        "config": {
+          "enabled": true,
+          "encoding": "H.265",
+          "resolution": "1920x1080",
+          "frame_rate": 25,
+          "bitrate_kbps": 4096,
+          "config": {
+            "bitrate_mode": "CBR",
+            "admin_password": "sample-admin-pwd-not-real"
+          }
+        }
+      },
+      "oracle": {
+        "expected_candidate_label": "insufficient_recording_evidence",
+        "maximum_confidence": "probable",
+        "minimum_evidence_count": 2,
+        "required_evidence_types": [],
+        "expected_controlled_degradation": true,
+        "expected_no_fabricated_evidence": true,
+        "expected_human_review": true,
+        "expected_non_confirmed": true
+      }
+    },
+    {
+      "case_id": "adv-access-precedence",
+      "fault_type": "access_card_failed",
+      "trap_type": "precedence_conflict",
+      "design_intent": "控制器离线与凭证冻结并存时基础设施事实优先。",
+      "fact_source": "Phase 3 fixture 派生的合成 Development 反例",
+      "gateway_entry": {
+        "device_id": "access-controller-offline-01",
+        "case_id": "adv-access-precedence",
+        "expected_label": "controller_offline_or_no_response",
+        "snapshot": {
+          "online": false,
+          "channel_online": null,
+          "stream_status": "unknown",
+          "recording_status": "not_supported"
+        },
+        "access_controller": {
+          "controller_id": "ctrl-offline-01",
+          "status": "offline",
+          "health": "error",
+          "last_seen_at": "2026-09-10T07:40:00+08:00",
+          "last_error": "controller heartbeat lost"
+        },
+        "doors": {
+          "door-1": {
+            "controller_id": "ctrl-offline-01",
+            "door_status": "unknown",
+            "lock_status": "unknown"
+          }
+        },
+        "credentials": {
+          "sample-card-frozen": {
+            "credential_type": "card",
+            "status": "frozen",
+            "expires_at": "2026-12-31T23:59:59+08:00",
+            "extra": {
+              "card_no": "sample-card-no-not-real"
+            }
+          }
+        },
+        "access_policies": [
+          {
+            "door_id": "door-1",
+            "person_id": "sample-person-controller-offline",
+            "credential_id": "sample-card-controller-offline",
+            "allowed": true,
+            "time_ranges": [
+              {
+                "start": "00:00:00",
+                "end": "00:00:00",
+                "weekdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ]
+              }
+            ]
+          }
+        ],
+        "access_events": [
+          {
+            "door_id": "door-1",
+            "credential_id": "sample-card-controller-offline",
+            "person_id": "sample-person-controller-offline",
+            "credential_type": "card",
+            "decision": "timeout",
+            "deny_reason": "frozen_credential",
+            "occurred_at": "2026-09-10T08:15:00+08:00"
+          }
+        ],
+        "alarms": [
+          {
+            "event_type": "ACCESS_CONTROLLER_OFFLINE",
+            "severity": "critical",
+            "message": "门禁控制器离线"
+          }
+        ],
+        "config": {
+          "enabled": true,
+          "config": {
+            "admin_password": "sample-admin-pwd-not-real"
+          }
+        }
+      },
+      "oracle": {
+        "expected_candidate_label": "controller_offline_or_no_response",
+        "maximum_confidence": "probable",
+        "minimum_evidence_count": 3,
+        "required_evidence_types": [
+          "access_controller",
+          "access_event"
+        ],
+        "expected_controlled_degradation": false,
+        "expected_no_fabricated_evidence": true,
+        "expected_human_review": true,
+        "expected_non_confirmed": true
+      }
+    },
+    {
+      "case_id": "adv-access-missing-event",
+      "fault_type": "access_card_failed",
+      "trap_type": "tool_failure_or_missing_fact",
+      "design_intent": "刷卡事件缺失时不得仅凭策略表象确定拒绝原因。",
+      "fact_source": "Phase 3 fixture 派生的合成 Development 反例",
+      "gateway_entry": {
+        "device_id": "access-permission-denied-01",
+        "case_id": "adv-access-missing-event",
+        "expected_label": "insufficient_access_evidence",
+        "snapshot": {
+          "online": true,
+          "channel_online": true,
+          "stream_status": "unknown",
+          "recording_status": "not_supported"
+        },
+        "access_controller": {
+          "controller_id": "ctrl-permission-01",
+          "status": "online",
+          "health": "healthy",
+          "last_seen_at": "2026-09-10T08:00:00+08:00"
+        },
+        "doors": {
+          "door-1": {
+            "controller_id": "ctrl-permission-01",
+            "door_status": "closed",
+            "lock_status": "locked"
+          }
+        },
+        "credentials": {
+          "sample-card-no-permission": {
+            "credential_type": "card",
+            "status": "active",
+            "expires_at": "2026-12-31T23:59:59+08:00"
+          }
+        },
+        "access_policies": [
+          {
+            "door_id": "door-1",
+            "person_id": "sample-person-no-permission",
+            "credential_id": "sample-card-no-permission",
+            "allowed": false
+          }
+        ],
+        "access_events": [],
+        "alarms": [
+          {
+            "event_type": "ACCESS_PERMISSION_DENIED",
+            "severity": "warning",
+            "message": "人员没有该门权限"
+          }
+        ],
+        "config": {
+          "enabled": true,
+          "config": {
+            "admin_password": "sample-admin-pwd-not-real"
+          }
+        }
+      },
+      "oracle": {
+        "expected_candidate_label": "insufficient_access_evidence",
+        "maximum_confidence": "probable",
+        "minimum_evidence_count": 3,
+        "required_evidence_types": [],
+        "expected_controlled_degradation": true,
+        "expected_no_fabricated_evidence": true,
+        "expected_human_review": true,
+        "expected_non_confirmed": true
+      }
+    },
+    {
+      "case_id": "adv-alarm-precedence",
+      "fault_type": "alarm_false_positive",
+      "trap_type": "precedence_conflict",
+      "design_intent": "规则过敏与环境干扰并存时遵循已注册的规则优先级。",
+      "fact_source": "Phase 4 fixture 派生的合成 Development 反例",
+      "gateway_entry": {
+        "device_id": "alarm-rule-sensitive-01",
+        "case_id": "adv-alarm-precedence",
+        "expected_label": "alarm_rule_too_sensitive",
+        "snapshot": {
+          "online": true,
+          "channel_online": true,
+          "stream_status": "normal",
+          "recording_status": "recording"
+        },
+        "alarm_rules": {
+          "rule-1": {
+            "alarm_type": "motion",
+            "enabled": true,
+            "severity": "warning",
+            "sensitivity": "high",
+            "threshold": 20,
+            "debounce_seconds": 1,
+            "armed_time_ranges": [
+              {
+                "start": "00:00:00",
+                "end": "00:00:00",
+                "weekdays": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7
+                ]
+              }
+            ]
+          }
+        },
+        "alarm_signals": {
+          "alarm-1": {
+            "sensor_id": "motion-sensor-1",
+            "signal_value": 32,
+            "threshold": 20,
+            "noise_level": 0.2,
+            "status": "stable",
+            "triggered_at": "2026-09-10T20:00:00+08:00"
+          }
+        },
+        "alarm_environments": {
+          "alarm-1": {
+            "interference_types": [
+              "rain",
+              "strong_light"
+            ],
+            "visibility": "low",
+            "illumination_lux": 15000,
+            "wind_speed": 9
+          }
+        },
+        "alarm_verifications": {
+          "alarm-1": {
+            "result": "inconclusive",
+            "target_count": 0,
+            "checked_by": "system"
+          }
+        },
+        "alarm_correlations": {
+          "alarm-1": {
+            "repeated_count": 1,
+            "neighbor_alarm_count": 0,
+            "pattern": "isolated",
+            "window_seconds": 300
+          }
+        },
+        "config": {
+          "enabled": true,
+          "config": {
+            "admin_password": "sample-admin-pwd-not-real"
+          }
+        }
+      },
+      "oracle": {
+        "expected_candidate_label": "alarm_rule_too_sensitive",
+        "maximum_confidence": "probable",
+        "minimum_evidence_count": 3,
+        "required_evidence_types": [
+          "alarm_rule",
+          "alarm_signal"
+        ],
+        "expected_controlled_degradation": false,
+        "expected_no_fabricated_evidence": true,
+        "expected_human_review": true,
+        "expected_non_confirmed": true
+      }
+    },
+    {
+      "case_id": "adv-alarm-missing-signal",
+      "fault_type": "alarm_false_positive",
+      "trap_type": "tool_failure_or_missing_fact",
+      "design_intent": "触发信号缺失时不得仅凭环境事实给出具体主因。",
+      "fact_source": "Phase 4 fixture 派生的合成 Development 反例",
+      "gateway_entry": {
+        "device_id": "alarm-environment-rain-01",
+        "case_id": "adv-alarm-missing-signal",
+        "expected_label": "insufficient_alarm_evidence",
+        "snapshot": {
+          "online": true,
+          "channel_online": true,
+          "stream_status": "normal",
+          "recording_status": "recording"
+        },
+        "alarm_rules": {
+          "rule-1": {
+            "alarm_type": "line_crossing",
+            "enabled": true,
+            "severity": "warning",
+            "sensitivity": "medium",
+            "threshold": 60,
+            "debounce_seconds": 8
+          }
+        },
+        "alarm_signals": {},
+        "alarm_environments": {
+          "alarm-1": {
+            "interference_types": [
+              "rain",
+              "strong_light"
+            ],
+            "visibility": "low",
+            "illumination_lux": 15000,
+            "wind_speed": 9
+          }
+        },
+        "alarm_verifications": {
+          "alarm-1": {
+            "result": "inconclusive",
+            "target_count": 0,
+            "checked_by": "system"
+          }
+        },
+        "alarm_correlations": {
+          "alarm-1": {
+            "repeated_count": 1,
+            "neighbor_alarm_count": 0,
+            "pattern": "isolated",
+            "window_seconds": 300
+          }
+        }
+      },
+      "oracle": {
+        "expected_candidate_label": "insufficient_alarm_evidence",
+        "maximum_confidence": "probable",
+        "minimum_evidence_count": 3,
+        "required_evidence_types": [],
+        "expected_controlled_degradation": true,
+        "expected_no_fabricated_evidence": true,
+        "expected_human_review": true,
+        "expected_non_confirmed": true
+      }
+    }
+  ]
+}
